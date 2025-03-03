@@ -11,7 +11,7 @@ from src.envs import make_carlabev_env
 
 def eval_dqn_model(args, num_episode, q_network, run_name, writer):
     model_path = f"runs/{run_name}/{args.exp_name}.cleanrl_model"
-    from evals.dqn_eval import evaluate
+    from src.evals.dqn_eval import evaluate
 
     episodic_returns = evaluate(
         args,
