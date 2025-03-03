@@ -37,27 +37,43 @@ def linear_schedule(start_e: float, end_e: float, duration: int, t: int):
     return max(slope * t + start_e, end_e)
 
 
-if __name__ == "__main__":
-    args, run_name, writer = get_experiment("dqn_carlabev")
-    print(run_name)
+def log_episode(writer, infos):
+    num_ep = infos["stats_ep"]["episode"]
+    ret = infos["stats_ep"]["return"]
+    cause = infos["stats_ep"]["termination"]
+    stats = infos["stats_ep"]["stats"]
+    success_rate = infos["stats_ep"]["success_rate"]
+    collision_rate = infos["stats_ep"]["collision_rate"]
+
+    #
+    logger.info(f"episode-{num_ep}: {ret}-{cause}")
+    #
+    writer.add_scalar("stats/episodic_return", infos["episode"]["r"], num_ep)
+    writer.add_scalar("stats/episodic_length", infos["episode"]["l"], num_ep)
+    #
+
+    writer.add_scalar(
+        "stats/mean_reward",
+        infos["stats_ep"]["mean_reward"],
+        num_ep,
+    )
+    writer.add_scalar("stats/collision_rate", collision_rate, num_ep)
+    writer.add_scalar("stats/success_rate", success_rate, num_ep)
+
+    return num_ep
+
+
+def train(args, envs, writer):
+    q_network, optimizer, target_network, rb = build_agent(args, envs, device)
+    # save blank model
+    model_path = f"runs/{args.exp_name}/{args.exp_name}.cleanrl_model"
+    torch.save(q_network.state_dict(), model_path)
     max_return = 0
 
-    envs = make_env(args, run_name)
-    print("Building environment...")
-
-    q_network, optimizer, target_network, rb = build_agent(args, envs, device)
-    print("go")
-
-    # save blank model
-    model_path = f"runs/{run_name}/{args.exp_name}.cleanrl_model"
-    torch.save(q_network.state_dict(), model_path)
-
     start_time = time.time()
-
     # TRY NOT TO MODIFY: start the game
     obs, infos = envs.reset(seed=args.seed)
     for global_step in range(args.total_timesteps):
-        poses = infos["model"]["pose_data"]
         # ALGO LOGIC: put action logic here
         epsilon = linear_schedule(
             args.start_e,
@@ -80,30 +96,12 @@ if __name__ == "__main__":
         next_obs, rewards, terminations, truncations, infos = envs.step(actions)
 
         if terminations[0]:
-            num_ep = infos["stats_ep"]["episode"]
-            ret = infos["stats_ep"]["return"]
-            cause = infos["stats_ep"]["termination"]
-            stats = infos["stats_ep"]["stats"]
-            success_rate = infos["stats_ep"]["success_rate"]
-            collision_rate = infos["stats_ep"]["collision_rate"]
-
-            #
-            logger.info(f"episode-{num_ep}: {ret}-{cause}")
-            #
-            writer.add_scalar("stats/episodic_return", infos["episode"]["r"], num_ep)
-            writer.add_scalar("stats/episodic_length", infos["episode"]["l"], num_ep)
-            #
-
-            writer.add_scalar(
-                "stats/mean_reward",
-                infos["stats_ep"]["mean_reward"],
-                num_ep,
-            )
-            writer.add_scalar("stats/collision_rate", collision_rate, num_ep)
-            writer.add_scalar("stats/success_rate", success_rate, num_ep)
+            num_ep = log_episode(writer, infos)
 
             if num_ep % 1000 == 0:
-                eval_reward = eval_dqn_model(args, num_ep, q_network, run_name, writer)
+                eval_reward = eval_dqn_model(
+                    args, num_ep, q_network, args.exp_name, writer
+                )
                 logger.info(f"eval-episode-{num_ep}: {eval_reward}")
 
         # TRY NOT TO MODIFY: save data to reply buffer; handle `final_observation`
@@ -112,7 +110,6 @@ if __name__ == "__main__":
             if trunc:
                 real_next_obs[idx] = infos["final_observation"][idx]
         rb.add(obs, real_next_obs, actions, rewards, terminations, infos)
-        # rb.add(obs, real_next_obs, poses, actions, rewards, terminations, infos)
 
         # TRY NOT TO MODIFY: CRUCIAL step easy to overlook
         obs = next_obs
@@ -123,16 +120,10 @@ if __name__ == "__main__":
                 data = rb.sample(args.batch_size)
                 with torch.no_grad():
                     target_max, _ = target_network(data.next_observations).max(dim=1)
-                    # target_max, _ = target_network(
-                    #                        data.next_observations, data.poses
-                    #                    ).max(dim=1)
                     td_target = data.rewards.flatten() + args.gamma * target_max * (
                         1 - data.dones.flatten()
                     )
-                old_val = (
-                    # q_network(data.observations, data.poses)
-                    q_network(data.observations).gather(1, data.actions).squeeze()
-                )
+                old_val = q_network(data.observations).gather(1, data.actions).squeeze()
                 loss = F.mse_loss(td_target, old_val)
 
                 if global_step % 100 == 0:
@@ -140,7 +131,6 @@ if __name__ == "__main__":
                     writer.add_scalar(
                         "losses/q_values", old_val.mean().item(), global_step
                     )
-                    # print("SPS:", int(global_step / (time.time() - start_time)))
                     writer.add_scalar(
                         "stats/SPS",
                         int(global_step / (time.time() - start_time)),
@@ -164,10 +154,22 @@ if __name__ == "__main__":
 
                 if rewards[0] > max_return:
                     if args.save_model:
-                        model_path = f"runs/{run_name}/{args.exp_name}.cleanrl_model"
+                        model_path = (
+                            f"runs/{args.exp_name}/{args.exp_name}.cleanrl_model"
+                        )
                         torch.save(q_network.state_dict(), model_path)
                         print(f"model saved to {model_path}")
                         max_return = rewards[0]
 
     envs.close()
     writer.close()
+
+
+def main():
+    args, writer = get_experiment()
+    envs = make_env(args)
+    train(args, envs, writer)
+
+
+if __name__ == "__main__":
+    main()

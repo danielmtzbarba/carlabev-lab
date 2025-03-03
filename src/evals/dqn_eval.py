@@ -22,27 +22,13 @@ def eval_dqn_model(args, num_episode, q_network, run_name, writer):
         eval_episodes=10,
         run_name=f"{run_name}-eval",
         Model=QNetwork,
-        device="cuda:0",
+        device=torch.device("cpu"),
         epsilon=0.05,
         writer=writer,
     )
 
     for idx, episodic_return in enumerate(episodic_returns):
         writer.add_scalar("eval/episodic_return", episodic_return, idx)
-
-        if args.upload_model:
-            from cleanrl_utils.huggingface import push_to_hub
-
-            repo_name = f"{args.env_id}-{args.exp_name}-seed{args.seed}"
-            repo_id = f"{args.hf_entity}/{repo_name}" if args.hf_entity else repo_name
-            push_to_hub(
-                args,
-                episodic_returns,
-                repo_id,
-                "DQN",
-                f"runs/{run_name}",
-                f"videos/{run_name}-eval",
-            )
 
 
 def evaluate(
