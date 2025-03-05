@@ -4,20 +4,20 @@ import numpy as np
 import random
 import torch
 
-from torch.utils.tensorboard import SummaryWriter
-from .carlabev_demo import ArgsCarlaBEVDemo
+
+from src.utils.logger import DRLogger
 
 
-def get_experiment():
-    args = tyro.cli(ArgsCarlaBEVDemo)
-    assert args.num_envs == 1, "vectorized envs are not supported at the moment"
+def get_experiment(experiment):
+    if "DQN" in experiment:
+        from .dqn_carlabev import ArgsCarlaBEV
+    elif "PPO" in experiment:
+        from .ppo_carlabev import ArgsCarlaBEV
+    else:
+        exit("Unregisted experiment...")
 
-    writer = SummaryWriter(f"runs/{args.exp_name}")
-    writer.add_text(
-        "hyperparameters",
-        "|param|value|\n|-|-|\n%s"
-        % ("\n".join([f"|{key}|{value}|" for key, value in vars(args).items()])),
-    )
+    args = tyro.cli(ArgsCarlaBEV)
+    log = DRLogger(args)
 
     # TRY NOT TO MODIFY: seeding
     random.seed(args.seed)
@@ -25,4 +25,4 @@ def get_experiment():
     torch.manual_seed(args.seed)
     torch.backends.cudnn.deterministic = args.torch_deterministic
 
-    return args, writer
+    return args, log

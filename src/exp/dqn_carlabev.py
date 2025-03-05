@@ -7,7 +7,7 @@ class ArgsCarlaBEV:
     """the name of this experiment"""
     seed: int = 1
     """seed of the experiment"""
-    size: int = 1024
+    size: int = 128
     """size of rendered image"""
     torch_deterministic: bool = True
     """if toggled, `torch.backends.cudnn.deterministic=False`"""
@@ -31,13 +31,13 @@ class ArgsCarlaBEV:
     # Algorithm specific arguments
     env_id: str = "CarlaBEV-v0"
     """the id of the environment"""
-    total_timesteps: int = 500000
+    total_timesteps: int = 1000000
     """total timesteps of the experiments"""
     learning_rate: float = 2.5e-4
     """the learning rate of the optimizer"""
     num_envs: int = 1
     """the number of parallel game environments"""
-    buffer_size: int = 20000
+    buffer_size: int = 50000
     """the replay memory buffer size"""
     gamma: float = 0.99
     """the discount factor gamma"""
@@ -53,7 +53,9 @@ class ArgsCarlaBEV:
     """the ending epsilon for exploration"""
     exploration_fraction: float = 0.5
     """the fraction of `total-timesteps` it takes from start-e to go end-e"""
-    learning_starts: int = 10000
+    learning_starts: int = 50000
     """timestep to start learning"""
     train_frequency: int = 10
+    """the frequency of training"""
+    eval_frequency: int = 50000
     """the frequency of training"""

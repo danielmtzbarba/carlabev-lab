@@ -2,8 +2,8 @@ from dataclasses import dataclass
 
 
 @dataclass
-class ArgsCarlaBEVTest:
-    exp_name: str = "carlabev-dqn-curve-run2"
+class ArgsCarlaBEV:
+    exp_name: str = "ppo-carlabev"
     """the name of this experiment"""
     seed: int = 1
     """seed of the experiment"""
@@ -31,31 +31,43 @@ class ArgsCarlaBEVTest:
     # Algorithm specific arguments
     env_id: str = "CarlaBEV-v0"
     """the id of the environment"""
-    total_timesteps: int = 20000000
+    total_timesteps: int = 1000000
     """total timesteps of the experiments"""
     learning_rate: float = 2.5e-4
     """the learning rate of the optimizer"""
-    num_envs: int = 1
+    num_envs: int = 4
     """the number of parallel game environments"""
-    buffer_size: int = 50000
-    """the replay memory buffer size"""
+    num_steps: int = 128
+    """the number of steps to run in each environment per policy rollout"""
+    anneal_lr: bool = True
+    """Toggle learning rate annealing for policy and value networks"""
     gamma: float = 0.99
     """the discount factor gamma"""
-    tau: float = 1.0
-    """the target network update rate"""
-    target_network_frequency: int = 500
-    """the timesteps it takes to update the target network"""
-    batch_size: int = 128
-    """the batch size of sample from the reply memory"""
-    start_e: float = 1
-    """the starting epsilon for exploration"""
-    end_e: float = 0.05
-    """the ending epsilon for exploration"""
-    exploration_fraction: float = 0.5
-    """the fraction of `total-timesteps` it takes from start-e to go end-e"""
-    learning_starts: int = 50000
-    """timestep to start learning"""
-    train_frequency: int = 10
-    """the frequency of training"""
-    eval_frequency: int = 50000
-    """the frequency of training"""
+    gae_lambda: float = 0.95
+    """the lambda for the general advantage estimation"""
+    num_minibatches: int = 4
+    """the number of mini-batches"""
+    update_epochs: int = 4
+    """the K epochs to update the policy"""
+    norm_adv: bool = True
+    """Toggles advantages normalization"""
+    clip_coef: float = 0.2
+    """the surrogate clipping coefficient"""
+    clip_vloss: bool = True
+    """Toggles whether or not to use a clipped loss for the value function, as per the paper."""
+    ent_coef: float = 0.01
+    """coefficient of the entropy"""
+    vf_coef: float = 0.5
+    """coefficient of the value function"""
+    max_grad_norm: float = 0.5
+    """the maximum norm for the gradient clipping"""
+    target_kl: float = None
+    """the target KL divergence threshold"""
+
+    # to be filled in runtime
+    batch_size: int = 0
+    """the batch size (computed in runtime)"""
+    minibatch_size: int = 0
+    """the mini-batch size (computed in runtime)"""
+    num_iterations: int = 0
+    """the number of iterations (computed in runtime)"""

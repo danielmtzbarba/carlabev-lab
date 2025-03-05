@@ -1,6 +1,3 @@
-from collections import deque
-import numpy as np
-import cv2
 import os
 from torch.utils.tensorboard import SummaryWriter
 
@@ -24,67 +21,48 @@ logger = logging.getLogger("drlab")
 class DRLogger:
     def __init__(self, config):
         # Create tensorboard summary
-        self._summary = SummaryWriter(os.path.join(config.logdir))
+        self.writer = SummaryWriter(f"runs/{config.exp_name}")
+        self.writer.add_text(
+            "hyperparameters",
+            "|param|value|\n|-|-|\n%s"
+            % ("\n".join([f"|{key}|{value}|" for key, value in vars(config).items()])),
+        )
         self._logger = logger
         self._config = config
-        self._setup_buffers()
 
-    def _setup_buffers(self):
-        # History metrics
-        self._total_rewards = deque(maxlen=self._config.max_episodes)
-        self._mean_rewards = deque(maxlen=self._config.max_episodes)
-        self._epsilon = deque(maxlen=self._config.max_episodes)
-        self._losses = deque()
-        self._qs = deque()
+    def log_loss(self, global_step, loss, sps, q):
+        self.writer.add_scalar("losses/td_loss", loss, global_step)
+        self.writer.add_scalar("losses/q_values", q, global_step)
+        self.writer.add_scalar("stats/SPS", sps, global_step)
 
-    def new_episode(self, num_episode):
-        self._logger.info(f"{'-' * 70}")
-        self._logger.info(
-            f"{' ' * 25}Episode {num_episode}/{self._config.max_episodes}"
-        )
-        self._logger.info(f"{'-' * 70}")
+    def log_episode(self, infos):
+        try:
+            num_ep = infos["stats_ep"]["episode"][0]
+            ret = infos["stats_ep"]["return"][0]
+            cause = infos["stats_ep"]["termination"][0]
+            success_rate = infos["stats_ep"]["success_rate"][0]
+            collision_rate = infos["stats_ep"]["collision_rate"][0]
+            reward = infos["episode"]["r"][0]
+            length = infos["episode"]["l"][0]
+            mean_reward = infos["stats_ep"]["mean_reward"][0]
 
-    def log_loss(self, q, loss, iteration):
-        self._qs.append(q)
-        self._losses.append(loss)
-        self._summary.add_scalar("train/loss", float(loss), iteration)
-        self._summary.add_scalar("train/q", float(q), iteration)
+        except Exception as e:
+            num_ep = infos["stats_ep"]["episode"]
+            ret = infos["stats_ep"]["return"]
+            cause = infos["stats_ep"]["termination"]
+            success_rate = infos["stats_ep"]["success_rate"]
+            collision_rate = infos["stats_ep"]["collision_rate"]
+            reward = infos["episode"]["r"]
+            length = infos["episode"]["l"]
+            mean_reward = infos["stats_ep"]["mean_reward"]
 
-    def _log_state(self, episode):
-        if episode.id % self._config.save_every == 0:
-            for step, state in enumerate(episode.states):
-                resized = cv2.resize(
-                    np.transpose(np.squeeze(state, 0), (1, 2, 0)),
-                    (512, 512),
-                    interpolation=cv2.INTER_AREA,
-                )
-                self._summary.add_image(
-                    f"train/episode_state_resized/{episode.id}",
-                    resized,
-                    step,
-                    dataformats=self._config.log_img_type,
-                )
-
-    def log_episode(self, episode, epsilon):
-        "LOG EPISODE METRICS"
-        self._log_state(episode)
-        self._total_rewards.append(episode.total_reward)
-        self._mean_rewards.append(episode.mean_reward)
-        self._epsilon.append(epsilon)
-
-        # Update tensorboard
-        self._summary.add_scalar(
-            "train/total_reward", float(episode.total_reward), episode.id
-        )
-        self._summary.add_scalar(
-            "train/mean_reward", float(episode.mean_reward), episode.id
-        )
-
-        self._summary.add_scalar("train/epsilon", float(epsilon), episode.id)
         #
-        self._logger.info(f"Epsilon {epsilon}")
-        self._logger.info(
-            f"Total reward: {episode.total_reward}, Mean reward: {episode.mean_reward}"
-        )
-        self._logger.info(f"{'-' * 70}")
+        logger.info(f"episode-{num_ep}: {ret}-{cause}")
         #
+        self.writer.add_scalar("stats/episodic_return", reward, num_ep)
+        self.writer.add_scalar("stats/episodic_length", length, num_ep)
+        self.writer.add_scalar("stats/mean_reward", mean_reward, num_ep)
+        self.writer.add_scalar("stats/collision_rate", collision_rate, num_ep)
+        self.writer.add_scalar("stats/success_rate", success_rate, num_ep)
+
+        return num_ep
