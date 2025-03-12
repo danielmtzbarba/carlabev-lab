@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 @dataclass
 class ArgsCarlaBEV:
-    exp_name: str = "ppo-carlabev"
+    exp_name: str = "ppo-carlabev-continuous"
     """the name of this experiment"""
     seed: int = 1
     """seed of the experiment"""
@@ -23,13 +23,11 @@ class ArgsCarlaBEV:
     """whether to capture videos of the agent performances (check out `videos` folder)"""
     save_model: bool = True
     """whether to save model into the `runs/{run_name}` folder"""
-    upload_model: bool = False
-    """whether to upload the saved model to huggingface"""
-    hf_entity: str = ""
-    """the user or org name of the model repository from the Hugging Face Hub"""
 
     # Algorithm specific arguments
     env_id: str = "CarlaBEV-v0"
+    """the id of the environment"""
+    discrete: bool = False
     """the id of the environment"""
     total_timesteps: int = 1000000
     """total timesteps of the experiments"""

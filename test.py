@@ -1,11 +1,11 @@
 from CarlaBEV.envs import CarlaBEV
 import gymnasium as gym
 import torch
-from envs.carlabev import make_carlabev_env
-from agents import QNetwork
+from src.envs.carlabev import make_carlabev_env
+from src.agents.dqn import QNetwork
 
 device = "cuda:0"
-size = 512
+size = 128
 model_path = "runs/dqn-gridworld-seed_1-bs_20000/dqn-gridworld.cleanrl_model"
 LOAD_MODEL = False
 
@@ -25,7 +25,7 @@ dummyenv = gym.vector.SyncVectorEnv(
 
 # Initialise the environment
 # env = gym.make("CarRacing-v2", render_mode="human", continuous=False)
-env = CarlaBEV(size=size, render_mode="human")
+env = CarlaBEV(size=size, discrete=False, render_mode="human")
 
 model = QNetwork(dummyenv)
 del dummyenv
