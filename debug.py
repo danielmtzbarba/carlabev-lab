@@ -7,8 +7,6 @@ from src.agents import QNetwork
 
 device = "cuda:0"
 size = 128
-model_path = "runs/dqn-gridworld-seed_1-bs_20000/dqn-gridworld.cleanrl_model"
-LOAD_MODEL = False
 
 dummyenv = gym.vector.SyncVectorEnv(
     [
@@ -24,20 +22,8 @@ dummyenv = gym.vector.SyncVectorEnv(
     ]
 )
 
-# Initialise the environment
-# env = gym.make("CarRacing-v2", render_mode="human", continuous=False)
 env = CarlaBEV(size=size, render_mode="human")
-
-model = QNetwork(dummyenv)
 del dummyenv
-
-if LOAD_MODEL:
-    model.load_state_dict(
-        torch.load(model_path, map_location=device, weights_only=True)
-    )
-
-model.eval()
-
 
 # Reset the environment to generate the first observation
 observation, info = env.reset(seed=42)

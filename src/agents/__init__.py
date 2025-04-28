@@ -1,7 +1,9 @@
 import torch.optim as optim
 from stable_baselines3.common.buffers import ReplayBuffer
+
 from .dqn import QNetwork
 from .ppo import Agent
+from .muzero import MuZeroAgent
 
 
 def build_agent(args, envs, device):
@@ -22,6 +24,11 @@ def build_agent(args, envs, device):
 
     elif "ppo" in args.exp_name:
         agent = Agent(envs).to(device)
+        optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
+        return agent, optimizer
+
+    elif "muzero" in args.exp_name:
+        agent = MuZeroAgent(envs).to(device)
         optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
         return agent, optimizer
     else:
