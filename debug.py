@@ -1,9 +1,7 @@
 from CarlaBEV.envs import CarlaBEV
 import pygame
 import gymnasium as gym
-import torch
 from src.envs.carlabev import make_carlabev_env
-from src.agents import QNetwork
 
 device = "cuda:0"
 size = 128
