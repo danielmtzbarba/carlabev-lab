@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 @dataclass
 class ArgsCarlaBEV:
-    exp_name: str = "ppo-carlabev-continuous"
+    exp_name: str = "ppo-carlabev-discrete-rwd2.0-stable"
     """the name of this experiment"""
     seed: int = 1
     """seed of the experiment"""
@@ -27,9 +27,9 @@ class ArgsCarlaBEV:
     # Algorithm specific arguments
     env_id: str = "CarlaBEV-v0"
     """the id of the environment"""
-    discrete: bool = False
-    """the id of the environment"""
-    total_timesteps: int = 1000000
+    discrete: bool = True
+    """Discrete or Continouous agent"""
+    total_timesteps: int = 500000
     """total timesteps of the experiments"""
     learning_rate: float = 2.5e-4
     """the learning rate of the optimizer"""

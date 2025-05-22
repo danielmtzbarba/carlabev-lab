@@ -37,24 +37,24 @@ class DRLogger:
 
     def log_episode(self, infos):
         try:
-            num_ep = infos["stats_ep"]["episode"][0]
-            ret = infos["stats_ep"]["return"][0]
-            cause = infos["stats_ep"]["termination"][0]
-            success_rate = infos["stats_ep"]["success_rate"][0]
-            collision_rate = infos["stats_ep"]["collision_rate"][0]
+            num_ep = infos["termination"]["episode"][0]
+            ret = infos["termination"]["return"][0]
+            cause = infos["termination"]["termination"][0]
+            success_rate = infos["termination"]["success_rate"][0]
+            collision_rate = infos["termination"]["collision_rate"][0]
             reward = infos["episode"]["r"][0]
             length = infos["episode"]["l"][0]
-            mean_reward = infos["stats_ep"]["mean_reward"][0]
+            mean_reward = infos["termination"]["mean_reward"][0]
 
         except Exception as e:
-            num_ep = infos["stats_ep"]["episode"]
-            ret = infos["stats_ep"]["return"]
-            cause = infos["stats_ep"]["termination"]
-            success_rate = infos["stats_ep"]["success_rate"]
-            collision_rate = infos["stats_ep"]["collision_rate"]
+            num_ep = infos["termination"]["episode"]
+            ret = infos["termination"]["return"]
+            cause = infos["termination"]["termination"]
+            success_rate = infos["termination"]["success_rate"]
+            collision_rate = infos["termination"]["collision_rate"]
             reward = infos["episode"]["r"]
             length = infos["episode"]["l"]
-            mean_reward = infos["stats_ep"]["mean_reward"]
+            mean_reward = infos["termination"]["mean_reward"]
 
         #
         logger.info(f"episode-{num_ep}: {ret}-{cause}")
