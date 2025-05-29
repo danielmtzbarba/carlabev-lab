@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 @dataclass
 class ArgsCarlaBEV:
-    exp_name: str = "ppo-carlabev-discrete-rwd2.0-stable"
+    exp_name: str = "ppo-carlabev-discrete-rwd3.0"
     """the name of this experiment"""
     seed: int = 1
     """seed of the experiment"""
