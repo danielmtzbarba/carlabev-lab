@@ -62,7 +62,7 @@ def train_ppo(args, envs, logger, device):
                 torch.Tensor(next_done).to(device),
             )
 
-            if terminations[0]:
+            if terminations[0] or truncations[0]:
                 num_ep = logger.log_episode(infos)
 
                 # TODO: IMPLEMENT VALIDATION

@@ -29,7 +29,7 @@ class ArgsCarlaBEV:
     """the id of the environment"""
     discrete: bool = True
     """Discrete or Continouous agent"""
-    total_timesteps: int = 500000
+    total_timesteps: int = 1000000
     """total timesteps of the experiments"""
     learning_rate: float = 2.5e-4
     """the learning rate of the optimizer"""
