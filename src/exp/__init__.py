@@ -13,13 +13,14 @@ def get_experiment(experiment):
         from .dqn_carlabev import ArgsCarlaBEV
     elif "PPO" in experiment:
         from .ppo_carlabev import ArgsCarlaBEV
+    elif "SAC" in experiment:
+        from .sac_carlabev import ArgsCarlaBEV
     else:
         exit("Unregisted experiment...")
 
     args = tyro.cli(ArgsCarlaBEV)
     log = DRLogger(args)
 
-    # TRY NOT TO MODIFY: seeding
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
