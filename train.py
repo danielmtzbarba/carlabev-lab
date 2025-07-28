@@ -12,7 +12,7 @@ warnings.filterwarnings("ignore")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-EXPERIMENT = "SAC"
+EXPERIMENT = "vector-ppo-discrete"
 
 
 def main():

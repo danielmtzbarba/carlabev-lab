@@ -1,9 +1,10 @@
+
 from dataclasses import dataclass
 
 
 @dataclass
 class ArgsCarlaBEV:
-    exp_name: str = "ppo-carlabev"
+    exp_name: str = "vector-ppo-carlabev"
     """the name of this experiment"""
     seed: int = 1
     """seed of the experiment"""
@@ -27,15 +28,19 @@ class ArgsCarlaBEV:
     # Algorithm specific arguments
     env_id: str = "CarlaBEV-v0"
     """the id of the environment"""
+
     discrete: bool = True
     """Discrete or Continouous agent"""
-    total_timesteps: int = 5000000
+    obs_space: str = "vector" 
+    """RGB or vector Data"""
+
+    total_timesteps: int = 10000000
     """total timesteps of the experiments"""
     learning_rate: float = 2.5e-4
     """the learning rate of the optimizer"""
-    num_envs: int = 4
+    num_envs: int = 8
     """the number of parallel game environments"""
-    num_steps: int = 128
+    num_steps: int = 256
     """the number of steps to run in each environment per policy rollout"""
     anneal_lr: bool = True
     """Toggle learning rate annealing for policy and value networks"""
@@ -49,17 +54,17 @@ class ArgsCarlaBEV:
     """the K epochs to update the policy"""
     norm_adv: bool = True
     """Toggles advantages normalization"""
-    clip_coef: float = 0.2
+    clip_coef: float = 0.7
     """the surrogate clipping coefficient"""
     clip_vloss: bool = True
     """Toggles whether or not to use a clipped loss for the value function, as per the paper."""
-    ent_coef: float = 0.01
+    ent_coef: float = 0.02
     """coefficient of the entropy"""
     vf_coef: float = 0.5
     """coefficient of the value function"""
     max_grad_norm: float = 0.5
     """the maximum norm for the gradient clipping"""
-    target_kl: float = None
+    target_kl: float = 0.02
     """the target KL divergence threshold"""
 
     # to be filled in runtime

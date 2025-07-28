@@ -5,7 +5,6 @@ import numpy as np
 
 from src.agents import build_agent
 
-
 import os
 import random
 
@@ -66,11 +65,11 @@ def train_sac(args, envs, logger, device):
                 )
                 break
 
-        # TRY NOT TO MODIFY: save data to reply buffer; handle `final_observation`
+        if terminations[0] or truncations[0]:
+            num_ep = logger.log_episode(infos)
+
+        #   ReplayBuffer
         real_next_obs = next_obs.copy()
-        for idx, trunc in enumerate(truncations):
-            if trunc:
-                real_next_obs[idx] = infos["final_observation"][idx]
         rb.add(obs, real_next_obs, actions, rewards, terminations, infos)
 
         # TRY NOT TO MODIFY: CRUCIAL step easy to overlook

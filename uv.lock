@@ -19,7 +19,7 @@ wheels = [
 [[package]]
 name = "carlabev"
 version = "0.0.1"
-source = { editable = "../../driverless/carlabev-env" }
+source = { editable = "../carlabev" }
 dependencies = [
     { name = "gymnasium" },
     { name = "pre-commit" },
@@ -56,7 +56,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "carlabev", editable = "../../driverless/carlabev-env" },
+    { name = "carlabev", editable = "../carlabev" },
     { name = "dotenv", specifier = ">=0.9.9" },
     { name = "moviepy", specifier = ">=2.2.1" },
     { name = "numpy", specifier = ">=2.3.1" },

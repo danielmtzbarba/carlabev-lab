@@ -7,7 +7,7 @@ from src.trainers.muzero import train_muzero
 def build_trainer(experiment):
     if "DQN" in experiment:
         return train_dqn
-    elif "PPO" in experiment:
+    elif "ppo" in experiment:
         return train_ppo
     elif "SAC" in experiment:
         return train_sac

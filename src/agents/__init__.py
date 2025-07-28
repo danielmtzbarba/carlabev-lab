@@ -3,7 +3,8 @@ import torch.optim as optim
 from stable_baselines3.common.buffers import ReplayBuffer
 
 from .dqn import QNetwork
-from .ppo import Agent
+from .cnn_ppo import ConvolutionalPPO 
+from .ppo_vector import VectorPPO 
 from .sac import SoftQNetwork, Actor
 from .muzero import MuZeroAgent
 
@@ -24,8 +25,13 @@ def build_agent(args, envs, device):
         )
         return q_network, optimizer, target_network, rb
 
-    elif "ppo" in args.exp_name:
-        agent = Agent(envs).to(device)
+    elif "cnn-ppo" in args.exp_name:
+        agent = ConvolutionalPPO(envs).to(device)
+        optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
+        return agent, optimizer
+
+    elif "vector-ppo" in args.exp_name:
+        agent = VectorPPO(envs).to(device)
         optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
         return agent, optimizer
     
