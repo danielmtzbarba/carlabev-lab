@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 @dataclass
 class ArgsCarlaBEV:
-    exp_name: str = "cnn-ppo-discrete-carlabev-3"
+    exp_name: str = "cnn-ppo-discrete-carlabev-4"
     """the name of this experiment"""
     seed: int = 1
     """seed of the experiment"""
@@ -33,7 +33,7 @@ class ArgsCarlaBEV:
     obs_space: str = "bev" 
     """RGB or vector Data"""
 
-    total_timesteps: int = 5000000
+    total_timesteps: int = 20000000
     """total timesteps of the experiments"""
     learning_rate: float = 2.5e-4
     """the learning rate of the optimizer"""

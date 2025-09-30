@@ -15,6 +15,7 @@ def get_experiment(experiment):
         from .vector_ppo_discrete_carlabev import ArgsCarlaBEV
     elif "cnn-ppo-discrete" in experiment:
         from .cnn_ppo_discrete_carlabev import ArgsCarlaBEV
+        from .carlabev_hpc import ArgsCarlaBEV
     elif "SAC" in experiment:
         from .sac_carlabev import ArgsCarlaBEV
     else:
