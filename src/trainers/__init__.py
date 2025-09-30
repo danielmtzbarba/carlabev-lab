@@ -13,5 +13,7 @@ def build_trainer(experiment):
         return train_sac
     elif "MuZero" in experiment:
         return train_muzero
+    elif "debug" in experiment:
+        return train_ppo
     else:
         exit("Unimplemented DRL algorithm")

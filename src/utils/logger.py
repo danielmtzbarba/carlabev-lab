@@ -2,10 +2,12 @@ import os
 import sys
 import logging
 from torch.utils.tensorboard import SummaryWriter
-import time
+from rich.console import Console
+from rich.table import Table
 
-file_handler = logging.FileHandler("drlog.log")
-stdout_handler = logging.StreamHandler(sys.stdout)
+# --- Logging setup ---
+file_handler = logging.FileHandler(filename="drlog.log")
+stdout_handler = logging.StreamHandler(stream=sys.stdout)
 handlers = [file_handler, stdout_handler]
 
 logging.basicConfig(
@@ -16,30 +18,27 @@ logging.basicConfig(
     level=logging.INFO,
 )
 logger = logging.getLogger("drlab")
+console = Console()
 
 
 class DRLogger:
-    def __init__(self, config):
-        run_dir = f"runs/{config.exp_name}"
-        self.writer = SummaryWriter(run_dir)
-        self._logger = logger
-        self._config = config
-        self._start_time = time.time()
-
-        # Log hyperparameters
+    def __init__(self, config, stats_interval: int = 10):
+        self.writer = SummaryWriter(f"runs/{config.exp_name}")
         self.writer.add_text(
             "hyperparameters",
             "|param|value|\n|-|-|\n%s"
             % ("\n".join([f"|{key}|{value}|" for key, value in vars(config).items()])),
         )
+        self._logger = logger
+        self._config = config
+        self._stats_interval = stats_interval
 
     def log_loss(self, global_step, loss, sps, q):
-        self.writer.add_scalar("train/loss_td", loss, global_step)
-        self.writer.add_scalar("train/q_value_mean", q, global_step)
-        self.writer.add_scalar("train/steps_per_second", sps, global_step)
+        self.writer.add_scalar("losses/td_loss", loss, global_step)
+        self.writer.add_scalar("losses/q_values", q, global_step)
+        self.writer.add_scalar("stats/SPS", sps, global_step)
 
-    def log_episode(self, infos, global_step=None):
-        # Support dicts or dict-of-lists
+    def log_episode(self, infos, iteration=None):
         try:
             num_ep = infos["termination"]["episode"][0]
             ret = infos["termination"]["return"][0]
@@ -59,28 +58,34 @@ class DRLogger:
             length = infos["episode"]["l"]
             mean_reward = infos["termination"]["mean_reward"]
 
-        elapsed = time.time() - self._start_time
+        # TensorBoard logging
+        self.writer.add_scalar("stats/episodic_return", reward, num_ep)
+        self.writer.add_scalar("stats/episodic_length", length, num_ep)
+        self.writer.add_scalar("stats/mean_reward", mean_reward, num_ep)
+        self.writer.add_scalar("stats/collision_rate", collision_rate, num_ep)
+        self.writer.add_scalar("stats/success_rate", success_rate, num_ep)
 
-        # --- Console/File Logging ---
-        self._logger.info(
-            f"Ep {num_ep:04d} | Ret: {ret:.2f} | Len: {length} | "
-            f"MeanR: {mean_reward:.2f} | Succ: {success_rate:.2f} | Coll: {collision_rate:.2f} | "
-            f"Cause: {cause} | Step: {global_step}"
-        )
+        # --- Console output ---
+        if iteration is not None:
+            console.print(f"[cyan]Iter {iteration}[/cyan] | Ep {num_ep} → "
+                          f"Return: [green]{ret:.2f}[/green] | Cause: {cause} | Len: {length}")
+        else:
+            console.print(f"Ep {num_ep} → Return: [green]{ret:.2f}[/green] | Cause: {cause} | Len: {length}")
 
-        # --- TensorBoard ---
-        self.writer.add_scalar("eval/episodic_return", reward, num_ep)
-        self.writer.add_scalar("eval/episodic_length", length, num_ep)
-        self.writer.add_scalar("eval/mean_reward", mean_reward, num_ep)
-        self.writer.add_scalar("safety/collision_rate", collision_rate, num_ep)
-        self.writer.add_scalar("safety/success_rate", success_rate, num_ep)
-        self.writer.add_scalar("time/elapsed_sec", elapsed, num_ep)
+        # Print aggregate stats every n episodes
+        if num_ep % 10  == 0:
+            table = Table(title=f"Episode Stats (up to Ep {num_ep})", show_header=True, header_style="bold magenta")
+            table.add_column("Mean Reward", justify="right")
+            table.add_column("Success Rate", justify="right")
+            table.add_column("Collision Rate", justify="right")
 
-        if global_step is not None:
-            self.writer.add_scalar("train/episodic_return", reward, global_step)
-
-        # Flush periodically
-        if num_ep % 20 == 0:
-            self.writer.flush()
-
+            table.add_row(
+                f"{mean_reward:.2f}",
+                f"{success_rate:.2%}",
+                f"{collision_rate:.2%}",
+            )
+            console.print(table)
         return num_ep
+
+    def msg(self, text):
+        self._logger.info(text)

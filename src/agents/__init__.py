@@ -25,7 +25,7 @@ def build_agent(args, envs, device):
         )
         return q_network, optimizer, target_network, rb
 
-    elif "cnn-ppo" in args.exp_name:
+    elif "debug" in args.exp_name or "cnn-ppo" in args.exp_name:
         agent = ConvolutionalPPO(envs).to(device)
         optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
         return agent, optimizer

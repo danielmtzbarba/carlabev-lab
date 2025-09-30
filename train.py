@@ -18,7 +18,9 @@ EXPERIMENT = "cnn-ppo-discrete"
 def main():
     args, logger = get_experiment(EXPERIMENT)
     envs = make_env(args)
+    logger.msg(f"Environments - {args.env_id}:{args.num_envs} built.")
     trainer = build_trainer(EXPERIMENT)
+    logger.msg("Trainer built")
     trainer(args, envs, logger, device)
 
 

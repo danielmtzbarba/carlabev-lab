@@ -10,7 +10,7 @@ class ArgsCarlaBEV:
     track: bool = False
     wandb_project_name: str = "cleanRL"
     wandb_entity: str = None
-    capture_video: bool = False   # disable in training, enable only for eval
+    capture_video: bool = True# disable in training, enable only for eval
     save_model: bool = True
 
     # Environment
