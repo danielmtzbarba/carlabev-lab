@@ -1,11 +1,11 @@
 import os
-from torch.utils.tensorboard import SummaryWriter
-
 import sys
 import logging
+from torch.utils.tensorboard import SummaryWriter
+import time
 
-file_handler = logging.FileHandler(filename="drlog.log")  # , mode="w")
-stdout_handler = logging.StreamHandler(stream=sys.stdout)
+file_handler = logging.FileHandler("drlog.log")
+stdout_handler = logging.StreamHandler(sys.stdout)
 handlers = [file_handler, stdout_handler]
 
 logging.basicConfig(
@@ -20,22 +20,26 @@ logger = logging.getLogger("drlab")
 
 class DRLogger:
     def __init__(self, config):
-        # Create tensorboard summary
-        self.writer = SummaryWriter(f"runs/{config.exp_name}")
+        run_dir = f"runs/{config.exp_name}"
+        self.writer = SummaryWriter(run_dir)
+        self._logger = logger
+        self._config = config
+        self._start_time = time.time()
+
+        # Log hyperparameters
         self.writer.add_text(
             "hyperparameters",
             "|param|value|\n|-|-|\n%s"
             % ("\n".join([f"|{key}|{value}|" for key, value in vars(config).items()])),
         )
-        self._logger = logger
-        self._config = config
 
     def log_loss(self, global_step, loss, sps, q):
-        self.writer.add_scalar("losses/td_loss", loss, global_step)
-        self.writer.add_scalar("losses/q_values", q, global_step)
-        self.writer.add_scalar("stats/SPS", sps, global_step)
+        self.writer.add_scalar("train/loss_td", loss, global_step)
+        self.writer.add_scalar("train/q_value_mean", q, global_step)
+        self.writer.add_scalar("train/steps_per_second", sps, global_step)
 
-    def log_episode(self, infos):
+    def log_episode(self, infos, global_step=None):
+        # Support dicts or dict-of-lists
         try:
             num_ep = infos["termination"]["episode"][0]
             ret = infos["termination"]["return"][0]
@@ -45,8 +49,7 @@ class DRLogger:
             reward = infos["episode"]["r"][0]
             length = infos["episode"]["l"][0]
             mean_reward = infos["termination"]["mean_reward"][0]
-
-        except Exception as e:
+        except Exception:
             num_ep = infos["termination"]["episode"]
             ret = infos["termination"]["return"]
             cause = infos["termination"]["termination"]
@@ -56,13 +59,28 @@ class DRLogger:
             length = infos["episode"]["l"]
             mean_reward = infos["termination"]["mean_reward"]
 
-        #
-        logger.info(f"episode-{num_ep}: {ret}-{cause}")
-        #
-        self.writer.add_scalar("stats/episodic_return", reward, num_ep)
-        self.writer.add_scalar("stats/episodic_length", length, num_ep)
-        self.writer.add_scalar("stats/mean_reward", mean_reward, num_ep)
-        self.writer.add_scalar("stats/collision_rate", collision_rate, num_ep)
-        self.writer.add_scalar("stats/success_rate", success_rate, num_ep)
+        elapsed = time.time() - self._start_time
+
+        # --- Console/File Logging ---
+        self._logger.info(
+            f"Ep {num_ep:04d} | Ret: {ret:.2f} | Len: {length} | "
+            f"MeanR: {mean_reward:.2f} | Succ: {success_rate:.2f} | Coll: {collision_rate:.2f} | "
+            f"Cause: {cause} | Step: {global_step}"
+        )
+
+        # --- TensorBoard ---
+        self.writer.add_scalar("eval/episodic_return", reward, num_ep)
+        self.writer.add_scalar("eval/episodic_length", length, num_ep)
+        self.writer.add_scalar("eval/mean_reward", mean_reward, num_ep)
+        self.writer.add_scalar("safety/collision_rate", collision_rate, num_ep)
+        self.writer.add_scalar("safety/success_rate", success_rate, num_ep)
+        self.writer.add_scalar("time/elapsed_sec", elapsed, num_ep)
+
+        if global_step is not None:
+            self.writer.add_scalar("train/episodic_return", reward, global_step)
+
+        # Flush periodically
+        if num_ep % 20 == 0:
+            self.writer.flush()
 
         return num_ep
