@@ -22,10 +22,10 @@ class ArgsCarlaBEV:
     total_timesteps: int = 20_000_000
     learning_rate: float = 3e-4      # slightly higher, tune if unstable
     num_envs: int = 12               # match CPUs available
-    num_steps: int = 256             # rollout length per env → buffer size = 3072
+    num_steps: int = 128             # rollout length per env → buffer size = 3072
     anneal_lr: bool = True
     gamma: float = 0.99
-    gae_lambda: float = 0.95
+    gae_lambda: float = 0.92
     num_minibatches: int = 12        # equal to num_envs (1 minibatch per env)
     update_epochs: int = 4
     norm_adv: bool = True

@@ -13,6 +13,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 EXPERIMENT = "cnn-ppo-discrete"
+EXPERIMENT = "muzero-carlabev"
 
 
 def main():

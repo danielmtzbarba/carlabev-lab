@@ -6,8 +6,6 @@ from .dqn import QNetwork
 from .cnn_ppo import ConvolutionalPPO 
 from .ppo_vector import VectorPPO 
 from .sac import SoftQNetwork, Actor
-from .muzero import MuZeroAgent
-
 
 def build_agent(args, envs, device):
     if "dqn" in args.exp_name:
@@ -63,8 +61,6 @@ def build_agent(args, envs, device):
         return actor, qf1, qf2, qf1_target, qf2_target, q_optimizer, actor_optimizer, rb
 
     elif "muzero" in args.exp_name:
-        agent = MuZeroAgent(envs).to(device)
-        optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
-        return agent, optimizer
+        return None
     else:
         exit()

@@ -11,7 +11,7 @@ def build_trainer(experiment):
         return train_ppo
     elif "SAC" in experiment:
         return train_sac
-    elif "MuZero" in experiment:
+    elif "muzero" in experiment:
         return train_muzero
     elif "debug" in experiment:
         return train_ppo
