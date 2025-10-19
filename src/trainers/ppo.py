@@ -7,6 +7,7 @@ from torch import nn
 
 from src.agents import build_agent
 
+
 class RewardNormalizer:
     def __init__(self, clip_range=(-1, 1), decay=0.99):
         self.mean = 0.0
@@ -26,6 +27,7 @@ class RewardNormalizer:
         normalized = (reward - self.mean) / std
         return np.clip(normalized, *self.clip_range)
 
+
 def train_ppo(args, envs, logger, device):
     args.batch_size = int(args.num_envs * args.num_steps)
     args.minibatch_size = int(args.batch_size // args.num_minibatches)
@@ -33,12 +35,28 @@ def train_ppo(args, envs, logger, device):
 
     agent, optimizer = build_agent(args, envs, device)
     # Storage
-    obs = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape, dtype=torch.float32, device=device)
-    actions = torch.zeros((args.num_steps, args.num_envs) + envs.single_action_space.shape, dtype=torch.float32, device=device)
-    logprobs = torch.zeros((args.num_steps, args.num_envs), dtype=torch.float32, device=device)
-    rewards = torch.zeros((args.num_steps, args.num_envs), dtype=torch.float32, device=device)
-    dones = torch.zeros((args.num_steps, args.num_envs), dtype=torch.float32, device=device)
-    values = torch.zeros((args.num_steps, args.num_envs), dtype=torch.float32, device=device)
+    obs = torch.zeros(
+        (args.num_steps, args.num_envs) + envs.single_observation_space.shape,
+        dtype=torch.float32,
+        device=device,
+    )
+    actions = torch.zeros(
+        (args.num_steps, args.num_envs) + envs.single_action_space.shape,
+        dtype=torch.float32,
+        device=device,
+    )
+    logprobs = torch.zeros(
+        (args.num_steps, args.num_envs), dtype=torch.float32, device=device
+    )
+    rewards = torch.zeros(
+        (args.num_steps, args.num_envs), dtype=torch.float32, device=device
+    )
+    dones = torch.zeros(
+        (args.num_steps, args.num_envs), dtype=torch.float32, device=device
+    )
+    values = torch.zeros(
+        (args.num_steps, args.num_envs), dtype=torch.float32, device=device
+    )
 
     global_step = 0
     start_time = time.time()
@@ -74,18 +92,25 @@ def train_ppo(args, envs, logger, device):
 
             # Step envs
             action_cpu = action.cpu().numpy()
-            next_obs_np, reward_np, terminations, truncations, infos = envs.step(action_cpu)
+            next_obs_np, reward_np, terminations, truncations, infos = envs.step(
+                action_cpu
+            )
 
             # Apply reward normalization
             norm_rewards = np.array([normalizer.normalize(r) for r in reward_np])
-            rewards_tensor = torch.tensor(norm_rewards, dtype=torch.float32, device=device)
+            rewards_tensor = torch.tensor(
+                norm_rewards, dtype=torch.float32, device=device
+            )
 
             # Store normalized rewards
             rewards[step].copy_(rewards_tensor)
 
             # Store next observations and done flags
             next_obs = torch.as_tensor(next_obs_np, dtype=torch.float32, device=device)
-            next_done = torch.as_tensor(np.logical_or(terminations, truncations).astype(np.float32), device=device)
+            next_done = torch.as_tensor(
+                np.logical_or(terminations, truncations).astype(np.float32),
+                device=device,
+            )
 
             # Episode logging for every finished env
             if "termination" in infos.keys():
@@ -95,11 +120,10 @@ def train_ppo(args, envs, logger, device):
                         info = {
                             "length": infos["termination"]["length"][i],
                             "return": infos["termination"]["return"][i],
-                            "cause": causes[i]
+                            "cause": causes[i],
                         }
                         # Only pass the finished episode to the logger
                         logger.log_episode(info)
-
 
         # --- bootstrap and GAE (ensure 1D shapes everywhere) ---
         with torch.no_grad():
@@ -117,7 +141,9 @@ def train_ppo(args, envs, logger, device):
                 nextvalues = values[t + 1]
             # delta is 1D: shape (num_envs,)
             delta = rewards[t] + args.gamma * nextvalues * nextnonterminal - values[t]
-            lastgaelam = delta + args.gamma * args.gae_lambda * nextnonterminal * lastgaelam
+            lastgaelam = (
+                delta + args.gamma * args.gae_lambda * nextnonterminal * lastgaelam
+            )
             advantages[t] = lastgaelam
 
         returns = advantages + values
@@ -129,6 +155,9 @@ def train_ppo(args, envs, logger, device):
         b_advantages = advantages.reshape(-1).to(device)
         b_returns = returns.reshape(-1).to(device)
         b_values = values.reshape(-1).to(device)
+
+        # ✅ Normalize returns (helps stabilize value function training)
+        b_returns = (b_returns - b_returns.mean()) / (b_returns.std() + 1e-8)
 
         # Optimize
         b_inds = np.arange(args.batch_size)
@@ -142,15 +171,18 @@ def train_ppo(args, envs, logger, device):
 
                 mb_obs = b_obs[mb_inds]
                 mb_actions = b_actions[mb_inds]
-                _, newlogprob, entropy, newvalue = agent.get_action_and_value(mb_obs, mb_actions.long())
+                _, newlogprob, entropy, newvalue = agent.get_action_and_value(
+                    mb_obs, mb_actions.long()
+                )
 
                 logratio = newlogprob - b_logprobs[mb_inds]
                 ratio = logratio.exp()
 
                 with torch.no_grad():
-                    old_approx_kl = (-logratio).mean().item()
                     approx_kl = ((ratio - 1) - logratio).mean().item()
-                    clipfracs.append(((ratio - 1.0).abs() > args.clip_coef).float().mean().item())
+                    clipfracs.append(
+                        ((ratio - 1.0).abs() > args.clip_coef).float().mean().item()
+                    )
 
                 mb_adv = b_advantages[mb_inds]
                 if args.norm_adv:
@@ -158,14 +190,18 @@ def train_ppo(args, envs, logger, device):
 
                 # policy loss
                 pg_loss1 = -mb_adv * ratio
-                pg_loss2 = -mb_adv * torch.clamp(ratio, 1 - args.clip_coef, 1 + args.clip_coef)
+                pg_loss2 = -mb_adv * torch.clamp(
+                    ratio, 1 - args.clip_coef, 1 + args.clip_coef
+                )
                 pg_loss = torch.max(pg_loss1, pg_loss2).mean()
 
                 # value loss
                 newvalue = newvalue.view(-1)
                 if args.clip_vloss:
                     v_loss_unclipped = (newvalue - b_returns[mb_inds]) ** 2
-                    v_clipped = b_values[mb_inds] + torch.clamp(newvalue - b_values[mb_inds], -args.clip_coef, args.clip_coef)
+                    v_clipped = b_values[mb_inds] + torch.clamp(
+                        newvalue - b_values[mb_inds], -args.clip_coef, args.clip_coef
+                    )
                     v_loss_clipped = (v_clipped - b_returns[mb_inds]) ** 2
                     v_loss = 0.5 * torch.max(v_loss_unclipped, v_loss_clipped).mean()
                 else:
@@ -196,14 +232,15 @@ def train_ppo(args, envs, logger, device):
                 v_loss=v_loss.item(),
                 entropy=entropy_loss.item(),
                 approx_kl=approx_kl if approx_kl is not None else None,
-                clip_frac=clip_frac_mean
+                clip_frac=clip_frac_mean,
             )
-        
+
         # Save last model every iteration
         if iteration % 100 == 0:
-            torch.save(agent.state_dict(), os.path.join(f"runs/{args.exp}", "ppo_last.pt"))
+            torch.save(
+                agent.state_dict(), os.path.join(f"runs/{args.exp_name}", "ppo_last.pt")
+            )
             logger.msg(f"🌟 Model saved at {iteration} iteration!")
 
     envs.close()
     logger.writer.close()
-
