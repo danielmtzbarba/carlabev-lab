@@ -7,6 +7,7 @@ import torch
 
 from src.utils.logger import DRLogger
 
+
 def save_run_config_yaml(run_name, config):
     """
     Saves a dictionary of hyperparameters to runs/<run_name>/params.yaml
@@ -24,14 +25,15 @@ def save_run_config_yaml(run_name, config):
 
     print(f"✅ Hyperparameters saved to {config_path}")
 
+
 def get_experiment(experiment):
     if "DQN" in experiment:
         from .dqn_carlabev import ArgsCarlaBEV
     elif "vector-ppo-discrete" in experiment:
         from .vector_ppo_discrete_carlabev import ArgsCarlaBEV
     elif "cnn-ppo-discrete" in experiment:
-        from .cnn_ppo_discrete_carlabev import ArgsCarlaBEV
-       # from .carlabev_hpc import ArgsCarlaBEV
+        # from .cnn_ppo_discrete_carlabev import ArgsCarlaBEV
+        from .carlabev_hpc import ArgsCarlaBEV
     elif "SAC" in experiment:
         from .sac_carlabev import ArgsCarlaBEV
     elif "muzero" in experiment:
