@@ -105,25 +105,8 @@ def train_ppo(args, envs, logger, device):
             # Store normalized rewards
             rewards[step].copy_(rewards_tensor)
 
-            # Store next observations and done flags
-            next_obs = torch.as_tensor(next_obs_np, dtype=torch.float32, device=device)
-            next_done = torch.as_tensor(
-                np.logical_or(terminations, truncations).astype(np.float32),
-                device=device,
-            )
-
-            # Reset finished envs to avoid stale observations
-            if np.any(next_done):
-                try:
-                    # VecEnv-style API (preferred)
-                    reset_obs, _ = envs.reset_done()
-                    next_obs_np[next_done] = reset_obs[next_done]
-                except AttributeError:
-                    # Fallback for manual env list
-                    for i, done in enumerate(next_done):
-                        if done:
-                            obs_i, _ = envs.envs[i].reset()
-                            next_obs_np[i] = obs_i
+            # Compute done flags
+            dones_np = np.logical_or(terminations, truncations)
 
             # Episode logging for every finished env
             if "termination" in infos.keys():
@@ -137,6 +120,23 @@ def train_ppo(args, envs, logger, device):
                         }
                         # Only pass the finished episode to the logger
                         logger.log_episode(info)
+                        # === Reset the finished env ===
+                        try:
+                            obs_i = envs.envs[
+                                i
+                            ].reset()  # works for SyncVectorEnv / SubprocVectorEnv
+                            if isinstance(
+                                obs_i, tuple
+                            ):  # Gymnasium returns (obs, info)
+                                obs_i = obs_i[0]
+                            next_obs_np[i] = obs_i
+                            dones_np[i] = False  # clear done flag
+                        except Exception as e:
+                            print(f"[WARN] Could not reset env {i}: {e}")
+
+            # === Convert to tensors for buffer storage ===
+            next_obs = torch.as_tensor(next_obs_np, dtype=torch.float32, device=device)
+            next_done = torch.as_tensor(dones_np.astype(np.float32), device=device)
 
         # --- bootstrap and GAE (ensure 1D shapes everywhere) ---
         with torch.no_grad():
