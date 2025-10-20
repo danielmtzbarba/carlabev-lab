@@ -112,6 +112,19 @@ def train_ppo(args, envs, logger, device):
                 device=device,
             )
 
+            # Reset finished envs to avoid stale observations
+            if np.any(next_done):
+                try:
+                    # VecEnv-style API (preferred)
+                    reset_obs, _ = envs.reset_done()
+                    next_obs_np[next_done] = reset_obs[next_done]
+                except AttributeError:
+                    # Fallback for manual env list
+                    for i, done in enumerate(next_done):
+                        if done:
+                            obs_i, _ = envs.envs[i].reset()
+                            next_obs_np[i] = obs_i
+
             # Episode logging for every finished env
             if "termination" in infos.keys():
                 causes = infos["termination"]["termination"]
