@@ -28,6 +28,18 @@ class RewardNormalizer:
         return np.clip(normalized, *self.clip_range)
 
 
+def decay_schedule(start, end, progress, mode="linear"):
+    """Compute decayed value given progress in [0,1]."""
+    if mode == "linear":
+        return start + (end - start) * progress
+    elif mode == "cosine":
+        return end + (start - end) * (0.5 * (1 + np.cos(np.pi * progress)))
+    elif mode == "exp":
+        return end + (start - end) * np.exp(-5 * progress)
+    else:
+        return start
+
+
 def train_ppo(args, envs, logger, device):
     args.batch_size = int(args.num_envs * args.num_steps)
     args.minibatch_size = int(args.batch_size // args.num_minibatches)
@@ -74,6 +86,21 @@ def train_ppo(args, envs, logger, device):
             frac = 1.0 - (iteration - 1.0) / args.num_iterations
             lrnow = frac * args.learning_rate
             optimizer.param_groups[0]["lr"] = lrnow
+
+        # --- Adaptive coefficient decays ---
+        progress = (iteration - 1) / args.num_iterations
+        args.ent_coef = decay_schedule(
+            args.ent_coef_start, args.ent_coef_end, progress, args.decay_schedule
+        )
+        args.vf_coef = decay_schedule(
+            args.vf_coef_start, args.vf_coef_end, progress, args.decay_schedule
+        )
+        args.clip_coef = decay_schedule(
+            args.clip_coef_start, args.clip_coef_end, progress, args.decay_schedule
+        )
+        if iteration % (args.num_iterations // 6) == 0:
+            args.ent_coef *= 1.2  # small entropy boost
+            args.ent_coef = min(args.ent_coef, args.ent_coef_start)
 
         for step in range(args.num_steps):
             global_step += args.num_envs
@@ -246,6 +273,12 @@ def train_ppo(args, envs, logger, device):
                 entropy=entropy_loss.item(),
                 approx_kl=approx_kl if approx_kl is not None else None,
                 clip_frac=clip_frac_mean,
+            )
+            logger.writer.add_scalar("schedules/ent_coef", args.ent_coef, global_step)
+            logger.writer.add_scalar("schedules/vf_coef", args.vf_coef, global_step)
+            logger.writer.add_scalar("schedules/clip_coef", args.clip_coef, global_step)
+            logger.writer.add_scalar(
+                "schedules/lr", optimizer.param_groups[0]["lr"], global_step
             )
 
         # Save last model every iteration
