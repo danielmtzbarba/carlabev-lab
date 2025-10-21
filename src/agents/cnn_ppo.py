@@ -30,10 +30,19 @@ class ConvolutionalPPO(nn.Module):
     def get_value(self, x):
         return self.critic(self.network(x / 255.0))
 
-    def get_action_and_value(self, x, action=None):
+    def get_action_and_value(self, x, action=None, deterministic=False):
         hidden = self.network(x / 255.0)
         logits = self.actor(hidden)
         probs = Categorical(logits=logits)
+
         if action is None:
-            action = probs.sample()
-        return action, probs.log_prob(action), probs.entropy(), self.critic(hidden)
+            if deterministic:
+                action = torch.argmax(probs.probs, dim=-1)
+            else:
+                action = probs.sample()
+
+        logprob = probs.log_prob(action)
+        entropy = probs.entropy()
+        value = self.critic(hidden)
+
+        return action, logprob, entropy, value
