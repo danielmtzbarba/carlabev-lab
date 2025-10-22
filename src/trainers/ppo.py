@@ -6,6 +6,7 @@ import numpy as np
 from torch import nn
 
 from src.agents import build_agent
+from src.eval.eval_ppo import evaluate_ppo
 
 
 class RewardNormalizer:
@@ -283,10 +284,18 @@ def train_ppo(args, envs, logger, device):
 
         # Save last model every iteration
         if iteration % 100 == 0:
-            torch.save(
-                agent.state_dict(), os.path.join(f"runs/{args.exp_name}", "ppo_last.pt")
-            )
+            model_path = os.path.join(f"runs/{args.exp_name}", "ppo_last.pt")
+
+            torch.save(agent.state_dict(), model_path)
             logger.msg(f"🌟 Model saved at {iteration} iteration!")
+            eval_results = evaluate_ppo(
+                args=args,
+                model_path=model_path,
+                num_episodes=10,
+                render=True,  # turn True for visualization
+                device="cuda",
+            )
+            logger.log_evaluation(eval_results, global_step)
 
     envs.close()
     logger.writer.close()

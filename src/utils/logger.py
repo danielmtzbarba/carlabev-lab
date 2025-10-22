@@ -20,6 +20,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("drlab")
 
+
 class DRLogger(object):
     """
     Logger for RL training.
@@ -27,6 +28,7 @@ class DRLogger(object):
     Tracks global episode counter, handles success/collision/unfinished based on cause.
     Supports TensorBoard, Rich console, and arbitrary learning variable logging.
     """
+
     def __init__(self, config, stats_interval=100):
         self.writer = SummaryWriter(f"runs/{config.exp_name}")
         self._console = Console()
@@ -46,7 +48,8 @@ class DRLogger(object):
         # Log hyperparameters
         self.writer.add_text(
             "hyperparameters",
-            "|param|value|\n|-|-|\n%s" % ("\n".join([f"|{k}|{v}|" for k, v in vars(config).items()])),
+            "|param|value|\n|-|-|\n%s"
+            % ("\n".join([f"|{k}|{v}|" for k, v in vars(config).items()])),
         )
 
     def log_episode(self, infos):
@@ -89,16 +92,16 @@ class DRLogger(object):
 
         # Aggregate table every stats_interval episodes
         if self.global_episode % self._stats_interval == 0:
-            mean_ret = np.mean(self.episode_returns[-self._stats_interval:])
-            mean_len = np.mean(self.episode_lengths[-self._stats_interval:])
-            mean_succ = np.mean(self.episode_successes[-self._stats_interval:])
-            mean_col = np.mean(self.episode_collisions[-self._stats_interval:])
-            mean_unfin = np.mean(self.episode_unfinished[-self._stats_interval:])
+            mean_ret = np.mean(self.episode_returns[-self._stats_interval :])
+            mean_len = np.mean(self.episode_lengths[-self._stats_interval :])
+            mean_succ = np.mean(self.episode_successes[-self._stats_interval :])
+            mean_col = np.mean(self.episode_collisions[-self._stats_interval :])
+            mean_unfin = np.mean(self.episode_unfinished[-self._stats_interval :])
 
             table = Table(
                 title=f"Episode Stats (last {self._stats_interval} eps)",
                 show_header=True,
-                header_style="bold magenta"
+                header_style="bold magenta",
             )
             table.add_column("Mean Return", justify="right")
             table.add_column("Mean Length", justify="right")
@@ -106,14 +109,25 @@ class DRLogger(object):
             table.add_column("Collision Rate", justify="right")
             table.add_column("Unfinished Rate", justify="right")
             table.add_row(
-                f"{mean_ret:.2f}", f"{mean_len:.1f}",
-                f"{mean_succ:.2%}", f"{mean_col:.2%}", f"{mean_unfin:.2%}"
+                f"{mean_ret:.2f}",
+                f"{mean_len:.1f}",
+                f"{mean_succ:.2%}",
+                f"{mean_col:.2%}",
+                f"{mean_unfin:.2%}",
             )
             self._console.print(table)
 
         return self.global_episode
 
-    def log_learning(self, global_step, pg_loss=None, v_loss=None, entropy=None, approx_kl=None, clip_frac=None):
+    def log_learning(
+        self,
+        global_step,
+        pg_loss=None,
+        v_loss=None,
+        entropy=None,
+        approx_kl=None,
+        clip_frac=None,
+    ):
         """Log learning-related variables to TensorBoard."""
         if pg_loss is not None:
             self.writer.add_scalar("losses/policy_loss", pg_loss, global_step)
@@ -125,6 +139,61 @@ class DRLogger(object):
             self.writer.add_scalar("stats/approx_kl", approx_kl, global_step)
         if clip_frac is not None:
             self.writer.add_scalar("stats/clip_fraction", clip_frac, global_step)
+
+    # === Add this method inside DRLogger ===
+    def log_evaluation(self, results_dict: dict, global_step: int = None):
+        """
+        Logs evaluation results from evaluate_ppo() to TensorBoard and console.
+
+        Parameters
+        ----------
+        results_dict : dict
+            Dictionary containing evaluation statistics.
+            Example: {
+                "mean_return": 150.2,
+                "success_rate": 0.82,
+                "collision_rate": 0.05,
+                "avg_length": 423,
+                "avg_speed": 2.8,
+            }
+        global_step : int, optional
+            Global training step to align logs in TensorBoard.
+        """
+        # Log to TensorBoard
+        for key, value in results_dict.items():
+            try:
+                self.writer.add_scalar(f"eval/{key}", value, global_step)
+            except Exception as e:
+                self._logger.warning(f"⚠️ Could not log {key}: {e}")
+
+        # Rich console table
+        from rich.table import Table
+
+        table = Table(
+            title=f"Evaluation Results @ step {global_step or '-'}",
+            show_header=True,
+            header_style="bold cyan",
+        )
+        table.add_column("Metric", justify="right")
+        table.add_column("Value", justify="center")
+
+        for key, value in results_dict.items():
+            if isinstance(value, float):
+                value_str = f"{value:.3f}"
+            else:
+                value_str = str(value)
+            table.add_row(key, value_str)
+
+        self.console.print(table)
+
+        # Also log a simple summary line to file
+        msg = " | ".join(
+            [
+                f"{k}: {v:.3f}" if isinstance(v, float) else f"{k}: {v}"
+                for k, v in results_dict.items()
+            ]
+        )
+        self._logger.info(f"[EVAL] {msg}")
 
     def msg(self, text):
         self._logger.info(text)

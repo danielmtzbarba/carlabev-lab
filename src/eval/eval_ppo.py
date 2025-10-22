@@ -20,15 +20,13 @@ def evaluate_ppo(args, model_path, num_episodes=20, render=False, device="cuda")
         render: Whether to render environment visually
         device: "cuda" or "cpu"
     """
-    exp_name = args.exp_name 
+    exp_name = args.exp_name
     console = Console()
 
     # --- Setup environment ---
-    console.print(f"[green]Initializing evaluation environment...[/green]")
     eval_env = make_eval_env(exp_name, render=render)
 
     # --- Load model ---
-    console.print(f"[cyan]Loading model from[/cyan] [bold]{model_path}[/bold]")
     agent, _ = build_agent(args, eval_env, device)
     agent.load_state_dict(torch.load(model_path, map_location=device))
     agent.eval()
@@ -46,7 +44,9 @@ def evaluate_ppo(args, model_path, num_episodes=20, render=False, device="cuda")
             with torch.no_grad():
                 action, _, _, _ = agent.get_action_and_value(obs)
 
-            obs, reward, terminated, truncated, info = eval_env.step(action.cpu().numpy())
+            obs, reward, terminated, truncated, info = eval_env.step(
+                action.cpu().numpy()
+            )
             done = terminated or truncated
             total_reward += reward
             steps += 1
@@ -82,7 +82,11 @@ def evaluate_ppo(args, model_path, num_episodes=20, render=False, device="cuda")
     unfinished_rate = unfinished_count / num_episodes
 
     # --- Rich summary ---
-    table = Table(title=f"Evaluation Results ({num_episodes} episodes)", show_header=True, header_style="bold magenta")
+    table = Table(
+        title=f"Evaluation Results ({num_episodes} episodes)",
+        show_header=True,
+        header_style="bold magenta",
+    )
     table.add_column("Metric", justify="left", style="bold")
     table.add_column("Value", justify="right")
 
@@ -91,7 +95,7 @@ def evaluate_ppo(args, model_path, num_episodes=20, render=False, device="cuda")
     table.add_row("Success Rate", f"{success_rate*100:.1f}%")
     table.add_row("Collision Rate", f"{collision_rate*100:.1f}%")
     table.add_row("Unfinished Rate", f"{unfinished_rate*100:.1f}%")
-    console.print(table)
+    # console.print(table)
 
     # --- Save results ---
     results = {
