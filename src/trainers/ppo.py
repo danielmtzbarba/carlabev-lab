@@ -285,7 +285,6 @@ def train_ppo(args, envs, logger, device):
         # Save last model every iteration
         if iteration % 100 == 0:
             model_path = os.path.join(f"runs/{args.exp_name}", "ppo_last.pt")
-
             torch.save(agent.state_dict(), model_path)
             logger.msg(f"🌟 Model saved at {iteration} iteration!")
             eval_results = evaluate_ppo(
