@@ -22,8 +22,8 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-#CarlaBEV = {path = "/Users/danielmtz/Data/projects/driverless/carlabev-env", editable= true}
-CarlaBEV = {path = "/home/danielmtz/Data/projects/carlabev", editable= true}
+CarlaBEV = {path = "/Users/danielmtz/Data/projects/driverless/carlabev-env", editable= true}
+#CarlaBEV = {path = "/home/danielmtz/Data/projects/carlabev", editable= true}
 
 #HPC
 #CarlaBEV = {path = "/data/horse/ws/dama898h-danielmtz/carlabev", editable= true}

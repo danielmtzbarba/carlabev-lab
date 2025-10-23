@@ -184,7 +184,7 @@ class DRLogger(object):
                 value_str = str(value)
             table.add_row(key, value_str)
 
-        self.console.print(table)
+        self._console.print(table)
 
         # Also log a simple summary line to file
         msg = " | ".join(

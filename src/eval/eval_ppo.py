@@ -105,12 +105,12 @@ def evaluate_ppo(args, model_path, num_episodes=20, render=False, device="cuda")
         "success_rate": success_rate,
         "collision_rate": collision_rate,
         "unfinished_rate": unfinished_rate,
-        "returns": all_returns,
-        "lengths": all_lengths,
-        "causes": causes,
+        # "returns": all_returns,
+        # "lengths": all_lengths,
+        # "causes": causes,
     }
 
-    save_path = os.path.join("runs", exp_name, "eval_results.npy")
+    save_path = os.path.join("runs", exp_name, "eval-results-last.npy")
     np.save(save_path, results)
     console.print(f"[green]✅ Saved evaluation results to:[/green] {save_path}")
 
