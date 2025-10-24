@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 @dataclass
 class ArgsCarlaBEV:
-    exp_name: str = "cnn-ppo-discrete-carlabev-12env-"
+    exp_name: str = "cnn-ppo-discrete-carlabev-12env-traffic-curriculum"
     seed: int = 1
     size: int = 128
     torch_deterministic: bool = True
@@ -17,9 +17,9 @@ class ArgsCarlaBEV:
     obs_space: str = "bev"
 
     # PPO core
-    total_timesteps: int = 10_000_000
+    total_timesteps: int = 30_000_000
     learning_rate: float = 3e-4  # slightly higher, tune if unstable
-    num_envs: int = 14  # match CPUs available
+    num_envs: int = 12  # match CPUs available
     num_steps: int = 1024  # rollout length per env → buffer size = 3072
     anneal_lr: bool = True
     gamma: float = 0.995
