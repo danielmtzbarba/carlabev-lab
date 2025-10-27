@@ -10,7 +10,7 @@ from src.agents import build_agent
 from src.envs import make_eval_env
 
 
-def evaluate_ppo(args, model_path, num_episodes=20, render=False, device="cuda"):
+def evaluate_ppo(cfg, model_path, num_episodes=20, render=False, device="cuda"):
     """
     Evaluate a trained PPO model and report statistics.
 
@@ -20,14 +20,14 @@ def evaluate_ppo(args, model_path, num_episodes=20, render=False, device="cuda")
         render: Whether to render environment visually
         device: "cuda" or "cpu"
     """
-    exp_name = args.exp_name
+    exp_name = cfg.exp_name
     console = Console()
 
     # --- Setup environment ---
     eval_env = make_eval_env(exp_name, render=render)
 
     # --- Load model ---
-    agent, _ = build_agent(args, eval_env, device)
+    agent, _ = build_agent(cfg, eval_env, device)
     agent.load_state_dict(torch.load(model_path, map_location=device))
     agent.eval()
 

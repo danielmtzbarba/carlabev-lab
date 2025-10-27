@@ -41,70 +41,73 @@ def decay_schedule(start, end, progress, mode="linear"):
         return start
 
 
-def train_ppo(args, envs, logger, device):
-    args.batch_size = int(args.num_envs * args.num_steps)
-    args.minibatch_size = int(args.batch_size // args.num_minibatches)
-    args.num_iterations = args.total_timesteps // args.batch_size
+def train_ppo(cfg, envs, logger, device):
+    num_envs = cfg.num_envs
+    ppo_cfg = cfg.ppo
 
-    agent, optimizer = build_agent(args, envs, device)
+    ppo_cfg.batch_size = int(num_envs * ppo_cfg.num_steps)
+    ppo_cfg.minibatch_size = int(ppo_cfg.batch_size // ppo_cfg.num_minibatches)
+    ppo_cfg.num_iterations = ppo_cfg.total_timesteps // ppo_cfg.batch_size
+
+    agent, optimizer = build_agent(cfg, envs, device)
     # Storage
     obs = torch.zeros(
-        (args.num_steps, args.num_envs) + envs.single_observation_space.shape,
+        (ppo_cfg.num_steps, num_envs) + envs.single_observation_space.shape,
         dtype=torch.float32,
         device=device,
     )
     actions = torch.zeros(
-        (args.num_steps, args.num_envs) + envs.single_action_space.shape,
+        (ppo_cfg.num_steps, num_envs) + envs.single_action_space.shape,
         dtype=torch.float32,
         device=device,
     )
     logprobs = torch.zeros(
-        (args.num_steps, args.num_envs), dtype=torch.float32, device=device
+        (ppo_cfg.num_steps, num_envs), dtype=torch.float32, device=device
     )
     rewards = torch.zeros(
-        (args.num_steps, args.num_envs), dtype=torch.float32, device=device
+        (ppo_cfg.num_steps, num_envs), dtype=torch.float32, device=device
     )
     dones = torch.zeros(
-        (args.num_steps, args.num_envs), dtype=torch.float32, device=device
+        (ppo_cfg.num_steps, num_envs), dtype=torch.float32, device=device
     )
     values = torch.zeros(
-        (args.num_steps, args.num_envs), dtype=torch.float32, device=device
+        (ppo_cfg.num_steps, num_envs), dtype=torch.float32, device=device
     )
 
     global_step = 0
     start_time = time.time()
-    next_obs, _ = envs.reset(seed=args.seed)
+    next_obs, _ = envs.reset(seed=cfg.seed)
     next_obs = torch.as_tensor(next_obs, dtype=torch.float32, device=device)
-    next_done = torch.zeros(args.num_envs, dtype=torch.float32, device=device)
+    next_done = torch.zeros(num_envs, dtype=torch.float32, device=device)
 
     normalizer = RewardNormalizer(clip_range=(-1, 1), decay=0.99)
     # --- At the start of training ---
     best_return = -float("inf")  # track best episodic return
 
-    for iteration in range(1, args.num_iterations + 1):
+    for iteration in range(1, ppo_cfg.num_iterations + 1):
         # LR annealing
-        if args.anneal_lr:
-            frac = 1.0 - (iteration - 1.0) / args.num_iterations
-            lrnow = frac * args.learning_rate
+        if ppo_cfg.anneal_lr:
+            frac = 1.0 - (iteration - 1.0) / ppo_cfg.num_iterations
+            lrnow = frac * ppo_cfg.learning_rate
             optimizer.param_groups[0]["lr"] = lrnow
 
         # --- Adaptive coefficient decays ---
-        progress = (iteration - 1) / args.num_iterations
-        args.ent_coef = decay_schedule(
-            args.ent_coef_start, args.ent_coef_end, progress, args.decay_schedule
+        progress = (iteration - 1) / ppo_cfg.num_iterations
+        ppo_cfg.ent_coef = decay_schedule(
+            ppo_cfg.ent_coef_start, ppo_cfg.ent_coef_end, progress, ppo_cfg.decay_schedule
         )
-        args.vf_coef = decay_schedule(
-            args.vf_coef_start, args.vf_coef_end, progress, args.decay_schedule
+        ppo_cfg.vf_coef = decay_schedule(
+            ppo_cfg.vf_coef_start, ppo_cfg.vf_coef_end, progress, ppo_cfg.decay_schedule
         )
-        args.clip_coef = decay_schedule(
-            args.clip_coef_start, args.clip_coef_end, progress, args.decay_schedule
+        ppo_cfg.clip_coef = decay_schedule(
+            ppo_cfg.clip_coef_start, ppo_cfg.clip_coef_end, progress, ppo_cfg.decay_schedule
         )
-        if iteration % (args.num_iterations // 6) == 0:
-            args.ent_coef *= 1.2  # small entropy boost
-            args.ent_coef = min(args.ent_coef, args.ent_coef_start)
+        if iteration % (ppo_cfg.num_iterations // 6) == 0:
+            ppo_cfg.ent_coef *= 1.2  # small entropy boost
+            ppo_cfg.ent_coef = min(ppo_cfg.ent_coef, ppo_cfg.ent_coef_start)
 
-        for step in range(args.num_steps):
-            global_step += args.num_envs
+        for step in range(ppo_cfg.num_steps):
+            global_step += num_envs
             obs[step].copy_(next_obs)
             dones[step].copy_(next_done)
 
@@ -150,9 +153,7 @@ def train_ppo(args, envs, logger, device):
                         logger.log_episode(info)
                         # === Reset the finished env ===
                         try:
-                            obs_i = envs.envs[
-                                i
-                            ].reset()  # works for SyncVectorEnv / SubprocVectorEnv
+                            obs_i = envs.envs[i].reset()  
                             if isinstance(
                                 obs_i, tuple
                             ):  # Gymnasium returns (obs, info)
@@ -171,19 +172,19 @@ def train_ppo(args, envs, logger, device):
             next_value = agent.get_value(next_obs).view(-1)  # (num_envs,)
 
         advantages = torch.zeros_like(rewards, device=device)
-        lastgaelam = torch.zeros(args.num_envs, dtype=torch.float32, device=device)
+        lastgaelam = torch.zeros(num_envs, dtype=torch.float32, device=device)
 
-        for t in reversed(range(args.num_steps)):
-            if t == args.num_steps - 1:
+        for t in reversed(range(ppo_cfg.num_steps)):
+            if t == ppo_cfg.num_steps - 1:
                 nextnonterminal = 1.0 - next_done
                 nextvalues = next_value
             else:
                 nextnonterminal = 1.0 - dones[t + 1]
                 nextvalues = values[t + 1]
             # delta is 1D: shape (num_envs,)
-            delta = rewards[t] + args.gamma * nextvalues * nextnonterminal - values[t]
+            delta = rewards[t] + ppo_cfg.gamma * nextvalues * nextnonterminal - values[t]
             lastgaelam = (
-                delta + args.gamma * args.gae_lambda * nextnonterminal * lastgaelam
+                delta + ppo_cfg.gamma * ppo_cfg.gae_lambda * nextnonterminal * lastgaelam
             )
             advantages[t] = lastgaelam
 
@@ -201,13 +202,13 @@ def train_ppo(args, envs, logger, device):
         b_returns = (b_returns - b_returns.mean()) / (b_returns.std() + 1e-8)
 
         # Optimize
-        b_inds = np.arange(args.batch_size)
+        b_inds = np.arange(ppo_cfg.batch_size)
         clipfracs = []
         approx_kl = 0.0
-        for epoch in range(args.update_epochs):
+        for epoch in range(ppo_cfg.update_epochs):
             np.random.shuffle(b_inds)
-            for start in range(0, args.batch_size, args.minibatch_size):
-                end = start + args.minibatch_size
+            for start in range(0, ppo_cfg.batch_size, ppo_cfg.minibatch_size):
+                end = start + ppo_cfg.minibatch_size
                 mb_inds = b_inds[start:end]
 
                 mb_obs = b_obs[mb_inds]
@@ -222,26 +223,26 @@ def train_ppo(args, envs, logger, device):
                 with torch.no_grad():
                     approx_kl = ((ratio - 1) - logratio).mean().item()
                     clipfracs.append(
-                        ((ratio - 1.0).abs() > args.clip_coef).float().mean().item()
+                        ((ratio - 1.0).abs() > ppo_cfg.clip_coef).float().mean().item()
                     )
 
                 mb_adv = b_advantages[mb_inds]
-                if args.norm_adv:
+                if ppo_cfg.norm_adv:
                     mb_adv = (mb_adv - mb_adv.mean()) / (mb_adv.std() + 1e-8)
 
                 # policy loss
                 pg_loss1 = -mb_adv * ratio
                 pg_loss2 = -mb_adv * torch.clamp(
-                    ratio, 1 - args.clip_coef, 1 + args.clip_coef
+                    ratio, 1 - ppo_cfg.clip_coef, 1 + ppo_cfg.clip_coef
                 )
                 pg_loss = torch.max(pg_loss1, pg_loss2).mean()
 
                 # value loss
                 newvalue = newvalue.view(-1)
-                if args.clip_vloss:
+                if ppo_cfg.clip_vloss:
                     v_loss_unclipped = (newvalue - b_returns[mb_inds]) ** 2
                     v_clipped = b_values[mb_inds] + torch.clamp(
-                        newvalue - b_values[mb_inds], -args.clip_coef, args.clip_coef
+                        newvalue - b_values[mb_inds], -ppo_cfg.clip_coef, ppo_cfg.clip_coef
                     )
                     v_loss_clipped = (v_clipped - b_returns[mb_inds]) ** 2
                     v_loss = 0.5 * torch.max(v_loss_unclipped, v_loss_clipped).mean()
@@ -249,14 +250,14 @@ def train_ppo(args, envs, logger, device):
                     v_loss = 0.5 * ((newvalue - b_returns[mb_inds]) ** 2).mean()
 
                 entropy_loss = entropy.mean()
-                loss = pg_loss - args.ent_coef * entropy_loss + args.vf_coef * v_loss
+                loss = pg_loss - ppo_cfg.ent_coef * entropy_loss + ppo_cfg.vf_coef * v_loss
 
                 optimizer.zero_grad()
                 loss.backward()
-                nn.utils.clip_grad_norm_(agent.parameters(), args.max_grad_norm)
+                nn.utils.clip_grad_norm_(agent.parameters(), ppo_cfg.max_grad_norm)
                 optimizer.step()
 
-            if args.target_kl is not None and approx_kl > args.target_kl:
+            if ppo_cfg.target_kl is not None and approx_kl > ppo_cfg.target_kl:
                 break
 
         # diagnostics
@@ -275,20 +276,20 @@ def train_ppo(args, envs, logger, device):
                 approx_kl=approx_kl if approx_kl is not None else None,
                 clip_frac=clip_frac_mean,
             )
-            logger.writer.add_scalar("schedules/ent_coef", args.ent_coef, global_step)
-            logger.writer.add_scalar("schedules/vf_coef", args.vf_coef, global_step)
-            logger.writer.add_scalar("schedules/clip_coef", args.clip_coef, global_step)
+            logger.writer.add_scalar("schedules/ent_coef", ppo_cfg.ent_coef, global_step)
+            logger.writer.add_scalar("schedules/vf_coef", ppo_cfg.vf_coef, global_step)
+            logger.writer.add_scalar("schedules/clip_coef", ppo_cfg.clip_coef, global_step)
             logger.writer.add_scalar(
                 "schedules/lr", optimizer.param_groups[0]["lr"], global_step
             )
 
         # Save last model every iteration
-        if iteration % 50 == 0:
-            model_path = os.path.join(f"runs/{args.exp_name}", "ppo_last.pt")
+        if iteration % cfg.save_every == 0:
+            model_path = os.path.join(f"runs/{cfg.exp_name}", "ppo_last.pt")
             torch.save(agent.state_dict(), model_path)
             logger.msg(f"🌟 Model saved at {iteration} iteration!")
             eval_results = evaluate_ppo(
-                args=args,
+                cfg,
                 model_path=model_path,
                 num_episodes=10,
                 render=False,  # turn True for visualization

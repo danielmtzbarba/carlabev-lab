@@ -14,7 +14,7 @@ class EnvConfig:
     action_space: str = "discrete"  # "discrete" or "continuous"
     render_mode: str = "rgb_array"
     max_actions: int = 5000
-    vehicle_growth_start: int = 1000
+    vehicle_growth_start: int = 500
     seed: int = 0
     scenes_path: str = "assets/scenes"
 
@@ -22,10 +22,10 @@ class EnvConfig:
 @dataclass
 class PPOConfig:
     # PPO core
-    total_timesteps: int = 10_000_000
-    learning_rate: float = 2.5e-4  # slightly higher, tune if unstable
+    total_timesteps: int = 20_000_000
+    learning_rate: float = 3e-4  # slightly higher, tune if unstable
     num_envs: int = 4  # match CPUs available
-    num_steps: int = 1024  # rollout length per env → buffer size = 3072
+    num_steps: int = 128  # rollout length per env → buffer size = 3072
     anneal_lr: bool = True
     gamma: float = 0.995
     gae_lambda: float = 0.97
@@ -56,7 +56,7 @@ class PPOConfig:
 
 @dataclass
 class ArgsCarlaBEV:
-    exp_name: str = "cnn-ppo-carlabev-debug"
+    exp_name: str = "cnn-ppo-discrete-traffic"
     num_envs: int = 4
     cuda: bool = True
     seed: int = 1

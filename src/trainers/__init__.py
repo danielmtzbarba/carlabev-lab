@@ -1,5 +1,5 @@
 def build_trainer(experiment):
-    if "DQN" in experiment:
+    if "dqn" in experiment:
         from src.trainers.dqn import train_dqn
 
         return train_dqn
@@ -7,7 +7,7 @@ def build_trainer(experiment):
         from src.trainers.ppo import train_ppo
 
         return train_ppo
-    elif "SAC" in experiment:
+    elif "sac" in experiment:
         from src.trainers.sac import train_sac
 
         return train_sac
