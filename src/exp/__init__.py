@@ -32,12 +32,14 @@ def get_experiment(experiment):
     elif "vector-ppo-discrete" in experiment:
         from .vector_ppo_discrete_carlabev import ArgsCarlaBEV
     elif "cnn-ppo-discrete" in experiment:
-         from .carlabev_hpc import ArgsCarlaBEV
-        #from .cnn_ppo_discrete_carlabev import ArgsCarlaBEV
+        from .carlabev_hpc import ArgsCarlaBEV
+    # from .cnn_ppo_discrete_carlabev import ArgsCarlaBEV
     elif "SAC" in experiment:
         from .sac_carlabev import ArgsCarlaBEV
     elif "muzero" in experiment:
         from .muzero_carlabev import ArgsCarlaBEV
+    elif "debug" in experiment:
+        from .debug_carlabev import ArgsCarlaBEV
     else:
         exit("Unregisted experiment...")
 

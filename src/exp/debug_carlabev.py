@@ -21,9 +21,9 @@ class EnvConfig:
 @dataclass
 class PPOConfig:
     # PPO core
-    total_timesteps: int = 30_000_000
+    total_timesteps: int = 10_000_000
     learning_rate: float = 3e-4  # slightly higher, tune if unstable
-    num_envs: int = 12  # match CPUs available
+    num_envs: int = 4  # match CPUs available
     num_steps: int = 1024  # rollout length per env → buffer size = 3072
     anneal_lr: bool = True
     gamma: float = 0.995
@@ -55,7 +55,7 @@ class PPOConfig:
 
 @dataclass
 class ArgsCarlaBEV:
-    exp_name: str = "cnn-ppo-discrete-carlabev-12env-traffic-curriculum"
+    exp_name: str = "cnn-ppo-carlabev-debug"
     seed: int = 1
     cuda: bool = True
     save_model: bool = True
