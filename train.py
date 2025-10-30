@@ -15,14 +15,13 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 EXPERIMENT = "cnn-ppo-discrete"
 # EXPERIMENT = "muzero-carlabev"
 
-
 def main():
-    args, logger = get_experiment(EXPERIMENT)
-    envs = make_env(args)
-    logger.msg(f"Environments - {args.env_id}:{args.num_envs} built.")
+    cfg, logger = get_experiment(EXPERIMENT)
+    envs = make_env(cfg)
+    logger.msg(f"Environments - {cfg.env.env_id}:{cfg.num_envs} built.")
     trainer = build_trainer(EXPERIMENT)
     logger.msg("Trainer built")
-    trainer(args, envs, logger, device)
+    trainer(cfg, envs, logger, device)
 
 
 if __name__ == "__main__":

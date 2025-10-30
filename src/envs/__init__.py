@@ -2,18 +2,10 @@ import gymnasium as gym
 from CarlaBEV.envs import make_carlabev_env
 from CarlaBEV.envs import make_carlabev_eval
 
-def make_env(args):
+def make_env(cfg):
     envs = gym.vector.SyncVectorEnv(
         [
-            make_carlabev_env(
-                args.seed + i,
-                i,
-                args.capture_video,
-                args.exp_name,
-                obs_space=args.obs_space,
-                size=args.size,
-            )
-            for i in range(args.num_envs)
+            make_carlabev_env(i, cfg) for i in range(cfg.num_envs)
         ]
     )
 
