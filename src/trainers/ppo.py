@@ -50,6 +50,10 @@ def train_ppo(cfg, envs, logger, device):
     ppo_cfg.num_iterations = ppo_cfg.total_timesteps // ppo_cfg.batch_size
 
     agent, optimizer = build_agent(cfg, envs, device)
+
+    model_channels = agent.network[0].in_channels
+    logger.msg(f"Observation space: {envs.observation_space}")
+    logger.msg(f"Model_channels: {model_channels}")
     # Storage
     obs = torch.zeros(
         (ppo_cfg.num_steps, num_envs) + envs.single_observation_space.shape,

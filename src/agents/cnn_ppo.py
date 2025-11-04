@@ -13,8 +13,13 @@ def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
 class ConvolutionalPPO(nn.Module):
     def __init__(self, envs):
         super().__init__()
+
+        # Automatically get number of input channels
+        obs_shape = envs.single_observation_space.shape
+        in_channels = obs_shape[0]  # works for (C, H, W)
+
         self.network = nn.Sequential(
-            layer_init(nn.Conv2d(4, 32, 8, stride=4)),
+            layer_init(nn.Conv2d(in_channels, 32, 8, stride=4)),
             nn.ReLU(),
             layer_init(nn.Conv2d(32, 64, 4, stride=2)),
             nn.ReLU(),
@@ -27,11 +32,19 @@ class ConvolutionalPPO(nn.Module):
         self.actor = layer_init(nn.Linear(512, envs.single_action_space.n), std=0.01)
         self.critic = layer_init(nn.Linear(512, 1), std=1)
 
+    def _normalize_input(self, x):
+        if x.max() > 1.5:
+            return x / 255.0  # RGB case
+        else:
+            return x  # already [0,1]
+
     def get_value(self, x):
-        return self.critic(self.network(x / 255.0))
+        x = self._normalize_input(x)
+        return self.critic(self.network(x))
 
     def get_action_and_value(self, x, action=None, deterministic=False):
-        hidden = self.network(x / 255.0)
+        x = self._normalize_input(x)
+        hidden = self.network(x)
         logits = self.actor(hidden)
         probs = Categorical(logits=logits)
 

@@ -1,6 +1,11 @@
 from dataclasses import dataclass
 
 @dataclass
+class LoggerConfig:
+    enabled: bool = True
+    dir: str = "~/Data/results/carlabev/runs/"
+
+@dataclass
 class EnvConfig:
     seed: int = 0
     fps: int = 60
@@ -9,6 +14,7 @@ class EnvConfig:
     map_name: str = "Town01"
     obs_space: str = "bev"  # "bev" or "vector"
     obs_size: tuple = (96, 96)
+    masked: bool = True 
     frame_stack: int  = 4
 
     #
@@ -62,16 +68,17 @@ class PPOConfig:
 
 @dataclass
 class ArgsCarlaBEV:
-    exp_name: str = "cnn-ppo-discrete-traffic-nocurr"
-    num_envs: int = 14
+    exp_name: str = "cnn-ppo-discrete-traffic-curr-semantic"
+    num_envs: int = 4
     cuda: bool = True
     seed: int = 1
 
     env: object = EnvConfig
     ppo: object = PPOConfig
+    logging: object = LoggerConfig
 
     capture_video: bool = True
     capture_every: int = 25
     save_model: bool = True
-    save_every: bool = 25
+    save_every: bool = 50
     torch_deterministic: bool = True

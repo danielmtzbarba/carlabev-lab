@@ -8,7 +8,7 @@ from rich.progress import track
 from torch import nn
 
 from src.agents import build_agent
-from src.envs import make_eval_env
+from CarlaBEV.envs import make_env
 
 
 def evaluate_ppo(cfg, model_path, num_episodes=20, render=False, device="cuda"):
@@ -28,7 +28,7 @@ def evaluate_ppo(cfg, model_path, num_episodes=20, render=False, device="cuda"):
     cfg_eval.curriculum_enabled = False
 
     # --- Setup environment ---
-    eval_env = make_eval_env(cfg_eval)
+    eval_env = make_env(cfg_eval, eval=True)
 
     # --- Load model ---
     agent, _ = build_agent(cfg_eval, eval_env, device)

@@ -3,9 +3,8 @@ import torch
 import warnings
 
 from src.exp import get_experiment
-from src.envs import make_env
+from CarlaBEV.envs import make_env
 from src.trainers import build_trainer
-
 
 warnings.filterwarnings("ignore")
 
@@ -16,7 +15,7 @@ EXPERIMENT = "cnn-ppo-discrete"
 
 def main():
     cfg, logger = get_experiment(EXPERIMENT)
-    envs = make_env(cfg)
+    envs = make_env(cfg, eval=False)
     logger.msg(f"Environments - {cfg.env.env_id}:{cfg.num_envs} built.")
     trainer = build_trainer(EXPERIMENT)
     logger.msg("Trainer built")
