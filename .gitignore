@@ -7,6 +7,7 @@ outputs/
 *.so
 videos/
 runs/
+bkup/
 *.cleanrl_model
 *.DS_Store
 
