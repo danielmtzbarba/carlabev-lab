@@ -1,6 +1,7 @@
 import os
 import torch
 import numpy as np
+from copy import deepcopy
 from rich.console import Console
 from rich.table import Table
 from rich.progress import track
@@ -20,14 +21,17 @@ def evaluate_ppo(cfg, model_path, num_episodes=20, render=False, device="cuda"):
         render: Whether to render environment visually
         device: "cuda" or "cpu"
     """
-    exp_name = cfg.exp_name
     console = Console()
 
+    cfg_eval = deepcopy(cfg)
+    exp_name = cfg_eval.exp_name
+    cfg_eval.curriculum_enabled = False
+
     # --- Setup environment ---
-    eval_env = make_eval_env(exp_name, render=render)
+    eval_env = make_eval_env(cfg_eval)
 
     # --- Load model ---
-    agent, _ = build_agent(cfg, eval_env, device)
+    agent, _ = build_agent(cfg_eval, eval_env, device)
     agent.load_state_dict(torch.load(model_path, map_location=device))
     agent.eval()
 

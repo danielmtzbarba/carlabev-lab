@@ -12,16 +12,10 @@ def make_env(cfg):
     return envs
 
 
-def make_eval_env(exp_name, render=False):
+def make_eval_env(cfg):
     envs = gym.vector.SyncVectorEnv(
         [
-            make_carlabev_eval(
-                exp_name,
-                obs_space="bev",
-                size=128,
-                render=render
-            )
-            for i in range(1)
+            make_carlabev_eval(cfg) for i in range(1)
         ]
     )
 

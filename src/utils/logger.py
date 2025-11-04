@@ -67,7 +67,7 @@ class DRLogger(object):
         # Determine success / collision / unfinished
         success = 1.0 if cause == "success" else 0.0
         collision = 1.0 if cause == "collision" else 0.0
-        unfinished = 1.0 if cause in ["out_of_bounds", "max_actions"] else 0.0
+        unfinished = 1.0 if cause in ["out_of_bounds", "off_road", "max_actions"] else 0.0
 
         # Store history for aggregate stats
         self.episode_returns.append(ep_return)
