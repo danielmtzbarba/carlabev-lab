@@ -26,16 +26,18 @@ class EnvConfig:
     # Traffic generation
     traffic_enabled: bool = True
     max_vehicles: int = 50
+    # Curriculum
     curriculum_enabled: bool = True 
-    midpoint: int = 8000
-    growth_rate: float = 0.01
+    start_ep: int = 100
+    midpoint: int = 200 
+    growth_rate: float = 0.07
 
 
 @dataclass
 class PPOConfig:
     # PPO core
-    total_timesteps: int = 30_000_000
-    learning_rate: float = 3e-4  # slightly higher, tune if unstable
+    total_timesteps: int = 5_000_000
+    learning_rate: float = 3.5e-4  # slightly higher, tune if unstable
     num_envs: int = 14  # match CPUs available
     num_steps: int = 256  # rollout length per env → buffer size = 3072
     anneal_lr: bool = True
@@ -68,7 +70,7 @@ class PPOConfig:
 
 @dataclass
 class ArgsCarlaBEV:
-    exp_name: str = "cnn-ppo-discrete-traffic-curr-semantic"
+    exp_name: str = "cnn-ppo-discrete-traffic-curr-semantic-5M"
     num_envs: int = 14
     cuda: bool = True
     seed: int = 1

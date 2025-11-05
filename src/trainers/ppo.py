@@ -8,6 +8,10 @@ from torch import nn
 from src.agents import build_agent
 from src.eval.eval_ppo import evaluate_ppo
 
+def get_base_env(env):
+    while hasattr(env, "env"):
+        env = env.env
+    return env
 
 class RewardNormalizer:
     def __init__(self, clip_range=(-1, 1), decay=0.99):
@@ -144,28 +148,21 @@ def train_ppo(cfg, envs, logger, device):
             dones_np = np.logical_or(terminations, truncations)
 
             # Episode logging for every finished env
-            if "termination" in infos.keys():
-                causes = infos["termination"]["termination"]
-                for i, cause in enumerate(causes):
-                    if cause is not None:
-                        info = {
-                            "length": infos["termination"]["length"][i],
-                            "return": infos["termination"]["return"][i],
-                            "cause": causes[i],
-                        }
-                        # Only pass the finished episode to the logger
-                        logger.log_episode(info)
-                        # === Reset the finished env ===
-                        try:
-                            obs_i = envs.envs[i].reset()  
-                            if isinstance(
-                                obs_i, tuple
-                            ):  # Gymnasium returns (obs, info)
-                                obs_i = obs_i[0]
-                            next_obs_np[i] = obs_i
-                            dones_np[i] = False  # clear done flag
-                        except Exception as e:
-                            print(f"[WARN] Could not reset env {i}: {e}")
+            for i, ended  in enumerate(terminations):
+                if ended:
+                    info_i = get_base_env(envs.envs[i]).current_info
+                    logger.log_episode(info_i)
+                    # === Reset the finished env ===
+                    try:
+                        obs_i = envs.envs[i].reset()  
+                        if isinstance(
+                            obs_i, tuple
+                        ):  # Gymnasium returns (obs, info)
+                            obs_i = obs_i[0]
+                        next_obs_np[i] = obs_i
+                        dones_np[i] = False  # clear done flag
+                    except Exception as e:
+                        print(f"[WARN] Could not reset env {i}: {e}")
 
             # === Convert to tensors for buffer storage ===
             next_obs = torch.as_tensor(next_obs_np, dtype=torch.float32, device=device)

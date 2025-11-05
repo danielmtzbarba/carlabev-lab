@@ -58,11 +58,20 @@ class DRLogger(object):
                'cause', 'return', 'length', 'mean_reward', 'success_rate', 'collision_rate', 'unfinished_rate'
         """
         self.global_episode += 1
+        
+        data = infos["episode_info"]
 
-        cause = infos.get("cause", None)
-        ep_return = float(infos.get("return", 0.0))
-        ep_length = int(infos.get("length", 0))
-        mean_reward = float(infos.get("mean_reward", ep_return / (ep_length + 1e-8)))
+        cause = data["termination"]
+        ep_return = data["return"]
+        ep_length= data["length"]
+        mean_reward = float(data["mean_reward"])
+
+        # Console output
+        self._console.print(
+            f"Ep {data["episode"]} | Return: [green]{data["return"]:.2f}[/green] | "
+                f"Len: {data["length"]} | Num Vehicles: {infos["scene"]["num_vehicles"]} | "
+                f"Cause: {data["termination"]}"
+        )
 
         # Determine success / collision / unfinished
         success = 1.0 if cause == "success" else 0.0
@@ -84,11 +93,6 @@ class DRLogger(object):
         self.writer.add_scalar("stats/collision_rate", collision, self.global_episode)
         self.writer.add_scalar("stats/unfinished_rate", unfinished, self.global_episode)
 
-        # Console output
-        self._console.print(
-            f"Ep {self.global_episode} | Return: [green]{ep_return:.2f}[/green] | "
-            f"Len: {ep_length} | Cause: {cause}"
-        )
 
         # Aggregate table every stats_interval episodes
         if self.global_episode % self._stats_interval == 0:
