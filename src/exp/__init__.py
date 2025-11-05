@@ -27,22 +27,7 @@ def save_run_config_yaml(config):
 
 
 def get_experiment(experiment):
-    if "dqn" in experiment:
-        from .dqn_carlabev import ArgsCarlaBEV
-    elif "vector-ppo-discrete" in experiment:
-        from .vector_ppo_discrete_carlabev import ArgsCarlaBEV
-    elif "cnn-ppo-discrete" in experiment:
-       # from .carlabev_hpc import ArgsCarlaBEV
-        from .cnn_ppo_discrete_traffic import ArgsCarlaBEV
-    elif "sac" in experiment:
-        from .sac_carlabev import ArgsCarlaBEV
-    elif "muzero" in experiment:
-        from .muzero_carlabev import ArgsCarlaBEV
-    elif "debug" in experiment:
-        from .debug_carlabev import ArgsCarlaBEV
-    else:
-        exit("Unregisted experiment...")
-
+    from .cnn_ppo_discrete_traffic import ArgsCarlaBEV
     args = tyro.cli(ArgsCarlaBEV)
     save_run_config_yaml(args)
     log = DRLogger(args)

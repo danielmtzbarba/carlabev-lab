@@ -2,8 +2,8 @@ from dataclasses import dataclass
 
 @dataclass
 class LoggerConfig:
-    enabled: bool = True
-    dir: str = "~/Data/results/carlabev/runs/"
+    enabled: bool = False 
+    dir: str = "results/carlabev/runs/"
 
 @dataclass
 class EnvConfig:
@@ -26,7 +26,7 @@ class EnvConfig:
     # Traffic generation
     traffic_enabled: bool = True
     max_vehicles: int = 50
-    curriculum_enabled: bool = False 
+    curriculum_enabled: bool = True 
     midpoint: int = 8000
     growth_rate: float = 0.01
 
@@ -69,7 +69,7 @@ class PPOConfig:
 @dataclass
 class ArgsCarlaBEV:
     exp_name: str = "cnn-ppo-discrete-traffic-curr-semantic"
-    num_envs: int = 4
+    num_envs: int = 14
     cuda: bool = True
     seed: int = 1
 
@@ -78,7 +78,7 @@ class ArgsCarlaBEV:
     logging: object = LoggerConfig
 
     capture_video: bool = True
-    capture_every: int = 25
+    capture_every: int = 50
     save_model: bool = True
     save_every: bool = 50
     torch_deterministic: bool = True
