@@ -150,11 +150,12 @@ def train_ppo(cfg, envs, logger, device):
             # Episode logging for every finished env
             for i, ended  in enumerate(terminations):
                 if ended:
-                    info_i = get_base_env(envs.envs[i]).current_info
+                    ended_env = get_base_env(envs.envs[i])
+                    info_i = ended_env.current_info
                     logger.log_episode(info_i)
                     # === Reset the finished env ===
                     try:
-                        obs_i = envs.envs[i].reset()  
+                        obs_i = ended_env.reset("rdm")  
                         if isinstance(
                             obs_i, tuple
                         ):  # Gymnasium returns (obs, info)
