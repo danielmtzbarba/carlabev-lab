@@ -6,12 +6,10 @@ import numpy as np
 from torch import nn
 
 from src.agents import build_agent
+from src.trainers.utils import CurriculumState
 from src.eval.eval_ppo import evaluate_ppo
 
-def get_base_env(env):
-    while hasattr(env, "env"):
-        env = env.env
-    return env
+from collections import deque
 
 class RewardNormalizer:
     def __init__(self, clip_range=(-1, 1), decay=0.99):
@@ -55,6 +53,9 @@ def train_ppo(cfg, envs, logger, device):
 
     agent, optimizer = build_agent(cfg, envs, device)
 
+    curr_state = CurriculumState(cfg.env)
+    return_buffer = deque(maxlen=50)
+
     model_channels = agent.network[0].in_channels
     logger.msg(f"Observation space: {envs.observation_space}")
     logger.msg(f"Model_channels: {model_channels}")
@@ -84,7 +85,14 @@ def train_ppo(cfg, envs, logger, device):
 
     global_step = 0
     start_time = time.time()
-    next_obs, _ = envs.reset(seed=cfg.seed)
+
+    options={
+        "scene": "rdm",
+        "num_vehicles": 0,
+        "reset_mask": np.full((num_envs), True)
+    }
+
+    next_obs, _ = envs.reset(seed=cfg.seed, options=options)
     next_obs = torch.as_tensor(next_obs, dtype=torch.float32, device=device)
     next_done = torch.zeros(num_envs, dtype=torch.float32, device=device)
 
@@ -150,20 +158,21 @@ def train_ppo(cfg, envs, logger, device):
             # Episode logging for every finished env
             for i, ended  in enumerate(terminations):
                 if ended:
-                    ended_env = get_base_env(envs.envs[i])
-                    info_i = ended_env.current_info
-                    logger.log_episode(info_i)
+                    ep_return = infos["episode_info"]["return"][i]
+                    return_buffer.append(ep_return)
+            
+                    # Compute smoothed return
+                    mean_return = sum(return_buffer) / len(return_buffer)
+                    logger.log_episode(infos["episode_info"], mean_return, i,  global_step)
+
                     # === Reset the finished env ===
-                    try:
-                        obs_i = ended_env.reset("rdm")  
-                        if isinstance(
-                            obs_i, tuple
-                        ):  # Gymnasium returns (obs, info)
-                            obs_i = obs_i[0]
-                        next_obs_np[i] = obs_i
-                        dones_np[i] = False  # clear done flag
-                    except Exception as e:
-                        print(f"[WARN] Could not reset env {i}: {e}")
+                    options={
+                        "scene": "rdm",
+                        "num_vehicles": curr_state.vehicle_schedule(mean_return),
+                        "reset_mask": dones_np
+                    }
+                    # reset() returns FULL batch of obs for ALL envs
+                    next_obs_np, reset_info = envs.reset(seed=cfg.seed, options=options)
 
             # === Convert to tensors for buffer storage ===
             next_obs = torch.as_tensor(next_obs_np, dtype=torch.float32, device=device)
@@ -284,6 +293,10 @@ def train_ppo(cfg, envs, logger, device):
             logger.writer.add_scalar(
                 "schedules/lr", optimizer.param_groups[0]["lr"], global_step
             )
+
+        # inject entropy boosts to enforce exploration in middle of training
+        if iteration % 5000 == 0:
+            ppo_cfg.ent_coef = min(ppo_cfg.ent_coef * 1.3, ppo_cfg.ent_coef_start)
 
         # Save last model every iteration
         if iteration % cfg.save_every == 0:

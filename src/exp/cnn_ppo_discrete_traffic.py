@@ -36,7 +36,7 @@ class EnvConfig:
 @dataclass
 class PPOConfig:
     # PPO core
-    total_timesteps: int = 5_000_000
+    total_timesteps: int = 15_000_000
     learning_rate: float = 3.5e-4  # slightly higher, tune if unstable
     num_envs: int = 14  # match CPUs available
     num_steps: int = 256  # rollout length per env → buffer size = 3072
@@ -51,7 +51,7 @@ class PPOConfig:
     ent_coef: float = 0.003
     vf_coef: float = 0.7
     max_grad_norm: float = 0.4
-    target_kl: float = 0.02  # small KL target helps stabilize
+    target_kl: float = 0.015  # small KL target helps stabilize
 
     # Computed at runtime
     batch_size: int = 0
@@ -59,10 +59,10 @@ class PPOConfig:
     num_iterations: int = 0
 
     # Decay configuration
-    ent_coef_start: float = 0.03
-    ent_coef_end: float = 0.005
-    vf_coef_start: float = 0.7
-    vf_coef_end: float = 0.5
+    ent_coef_start: float = 0.05
+    ent_coef_end: float = 0.01
+    vf_coef_start: float = 0.6
+    vf_coef_end: float = 0.4
     clip_coef_start: float = 0.2
     clip_coef_end: float = 0.1
     decay_schedule: str = "linear"
@@ -70,7 +70,7 @@ class PPOConfig:
 
 @dataclass
 class ArgsCarlaBEV:
-    exp_name: str = "cnn-ppo-discrete-traffic-curr-semantic-5M"
+    exp_name: str = "cnn-ppo-discrete-traffic-curr-semantic-15M"
     num_envs: int = 14
     cuda: bool = True
     seed: int = 1
@@ -82,5 +82,5 @@ class ArgsCarlaBEV:
     capture_video: bool = True
     capture_every: int = 50
     save_model: bool = True
-    save_every: bool = 50
+    save_every: bool = 100
     torch_deterministic: bool = True

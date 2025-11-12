@@ -25,7 +25,6 @@ def evaluate_ppo(cfg, model_path, num_episodes=20, render=False, device="cuda"):
 
     cfg_eval = deepcopy(cfg)
     exp_name = cfg_eval.exp_name
-    cfg_eval.curriculum_enabled = False
 
     # --- Setup environment ---
     eval_env = make_env(cfg_eval, eval=True)
@@ -39,8 +38,15 @@ def evaluate_ppo(cfg, model_path, num_episodes=20, render=False, device="cuda"):
     all_returns, all_lengths = [], []
     causes, success_count, collision_count, unfinished_count = [], 0, 0, 0
 
+    options={
+        "scene": lane = choice(["lead_brake", "jaywalk"]),
+        "num_vehicles": 25,
+        "reset_mask": np.array([True],dtype=bool)
+    }
     for ep in track(range(num_episodes), description="Running evaluation..."):
-        obs, _ = eval_env.reset()
+
+        obs, _ = eval_env.reset(options=options)
+        #
         obs = torch.tensor(obs, dtype=torch.float32, device=device)
         done, total_reward, steps = False, 0.0, 0
 
@@ -60,7 +66,8 @@ def evaluate_ppo(cfg, model_path, num_episodes=20, render=False, device="cuda"):
                 eval_env.render()
 
         # --- Extract termination cause ---
-        cause = info.get("termination", {}).get("termination", "unknown")
+        cause = info["episode_info"]["termination"]
+
         if isinstance(cause, (list, np.ndarray)):
             cause = cause[0]  # handle vectorized info
         causes.append(cause)

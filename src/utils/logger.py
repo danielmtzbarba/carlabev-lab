@@ -52,26 +52,25 @@ class DRLogger(object):
             % ("\n".join([f"|{k}|{v}|" for k, v in vars(config).items()])),
         )
 
-    def log_episode(self, infos):
+    def log_episode(self, infos, mean_return, idx, global_step=0):
         """
         infos: dict containing 'termination' with keys:
                'cause', 'return', 'length', 'mean_reward', 'success_rate', 'collision_rate', 'unfinished_rate'
         """
         self.global_episode += 1
         
-        data = infos["episode_info"]
-
-        cause = data["termination"]
-        ep_return = data["return"]
-        ep_length= data["length"]
-        mean_reward = float(data["mean_reward"])
-
+        data = infos
         # Console output
         self._console.print(
-            f"Ep {data["episode"]} | Return: [green]{data["return"]:.2f}[/green] | "
-                f"Len: {data["length"]} | Num Vehicles: {infos["scene"]["num_vehicles"]} | "
-                f"Cause: {data["termination"]}"
+            f"Step {global_step} | Ep {self.global_episode} | Return: [green]{data["return"][idx]:.2f}[/green] | "
+                f"Len: {data["length"][idx]} | Num Vehicles: {data["num_vehicles"][idx]} | Return MA50: {mean_return:.2f} | "
+            f"Cause: {data["termination"][idx]} |"
         )
+
+        cause = data["termination"][idx]
+        ep_return = data["return"][idx]
+        ep_length= data["length"][idx]
+        mean_reward = float(data["mean_reward"][idx])
 
         # Determine success / collision / unfinished
         success = 1.0 if cause == "success" else 0.0
