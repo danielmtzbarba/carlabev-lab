@@ -16,11 +16,11 @@ class CurriculumState:
         self.last_route_dist = 100  # starting value for smoothing
 
         self.max_dist_target = 1000  # max route length in meters
-        self.range_width_start = 70  # initial max-min distance (100 - 30)
+        self.range_width_start = 100  # initial max-min distance (100 - 30)
         self.range_width_target = 400  # target range width for sampling
         
         self.last_min = 30
-        self.last_width = 70
+        self.last_width = 100
 
     def vehicle_schedule(self, mean_return):
         """Compute number of vehicles based on curriculum config."""
