@@ -20,6 +20,21 @@ logging.basicConfig(
 )
 logger = logging.getLogger("drlab")
 
+def abbreviate_number(n):
+    """
+    Convert an integer into an abbreviated string:
+    1234 -> '1.2K'
+    1234567 -> '1.2M'
+    9876543210 -> '9.9B'
+    """
+    if n < 1_000:
+        return str(n)
+    elif n < 1_000_000:
+        return f"{n / 1_000:.1f}K"
+    elif n < 1_000_000_000:
+        return f"{n / 1_000_000:.1f}M"
+    else:
+        return f"{n / 1_000_000_000:.1f}B"
 
 class DRLogger(object):
     """
@@ -62,9 +77,9 @@ class DRLogger(object):
         data = infos
         # Console output
         self._console.print(
-            f"Step {global_step} | Ep {self.global_episode} | Return: [green]{data["return"][idx]:.2f}[/green] | "
-                f"Len: {data["length"][idx]} | Num Vehicles: {data["num_vehicles"][idx]} | Return MA50: {mean_return:.2f} | "
-            f"Cause: {data["termination"][idx]} |"
+            f"Step {abbreviate_number(global_step)} | Ep {self.global_episode} | Return: [green]{data["return"][idx]:.2f}[/green] | "
+            f"len_route: {int(data["len_ego_route"][idx])} | num_veh: {data["num_vehicles"][idx]} | "
+            f"len_steps: {data["length"][idx]} | cause: {data["termination"][idx]} | MA50: {mean_return:.2f} | "
         )
 
         cause = data["termination"][idx]

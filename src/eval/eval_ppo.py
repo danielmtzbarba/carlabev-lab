@@ -7,6 +7,7 @@ from rich.table import Table
 from rich.progress import track
 from torch import nn
 
+from random import choice
 from src.agents import build_agent
 from CarlaBEV.envs import make_env
 
@@ -39,8 +40,10 @@ def evaluate_ppo(cfg, model_path, num_episodes=20, render=False, device="cuda"):
     causes, success_count, collision_count, unfinished_count = [], 0, 0, 0
 
     options={
-        "scene": lane = choice(["lead_brake", "jaywalk"]),
+#        "scene": choice(["lead_brake", "jaywalk"]),
+        "scene": "rdm",
         "num_vehicles": 25,
+        "route_dist_range": [250, 500], 
         "reset_mask": np.array([True],dtype=bool)
     }
     for ep in track(range(num_episodes), description="Running evaluation..."):

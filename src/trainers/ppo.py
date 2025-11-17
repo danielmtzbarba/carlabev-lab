@@ -5,6 +5,7 @@ import torch
 import numpy as np
 from torch import nn
 
+from random import choice
 from src.agents import build_agent
 from src.trainers.utils import CurriculumState
 from src.eval.eval_ppo import evaluate_ppo
@@ -87,8 +88,11 @@ def train_ppo(cfg, envs, logger, device):
     start_time = time.time()
 
     options={
+        #edge cases
+            #    "scene": choice(["lead_brake", "jaywalk"]),
         "scene": "rdm",
         "num_vehicles": 0,
+        "route_dist_range": [50, 150] 
         "reset_mask": np.full((num_envs), True)
     }
 
@@ -167,8 +171,11 @@ def train_ppo(cfg, envs, logger, device):
 
                     # === Reset the finished env ===
                     options={
+                        #edge cases
+                    #    "scene": choice(["lead_brake", "jaywalk"]),
                         "scene": "rdm",
                         "num_vehicles": curr_state.vehicle_schedule(mean_return),
+                        "route_dist_range": curr_state.route_schedule(mean_return),
                         "reset_mask": dones_np
                     }
                     # reset() returns FULL batch of obs for ALL envs
@@ -295,8 +302,8 @@ def train_ppo(cfg, envs, logger, device):
             )
 
         # inject entropy boosts to enforce exploration in middle of training
-        if iteration % 5000 == 0:
-            ppo_cfg.ent_coef = min(ppo_cfg.ent_coef * 1.3, ppo_cfg.ent_coef_start)
+            #if iteration % 5000 == 0:
+        #    ppo_cfg.ent_coef = min(ppo_cfg.ent_coef * 1.3, ppo_cfg.ent_coef_start)
 
         # Save last model every iteration
         if iteration % cfg.save_every == 0:
