@@ -26,7 +26,7 @@ class EnvConfig:
     # Traffic generation
     traffic_enabled: bool = True
     max_vehicles: int = 25
-    route_dist_range: list = [30, 100]
+    route_dist_range: tuple= (30, 100)
     # Curriculum
     curriculum_enabled: bool = True 
     start_ep: int = 100
