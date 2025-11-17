@@ -319,5 +319,18 @@ def train_ppo(cfg, envs, logger, device):
             )
             logger.log_evaluation(eval_results, global_step)
 
+
+    model_path = os.path.join(f"runs/{cfg.exp_name}", "ppo_final.pt")
+    torch.save(agent.state_dict(), model_path)
+    eval_results = evaluate_ppo(
+        cfg,
+        model_path=model_path,
+        num_episodes=30,
+        render=False,  # turn True for visualization
+        device="cuda",
+    )
+    logger.log_evaluation(eval_results, global_step)
+    logger.msg(f"🌟 Training finished at {iteration} iteration!")
+    
     envs.close()
     logger.writer.close()

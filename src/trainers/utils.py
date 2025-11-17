@@ -11,11 +11,10 @@ class CurriculumState:
         self.max_cars = cfg.max_vehicles
         self.start_return = 15
         self.max_return = 50
-        self.min_dist = 30        # meters
-        self.max_dist = 1000      # meters
-        self.last_route_dist = 100  # starting value for smoothing
 
-        self.max_dist_target = 1000  # max route length in meters
+
+        self.min_dist_start = 30 # max route length in meters
+        self.max_dist_target = 1000 # max route length in meters
         self.range_width_start = 100  # initial max-min distance (100 - 30)
         self.range_width_target = 400  # target range width for sampling
         

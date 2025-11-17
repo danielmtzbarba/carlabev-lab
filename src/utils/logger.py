@@ -77,9 +77,9 @@ class DRLogger(object):
         data = infos
         # Console output
         self._console.print(
-            f"Step {abbreviate_number(global_step)} | Ep {self.global_episode} | Return: [green]{data["return"][idx]:.2f}[/green] | "
-            f"len_route: {int(data["len_ego_route"][idx])} | num_veh: {data["num_vehicles"][idx]} | "
-            f"len_steps: {data["length"][idx]} | cause: {data["termination"][idx]} | MA50: {mean_return:.2f} | "
+            f"Step {abbreviate_number(global_step)} | Ep {self.global_episode} | Ret: [green]{data["return"][idx]:.2f}[/green] | "
+            f"len_route: {int(data["len_ego_route"][idx])} | veh: {data["num_vehicles"][idx]} | "
+            f"len_ep: {data["length"][idx]} | cause: {data["termination"][idx]} | MA50: {mean_return:.2f} | "
         )
 
         cause = data["termination"][idx]
