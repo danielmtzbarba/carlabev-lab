@@ -92,7 +92,7 @@ def train_ppo(cfg, envs, logger, device):
             #    "scene": choice(["lead_brake", "jaywalk"]),
         "scene": "rdm",
         "num_vehicles": 0,
-        "route_dist_range": [50, 150] 
+        "route_dist_range": [50, 150], 
         "reset_mask": np.full((num_envs), True)
     }
 
