@@ -65,6 +65,7 @@ class PPOConfig:
 class ArgsCarlaBEV:
     exp_id: int = 1
     exp_name: str = "default"
+    num_envs: int = 14
 
     cuda: bool = True
     seed: int = 1000

@@ -79,7 +79,7 @@ def apply_experiment_config(args: ArgsCarlaBEV, exp_id: int):
             env.curriculum_mode = "both"
 
     # ===== Base name
-    args.exp_name = f"exp_{exp_id}_traffic:{traffic}_input:{input_type}_rwd:{reward_type}_curr:{curriculum}"
+    args.exp_name = f"exp_{exp_id}_traffic-{traffic}_input-{input_type}_rwd-{reward_type}_curr-{curriculum}"
 
     return args
 
