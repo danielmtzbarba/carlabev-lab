@@ -49,8 +49,8 @@ EXPERIMENT_TABLE = {
 def apply_experiment_config(args: ArgsCarlaBEV, exp_id: int):
     traffic, input_type, reward_type, curriculum = EXPERIMENT_TABLE[exp_id]
 
-    env: EnvConfig = args.env
-    ppo: PPOConfig = args.ppo
+    env: EnvConfig() = args.env
+    ppo: PPOConfig() = args.ppo
 
     # ===== Traffic
     env.traffic_enabled = traffic == "on"

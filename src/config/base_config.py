@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -35,7 +35,7 @@ class EnvConfig:
     max_vehicles: int = 25
 
     # Reward
-    reward_type: str = "shaping"  # "shaping" or "carl"
+    reward_type: str = "shaping"  # "shaping" | "carl"
 
 
 @dataclass
@@ -69,12 +69,12 @@ class ArgsCarlaBEV:
     cuda: bool = True
     seed: int = 1000
 
-    env: EnvConfig = EnvConfig()
-    ppo: PPOConfig = PPOConfig()
-    logging: LoggerConfig = LoggerConfig()
+    env: EnvConfig = field(default_factory=EnvConfig)
+    ppo: PPOConfig = field(default_factory=PPOConfig)
+    logging: LoggerConfig = field(default_factory=LoggerConfig)
 
     capture_video: bool = True
     capture_every: int = 50
     save_model: bool = True
-    save_every: int = 50
+    save_every: int = 200
     torch_deterministic: bool = True
