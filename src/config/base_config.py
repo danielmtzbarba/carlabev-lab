@@ -59,6 +59,22 @@ class PPOConfig:
 
     max_grad_norm: float = 0.4
     target_kl: float = 0.015
+    norm_adv: bool = True
+    clip_vloss: bool = True
+
+    # Computed at runtime
+    batch_size: int = 0
+    minibatch_size: int = 0
+    num_iterations: int = 0
+
+    # Decay configuration
+    ent_coef_start: float = 0.05
+    ent_coef_end: float = 0.01
+    vf_coef_start: float = 0.6
+    vf_coef_end: float = 0.4
+    clip_coef_start: float = 0.2
+    clip_coef_end: float = 0.1
+    decay_schedule: str = "linear"
 
 
 @dataclass
