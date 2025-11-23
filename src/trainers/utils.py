@@ -25,36 +25,42 @@ class CurriculumState:
         self.last_width = 100
 
     def vehicle_schedule(self, mean_return):
-        """Compute number of vehicles based on curriculum config."""
-        if self.cfg.traffic_enabled:
-            if self.cfg.curriculum_enabled and self.curr_veh:
-                progress = np.clip(
-                    (mean_return - self.start_return)
-                    / (self.max_return - self.start_return),
-                    0,
-                    1,
-                )
-                target_cars = int(progress * self.max_cars)
+        # If traffic is disabled → zero
+        if not self.cfg.traffic_enabled:
+            return 0
 
-                # hysteresis: adjust slowly (avoid jitter)
-                if target_cars > self.last_num_cars:
-                    self.last_num_cars += 1
-                elif target_cars < self.last_num_cars:
-                    self.last_num_cars -= 1
+        # If curriculum disabled → full traffic from start
+        if not self.cfg.curriculum_enabled:
+            return self.max_cars
 
-                num = self.last_num_cars
+        # If curriculum mode does NOT include vehicles → always 0
+        if not self.curr_veh:
+            return self.max_cars
 
-            else:
-                num = self.max_cars
-        else:
-            num = 0
+        # Normal curriculum logic (vehicles_only or both)
+        progress = np.clip(
+            (mean_return - self.start_return) / (self.max_return - self.start_return),
+            0,
+            1,
+        )
 
-        return num
+        target_cars = int(progress * self.max_cars)
+
+        # monotonic hysteresis (only increase)
+        if target_cars > self.last_num_cars:
+            self.last_num_cars += 1
+
+        return self.last_num_cars
 
     def route_schedule(self, mean_return):
         """Return a range [min_dist, max_dist] for route sampling based on curriculum."""
 
-        if (not self.cfg.curriculum_enabled) or (not self.curr_route):
+        # If curriculum disabled → full traffic from start
+        if not self.cfg.curriculum_enabled:
+            return [self.min_dist_start, self.max_dist_target]
+
+        # If curriculum mode does NOT include vehicles → always 0
+        if not self.curr_route:
             return [self.min_dist_start, self.max_dist_target]
 
         # Normalize return for progress (0-1)
