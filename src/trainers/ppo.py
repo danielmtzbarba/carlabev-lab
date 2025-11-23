@@ -12,6 +12,7 @@ from src.eval.eval_ppo import evaluate_ppo
 
 from collections import deque
 
+
 class RewardNormalizer:
     def __init__(self, clip_range=(-1, 1), decay=0.99):
         self.mean = 0.0
@@ -85,13 +86,13 @@ def train_ppo(cfg, envs, logger, device):
     global_step = 0
     start_time = time.time()
 
-    options={
-        #edge cases
-            #    "scene": choice(["lead_brake", "jaywalk"]),
+    options = {
+        # edge cases
+        #    "scene": choice(["lead_brake", "jaywalk"]),
         "scene": "rdm",
         "num_vehicles": 0,
-        "route_dist_range": [50, 150], 
-        "reset_mask": np.full((num_envs), True)
+        "route_dist_range": [50, 150],
+        "reset_mask": np.full((num_envs), True),
     }
 
     next_obs, _ = envs.reset(seed=cfg.seed, options=options)
@@ -112,13 +113,19 @@ def train_ppo(cfg, envs, logger, device):
         # --- Adaptive coefficient decays ---
         progress = (iteration - 1) / ppo_cfg.num_iterations
         ppo_cfg.ent_coef = decay_schedule(
-            ppo_cfg.ent_coef_start, ppo_cfg.ent_coef_end, progress, ppo_cfg.decay_schedule
+            ppo_cfg.ent_coef_start,
+            ppo_cfg.ent_coef_end,
+            progress,
+            ppo_cfg.decay_schedule,
         )
         ppo_cfg.vf_coef = decay_schedule(
             ppo_cfg.vf_coef_start, ppo_cfg.vf_coef_end, progress, ppo_cfg.decay_schedule
         )
         ppo_cfg.clip_coef = decay_schedule(
-            ppo_cfg.clip_coef_start, ppo_cfg.clip_coef_end, progress, ppo_cfg.decay_schedule
+            ppo_cfg.clip_coef_start,
+            ppo_cfg.clip_coef_end,
+            progress,
+            ppo_cfg.decay_schedule,
         )
         if iteration % (ppo_cfg.num_iterations // 6) == 0:
             ppo_cfg.ent_coef *= 1.2  # small entropy boost
@@ -158,23 +165,25 @@ def train_ppo(cfg, envs, logger, device):
             dones_np = np.logical_or(terminations, truncations)
 
             # Episode logging for every finished env
-            for i, ended  in enumerate(terminations):
+            for i, ended in enumerate(terminations):
                 if ended:
                     ep_return = infos["episode_info"]["return"][i]
                     return_buffer.append(ep_return)
-            
+
                     # Compute smoothed return
                     mean_return = sum(return_buffer) / len(return_buffer)
-                    logger.log_episode(infos["episode_info"], mean_return, i,  global_step)
+                    logger.log_episode(
+                        infos["episode_info"], mean_return, i, global_step
+                    )
 
                     # === Reset the finished env ===
-                    options={
-                        #edge cases
-                    #    "scene": choice(["lead_brake", "jaywalk"]),
+                    options = {
+                        # edge cases
+                        #    "scene": choice(["lead_brake", "jaywalk"]),
                         "scene": "rdm",
                         "num_vehicles": curr_state.vehicle_schedule(mean_return),
                         "route_dist_range": curr_state.route_schedule(mean_return),
-                        "reset_mask": dones_np
+                        "reset_mask": dones_np,
                     }
                     # reset() returns FULL batch of obs for ALL envs
                     next_obs_np, reset_info = envs.reset(seed=cfg.seed, options=options)
@@ -198,9 +207,12 @@ def train_ppo(cfg, envs, logger, device):
                 nextnonterminal = 1.0 - dones[t + 1]
                 nextvalues = values[t + 1]
             # delta is 1D: shape (num_envs,)
-            delta = rewards[t] + ppo_cfg.gamma * nextvalues * nextnonterminal - values[t]
+            delta = (
+                rewards[t] + ppo_cfg.gamma * nextvalues * nextnonterminal - values[t]
+            )
             lastgaelam = (
-                delta + ppo_cfg.gamma * ppo_cfg.gae_lambda * nextnonterminal * lastgaelam
+                delta
+                + ppo_cfg.gamma * ppo_cfg.gae_lambda * nextnonterminal * lastgaelam
             )
             advantages[t] = lastgaelam
 
@@ -258,7 +270,9 @@ def train_ppo(cfg, envs, logger, device):
                 if ppo_cfg.clip_vloss:
                     v_loss_unclipped = (newvalue - b_returns[mb_inds]) ** 2
                     v_clipped = b_values[mb_inds] + torch.clamp(
-                        newvalue - b_values[mb_inds], -ppo_cfg.clip_coef, ppo_cfg.clip_coef
+                        newvalue - b_values[mb_inds],
+                        -ppo_cfg.clip_coef,
+                        ppo_cfg.clip_coef,
                     )
                     v_loss_clipped = (v_clipped - b_returns[mb_inds]) ** 2
                     v_loss = 0.5 * torch.max(v_loss_unclipped, v_loss_clipped).mean()
@@ -266,7 +280,9 @@ def train_ppo(cfg, envs, logger, device):
                     v_loss = 0.5 * ((newvalue - b_returns[mb_inds]) ** 2).mean()
 
                 entropy_loss = entropy.mean()
-                loss = pg_loss - ppo_cfg.ent_coef * entropy_loss + ppo_cfg.vf_coef * v_loss
+                loss = (
+                    pg_loss - ppo_cfg.ent_coef * entropy_loss + ppo_cfg.vf_coef * v_loss
+                )
 
                 optimizer.zero_grad()
                 loss.backward()
@@ -292,15 +308,19 @@ def train_ppo(cfg, envs, logger, device):
                 approx_kl=approx_kl if approx_kl is not None else None,
                 clip_frac=clip_frac_mean,
             )
-            logger.writer.add_scalar("schedules/ent_coef", ppo_cfg.ent_coef, global_step)
+            logger.writer.add_scalar(
+                "schedules/ent_coef", ppo_cfg.ent_coef, global_step
+            )
             logger.writer.add_scalar("schedules/vf_coef", ppo_cfg.vf_coef, global_step)
-            logger.writer.add_scalar("schedules/clip_coef", ppo_cfg.clip_coef, global_step)
+            logger.writer.add_scalar(
+                "schedules/clip_coef", ppo_cfg.clip_coef, global_step
+            )
             logger.writer.add_scalar(
                 "schedules/lr", optimizer.param_groups[0]["lr"], global_step
             )
 
         # inject entropy boosts to enforce exploration in middle of training
-            #if iteration % 5000 == 0:
+        # if iteration % 5000 == 0:
         #    ppo_cfg.ent_coef = min(ppo_cfg.ent_coef * 1.3, ppo_cfg.ent_coef_start)
 
         # Save last model every iteration
@@ -317,7 +337,6 @@ def train_ppo(cfg, envs, logger, device):
             )
             logger.log_evaluation(eval_results, global_step)
 
-
     model_path = os.path.join(f"runs/{cfg.exp_name}", "ppo_final.pt")
     torch.save(agent.state_dict(), model_path)
     eval_results = evaluate_ppo(
@@ -329,6 +348,6 @@ def train_ppo(cfg, envs, logger, device):
     )
     logger.log_evaluation(eval_results, global_step)
     logger.msg(f"🌟 Training finished at {iteration} iteration!")
-    
+
     envs.close()
     logger.writer.close()
