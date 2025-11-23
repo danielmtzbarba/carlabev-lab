@@ -25,31 +25,43 @@ class CurriculumState:
         self.last_width = 100
 
     def vehicle_schedule(self, mean_return):
-        # If traffic is disabled → zero
+        """Adaptive number of vehicles based on curriculum difficulty."""
+
+        # Traffic OFF globally → always 0
         if not self.cfg.traffic_enabled:
             return 0
 
-        # If curriculum disabled → full traffic from start
+        # Curriculum fully disabled → always max
         if not self.cfg.curriculum_enabled:
             return self.max_cars
 
-        # If curriculum mode does NOT include vehicles → always 0
+        # Curriculum does not apply to vehicles → always 0
         if not self.curr_veh:
             return self.max_cars
 
-        # Normal curriculum logic (vehicles_only or both)
+        # -------------------------------------------------
+        # 1. Compute target difficulty level (0 → 1)
+        # -------------------------------------------------
         progress = np.clip(
             (mean_return - self.start_return) / (self.max_return - self.start_return),
-            0,
-            1,
+            0.0,
+            1.0,
         )
 
-        target_cars = int(progress * self.max_cars)
+        target_cars = int(progress * self.max_cars)  # desired level
 
-        # monotonic hysteresis (only increase)
+        # -------------------------------------------------
+        # 2. Hysteresis: smooth both increasing AND decreasing
+        # -------------------------------------------------
         if target_cars > self.last_num_cars:
-            self.last_num_cars += 1
+            self.last_num_cars += 1  # ramp up slowly
+        elif target_cars < self.last_num_cars:
+            self.last_num_cars -= 1  # ramp down slowly
 
+        # -------------------------------------------------
+        # 3. Clip and return
+        # -------------------------------------------------
+        self.last_num_cars = int(np.clip(self.last_num_cars, 0, self.max_cars))
         return self.last_num_cars
 
     def route_schedule(self, mean_return):
