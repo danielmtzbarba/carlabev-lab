@@ -25,42 +25,44 @@ class CurriculumState:
         self.last_width = 100
 
     def vehicle_schedule(self, mean_return):
-        """Adaptive number of vehicles based on curriculum difficulty."""
+        """Adaptive number of vehicles with asymmetric hysteresis:
+        - increases slowly
+        - decreases rapidly when performance drops
+        """
 
-        # Traffic OFF globally → always 0
+        # No traffic globally
         if not self.cfg.traffic_enabled:
             return 0
 
-        # Curriculum fully disabled → always max
-        if not self.cfg.curriculum_enabled:
+        # Curriculum disabled
+        if not self.cfg.curriculum_enabled or not self.curr_veh:
             return self.max_cars
 
-        # Curriculum does not apply to vehicles → always 0
-        if not self.curr_veh:
-            return self.max_cars
-
-        # -------------------------------------------------
-        # 1. Compute target difficulty level (0 → 1)
-        # -------------------------------------------------
+        # ======================================================
+        # 1. Compute normalized difficulty signal (0 → 1)
+        # ======================================================
         progress = np.clip(
             (mean_return - self.start_return) / (self.max_return - self.start_return),
             0.0,
             1.0,
         )
 
-        target_cars = int(progress * self.max_cars)  # desired level
+        target_cars = int(progress * self.max_cars)
 
-        # -------------------------------------------------
-        # 2. Hysteresis: smooth both increasing AND decreasing
-        # -------------------------------------------------
+        # ======================================================
+        # 2. Asymmetric progression
+        #    - slow increase
+        #    - fast decrease
+        # ======================================================
         if target_cars > self.last_num_cars:
-            self.last_num_cars += 1  # ramp up slowly
-        elif target_cars < self.last_num_cars:
-            self.last_num_cars -= 1  # ramp down slowly
+            # slow ramp-up (reduce oscillation)
+            self.last_num_cars += 1
 
-        # -------------------------------------------------
-        # 3. Clip and return
-        # -------------------------------------------------
+        elif target_cars < self.last_num_cars:
+            # fast ramp-down (recover when overwhelmed)
+            self.last_num_cars -= 3
+
+        # Clip to valid range
         self.last_num_cars = int(np.clip(self.last_num_cars, 0, self.max_cars))
         return self.last_num_cars
 
