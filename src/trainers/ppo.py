@@ -88,8 +88,8 @@ def train_ppo(cfg, envs, logger, device):
 
     options = {
         # edge cases
-        #    "scene": choice(["lead_brake", "jaywalk"]),
-        "scene": "rdm",
+        "scene": choice(["lead_brake", "jaywalk"]),
+        #    "scene": "rdm",
         "num_vehicles": 0,
         "route_dist_range": [50, 150],
         "reset_mask": np.full((num_envs), True),
@@ -179,8 +179,8 @@ def train_ppo(cfg, envs, logger, device):
                     # === Reset the finished env ===
                     options = {
                         # edge cases
-                        #    "scene": choice(["lead_brake", "jaywalk"]),
-                        "scene": "rdm",
+                        "scene": choice(["lead_brake", "jaywalk"]),
+                        #     "scene": "rdm",
                         "num_vehicles": curr_state.vehicle_schedule(mean_return),
                         "route_dist_range": curr_state.route_schedule(mean_return),
                         "reset_mask": dones_np,

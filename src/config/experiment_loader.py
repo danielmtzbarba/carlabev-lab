@@ -12,6 +12,7 @@ from src.config.base_config import ArgsCarlaBEV, EnvConfig, PPOConfig
 # ============================================================
 
 EXPERIMENT_TABLE = {
+    # Curriculum on/off: Traffic
     1: ("off", "rgb", "shaping", "off"),
     2: ("off", "rgb", "shaping", "on"),
     3: ("off", "rgb", "carl", "off"),
@@ -20,6 +21,7 @@ EXPERIMENT_TABLE = {
     6: ("off", "masks", "shaping", "on"),
     7: ("off", "masks", "carl", "off"),
     8: ("off", "masks", "carl", "on"),
+    # Curriculum on/off: Traffic
     9: ("on", "rgb", "shaping", "off"),
     10: ("on", "rgb", "shaping", "on"),
     11: ("on", "rgb", "carl", "off"),
@@ -38,6 +40,8 @@ EXPERIMENT_TABLE = {
     # Baseline extra runs
     23: ("off", "rgb", "carl", "route_only"),
     24: ("off", "masks", "carl", "route_only"),
+    #
+    25: ("on", "masks", "carl", "off"),
 }
 
 
