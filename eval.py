@@ -1,6 +1,7 @@
 import os
 from src.eval.eval_ppo import evaluate_ppo
 from src.config.experiment_loader import load_experiment
+from src.utils.logger import DRLogger
 
 base_path = "/home/danielmtz/Data/results/carlabev/runs_final"
 
@@ -14,3 +15,5 @@ if __name__ == "__main__":
         render=False,  # turn True for visualization
         device="cuda",
     )
+    logger = DRLogger(cfg)
+    logger.log_evaluation(results, 0)
