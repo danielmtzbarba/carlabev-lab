@@ -40,8 +40,8 @@ def evaluate_ppo(cfg, model_path, num_episodes=20, render=False, device="cuda"):
     causes, success_count, collision_count, unfinished_count = [], 0, 0, 0
 
     options = {
-        "scene": choice(["lead_brake", "jaywalk"]),
-        #        "scene": "rdm",
+        #   "scene": choice(["lead_brake", "jaywalk"]),
+        "scene": "rdm",
         "num_vehicles": 25,
         "route_dist_range": [250, 500],
         "reset_mask": np.array([True], dtype=bool),

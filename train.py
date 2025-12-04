@@ -2,7 +2,6 @@ import torch
 
 import warnings
 
-from src.exp import get_experiment
 from CarlaBEV.envs import make_env
 from src.trainers import build_trainer
 
