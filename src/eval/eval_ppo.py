@@ -4,8 +4,7 @@ import numpy as np
 from copy import deepcopy
 from rich.console import Console
 from rich.table import Table
-from rich.progress import track
-from torch import nn
+from rich.progress import Progress
 
 from random import choice
 from src.agents import build_agent
@@ -62,7 +61,8 @@ def evaluate_ppo(
 
     # We don't know how many "iterations" we need in advance, so we loop until
     # we've collected `num_episodes` finished episodes.
-    with console.status("[bold green]Running evaluation..."):
+    with Progress() as progress:
+        task = progress.add_task("[green]Evaluating...", total=num_episodes)
         while episodes_finished < num_episodes:
             # --- Agent action ---
             with torch.no_grad():
@@ -123,6 +123,7 @@ def evaluate_ppo(
                 all_returns.append(float(ep_returns[i]))
                 all_lengths.append(int(ep_lengths[i]))
                 episodes_finished += 1
+                progress.update(task, advance=1)
 
                 # Reset per-env accumulators for next episode
                 ep_returns[i] = 0.0
