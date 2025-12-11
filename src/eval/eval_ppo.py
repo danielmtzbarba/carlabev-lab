@@ -12,22 +12,23 @@ from src.agents import build_agent
 from CarlaBEV.envs import make_env
 
 
-def evaluate_ppo(cfg, model_path, num_episodes=20, render=False, device="cuda"):
+def evaluate_ppo(
+    cfg, model_path, num_episodes=1000, num_envs=14, render=False, device="cuda"
+):
     """
     Evaluate a trained PPO model and report statistics.
 
-    Args:
-        model_path: Path to the trained model .pt file
-        num_episodes: Number of evaluation episodes
-        render: Whether to render environment visually
-        device: "cuda" or "cpu"
+    Uses (possibly) vectorized environments, following the same
+    reset/options pattern as in train_ppo.
     """
     console = Console()
 
+    # --- Copy config to avoid mutating original ---
     cfg_eval = deepcopy(cfg)
     exp_name = cfg_eval.exp_name
 
-    # --- Setup environment ---
+    # --- Setup environment (vectorized) ---
+    # Assumes make_env returns a SyncVectorEnv-like object when eval=True
     eval_env = make_env(cfg_eval, eval=True)
 
     # --- Load model ---
@@ -35,66 +36,125 @@ def evaluate_ppo(cfg, model_path, num_episodes=20, render=False, device="cuda"):
     agent.load_state_dict(torch.load(model_path, map_location=device))
     agent.eval()
 
-    # --- Evaluation storage ---
+    # --- Evaluation storage across all episodes ---
     all_returns, all_lengths = [], []
-    causes, success_count, collision_count, unfinished_count = [], 0, 0, 0
+    causes = []
+    success_count = 0
+    collision_count = 0
+    unfinished_count = 0
 
+    # Per-env episode trackers
+    ep_returns = np.zeros(num_envs, dtype=np.float32)
+    ep_lengths = np.zeros(num_envs, dtype=np.int32)
+
+    # Initial reset for all envs
     options = {
         #   "scene": choice(["lead_brake", "jaywalk"]),
         "scene": "rdm",
         "num_vehicles": 25,
         "route_dist_range": [250, 500],
-        "reset_mask": np.array([True], dtype=bool),
+        "reset_mask": np.full((num_envs,), True, dtype=bool),
     }
-    for ep in track(range(num_episodes), description="Running evaluation..."):
-        obs, _ = eval_env.reset(options=options)
-        #
-        obs = torch.tensor(obs, dtype=torch.float32, device=device)
-        done, total_reward, steps = False, 0.0, 0
+    obs, info = eval_env.reset(seed=cfg_eval.seed, options=options)
+    obs_t = torch.tensor(obs, dtype=torch.float32, device=device)
 
-        while not done:
+    episodes_finished = 0
+
+    # We don't know how many "iterations" we need in advance, so we loop until
+    # we've collected `num_episodes` finished episodes.
+    with console.status("[bold green]Running evaluation..."):
+        while episodes_finished < num_episodes:
+            # --- Agent action ---
             with torch.no_grad():
-                action, _, _, _ = agent.get_action_and_value(obs)
+                # obs_t shape: (num_envs, *obs_shape)
+                action, _, _, _ = agent.get_action_and_value(obs_t)
 
-            obs, reward, terminated, truncated, info = eval_env.step(
+            # Step vector env
+            next_obs, reward, terminated, truncated, info = eval_env.step(
                 action.cpu().numpy()
             )
-            done = terminated or truncated
-            total_reward += reward
-            steps += 1
-            obs = torch.tensor(obs, dtype=torch.float32, device=device)
+
+            # Ensure numpy arrays
+            reward = np.array(reward, dtype=np.float32)
+            terminated = np.array(terminated, dtype=bool)
+            truncated = np.array(truncated, dtype=bool)
+
+            done = np.logical_or(terminated, truncated)
+
+            # Accumulate rewards / lengths for all envs
+            ep_returns += reward
+            ep_lengths += 1
 
             if render:
                 eval_env.render()
 
-        # --- Extract termination cause ---
-        cause = info["episode_info"]["termination"]
+            # --- Handle finished episodes in each env ---
+            if "episode_info" in info:
+                ep_info = info["episode_info"]
+            else:
+                ep_info = None
 
-        if isinstance(cause, (list, np.ndarray)):
-            cause = cause[0]  # handle vectorized info
-        causes.append(cause)
+            for i, d in enumerate(done):
+                if not d:
+                    continue
 
-        if cause == "success":
-            success_count += 1
-        elif cause == "collision":
-            collision_count += 1
-        else:
-            unfinished_count += 1
+                if episodes_finished >= num_episodes:
+                    # We've already collected enough episodes; ignore extras
+                    continue
 
-        all_returns.append(total_reward)
-        all_lengths.append(steps)
+                # Extract termination cause if available
+                cause_i = None
+                if ep_info is not None and "termination" in ep_info:
+                    # ep_info["termination"] is vectorized over envs
+                    cause_i = ep_info["termination"][i]
+
+                if cause_i is None:
+                    cause_i = "unknown"
+
+                causes.append(cause_i)
+
+                if cause_i == "success":
+                    success_count += 1
+                elif cause_i == "collision":
+                    collision_count += 1
+                else:
+                    unfinished_count += 1
+
+                all_returns.append(float(ep_returns[i]))
+                all_lengths.append(int(ep_lengths[i]))
+                episodes_finished += 1
+
+                # Reset per-env accumulators for next episode
+                ep_returns[i] = 0.0
+                ep_lengths[i] = 0
+
+            # --- If we still need more episodes, reset finished envs ---
+            if np.any(done) and episodes_finished < num_episodes:
+                reset_mask = done.copy()
+                options["reset_mask"] = reset_mask
+                next_obs, reset_info = eval_env.reset(
+                    seed=cfg_eval.seed, options=options
+                )
+
+            # Update obs tensor for next step
+            obs = next_obs
+            obs_t = torch.tensor(obs, dtype=torch.float32, device=device)
 
     eval_env.close()
 
     # --- Compute aggregate statistics ---
-    mean_return = np.mean(all_returns)
-    std_return = np.std(all_returns)
-    mean_length = np.mean(all_lengths)
+    all_returns = np.array(all_returns, dtype=np.float32)
+    all_lengths = np.array(all_lengths, dtype=np.float32)
+
+    mean_return = float(all_returns.mean()) if len(all_returns) > 0 else 0.0
+    std_return = float(all_returns.std()) if len(all_returns) > 0 else 0.0
+    mean_length = float(all_lengths.mean()) if len(all_lengths) > 0 else 0.0
+
     success_rate = success_count / num_episodes
     collision_rate = collision_count / num_episodes
     unfinished_rate = unfinished_count / num_episodes
 
-    # --- Rich summary ---
+    # --- Rich summary table ---
     table = Table(
         title=f"Evaluation Results ({num_episodes} episodes)",
         show_header=True,
@@ -108,6 +168,8 @@ def evaluate_ppo(cfg, model_path, num_episodes=20, render=False, device="cuda"):
     table.add_row("Success Rate", f"{success_rate*100:.1f}%")
     table.add_row("Collision Rate", f"{collision_rate*100:.1f}%")
     table.add_row("Unfinished Rate", f"{unfinished_rate*100:.1f}%")
+
+    # If you want to see it in console, uncomment:
     # console.print(table)
 
     # --- Save results ---
@@ -118,12 +180,11 @@ def evaluate_ppo(cfg, model_path, num_episodes=20, render=False, device="cuda"):
         "success_rate": success_rate,
         "collision_rate": collision_rate,
         "unfinished_rate": unfinished_rate,
-        # "returns": all_returns,
-        # "lengths": all_lengths,
-        # "causes": causes,
+        # still compatible with your previous code
     }
 
-    save_path = os.path.join("runs", exp_name, "eval-results-last.npy")
+    save_path = os.path.join("runs", exp_name, "eval-results-1000.npy")
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
     np.save(save_path, results)
     console.print(f"[green]✅ Saved evaluation results to:[/green] {save_path}")
 
