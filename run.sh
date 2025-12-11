@@ -2,25 +2,15 @@
 set -e
 
 echo "========================================"
-echo "🚀 Running Experiment 1"
+echo "🚀 Running Experiment 13"
 echo "========================================"
-uv run train.py exp --exp-id 11
+uv run train.py exp --exp-id 13
 
 echo "========================================"
-echo "🚀 Running Experiment 2"
+echo "🚀 Running Experiment 14"
 echo "========================================"
-uv run train.py exp --exp-id 12
+uv run train.py exp --exp-id 14
 
-echo "========================================"
-echo "🚀 Running Experiment 3"
-echo "========================================"
-uv run train.py exp --exp-id 15
-
-echo "========================================"
-echo "🚀 Running Experiment 3"
-echo "========================================"
-
-uv run train.py exp --exp-id 16
 echo "========================================"
 echo "🎉 All experiments completed!"
 echo "========================================"

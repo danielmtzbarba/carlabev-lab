@@ -11,8 +11,8 @@ class CurriculumState:
         self.last_num_cars = 0
         self.max_cars = cfg.max_vehicles
         self.curr_mode = cfg.curriculum_mode
-        self.curr_veh = self.curr_mode in ["vehicles_only", "both"]
-        self.curr_route = self.curr_mode in ["route_only", "both"]
+        self.curr_veh = self.curr_mode in ["vehicles", "both"]
+        self.curr_route = self.curr_mode in ["route", "both"]
         self.start_return = 15
         self.max_return = 50
 
