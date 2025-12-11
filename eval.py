@@ -13,6 +13,7 @@ if __name__ == "__main__":
         cfg=cfg,
         model_path=model_path,
         num_episodes=1000,
+        num_envs=14,
         render=False,  # turn True for visualization
         device="cuda",
     )
