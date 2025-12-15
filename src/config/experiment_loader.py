@@ -12,36 +12,43 @@ from src.config.base_config import ArgsCarlaBEV, EnvConfig, PPOConfig
 # ============================================================
 
 EXPERIMENT_TABLE = {
-    # Curriculum on/off: Traffic
-    1: ("off", "rgb", "shaping", "off"),
-    2: ("off", "rgb", "shaping", "on"),
-    3: ("off", "rgb", "carl", "off"),
-    4: ("off", "rgb", "carl", "on"),
-    5: ("off", "masks", "shaping", "off"),
-    6: ("off", "masks", "shaping", "on"),
-    7: ("off", "masks", "carl", "off"),
-    8: ("off", "masks", "carl", "on"),
-    # Curriculum on/off: Traffic
-    9: ("on", "rgb", "shaping", "off"),
-    10: ("on", "rgb", "shaping", "on"),
-    11: ("on", "rgb", "carl", "off"),
-    12: ("on", "rgb", "carl", "on"),
-    13: ("on", "masks", "shaping", "off"),
-    14: ("on", "masks", "shaping", "on"),
-    15: ("on", "masks", "carl", "off"),
-    16: ("on", "masks", "carl", "on"),
-    # Curriculum variants
-    17: ("on", "rgb", "carl", "vehicles_only"),
-    18: ("on", "rgb", "carl", "route_only"),
-    19: ("on", "rgb", "carl", "both"),
-    20: ("on", "masks", "carl", "vehicles_only"),
-    21: ("on", "masks", "carl", "route_only"),
-    22: ("on", "masks", "carl", "both"),
+    # Reward and Input type - Traffic OFF:
+    1:  ("off", "rgb",   "shaping", "off", "off"),
+    2:  ("off", "rgb",   "shaping", "on",  "off"),
+    3:  ("off", "rgb",   "carl",    "off", "off"),
+    4:  ("off", "rgb",   "carl",    "on",  "off"),
+    5:  ("off", "masks", "shaping", "off", "off"),
+    6:  ("off", "masks", "shaping", "on",  "off"),
+    7:  ("off", "masks", "carl",    "off", "off"),
+    8:  ("off", "masks", "carl",    "on",  "off"),
+
+    # Reward and Input type - Traffic ON:
+    9:  ("on",  "rgb",   "shaping", "off", "off"),
+    10: ("on",  "rgb",   "shaping", "on",  "off"),
+    11: ("on",  "rgb",   "carl",    "off", "off"),
+    12: ("on",  "rgb",   "carl",    "on",  "off"),
+    13: ("on",  "masks", "shaping", "off", "off"),
+    14: ("on",  "masks", "shaping", "on",  "off"),
+    15: ("on",  "masks", "carl",    "off", "off"),
+    16: ("on",  "masks", "carl",    "on",  "off"),
+
+    # Curriculum learning variants
+    17: ("on", "rgb",   "carl", "vehicles_only", "off"),
+    18: ("on", "rgb",   "carl", "route_only",    "off"),
+    19: ("on", "rgb",   "carl", "both",          "off"),
+    20: ("on", "masks", "carl", "vehicles_only", "off"),
+    21: ("on", "masks", "carl", "route_only",    "off"),
+    22: ("on", "masks", "carl", "both",          "off"),
+
     # Baseline extra runs
-    23: ("off", "rgb", "carl", "route_only"),
-    24: ("off", "masks", "carl", "route_only"),
-    #
-    25: ("on", "masks", "carl", "off"),
+    23: ("off", "rgb",   "carl", "route_only", "off"),
+    24: ("off", "masks", "carl", "route_only", "off"),
+
+    # Only Edge scenarios
+    25: ("on", "masks", "carl", "off", "off"),
+
+    # FOV masked 
+    26: ("on", "masks", "carl", "route_only", "on"),
 }
 
 
@@ -51,10 +58,13 @@ EXPERIMENT_TABLE = {
 
 
 def apply_experiment_config(args: ArgsCarlaBEV, exp_id: int):
-    traffic, input_type, reward_type, curriculum = EXPERIMENT_TABLE[exp_id]
+    traffic, input_type, reward_type, curriculum, fov_mask = EXPERIMENT_TABLE[exp_id]
 
     env: EnvConfig() = args.env
     ppo: PPOConfig() = args.ppo
+
+    # ===== Fov Mask (corners) 
+    env.fov_masked = fov_mask == "on"
 
     # ===== Traffic
     env.traffic_enabled = traffic == "on"
@@ -83,7 +93,7 @@ def apply_experiment_config(args: ArgsCarlaBEV, exp_id: int):
             env.curriculum_mode = "both"
 
     # ===== Base name
-    args.exp_name = f"exp-{exp_id}_cnn-ppo_traffic-{traffic}_input-{input_type}_rwd-{reward_type}_curr-{curriculum}"
+    args.exp_name = f"exp-{exp_id}_cnn-ppo_traffic-{traffic}_input-{input_type}_rwd-{reward_type}_curr-{curriculum}_fovmask-{fov_mask}"
 
     return args
 

@@ -19,6 +19,8 @@ dependencies = [
     "torch>=2.7.1",
     "torchvision>=0.22.1",
     "tyro>=0.9.26",
+    "jupyter",
+    "seaborn",
 ]
 
 [tool.uv.sources]
@@ -26,7 +28,7 @@ dependencies = [
 #CarlaBEV = {path = "/Users/danielmtz/Data/projects/driverless/carlabev-env", editable= true}
 
 #MSI
-#CarlaBEV = {path = "/home/danielmtz/Data/projects/carlabev", editable= true}
+CarlaBEV = {path = "/home/danielmtz/Projects/driverless/carlabev-env", editable= true}
 
 #HPC
-CarlaBEV = {path = "/data/horse/ws/dama898h-danielmtz/carlabev", editable= true}
+#CarlaBEV = {path = "/data/horse/ws/dama898h-danielmtz/carlabev", editable= true}
