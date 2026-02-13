@@ -67,6 +67,10 @@ class DRLogger(object):
             % ("\n".join([f"|{k}|{v}|" for k, v in vars(config).items()])),
         )
 
+        # Benchmark Logging
+        self.success_thresholds = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99]
+        self.reached_thresholds = set()
+
     def log_episode(self, infos, mean_return, idx, global_step=0):
         """
         infos: dict containing 'termination' with keys:
@@ -159,7 +163,13 @@ class DRLogger(object):
             self.writer.add_scalar("stats/clip_fraction", clip_frac, global_step)
 
     # === Add this method inside DRLogger ===
-    def log_evaluation(self, results_dict: dict, global_step: int = None):
+    def log_evaluation(
+        self,
+        results_dict: dict,
+        global_step: int = None,
+        iteration: int = None,
+        elapsed_time: float = None,
+    ):
         """
         Logs evaluation results from evaluate_ppo() to TensorBoard and console.
 
@@ -176,7 +186,47 @@ class DRLogger(object):
             }
         global_step : int, optional
             Global training step to align logs in TensorBoard.
+        iteration : int, optional
+            Current training iteration.
+        elapsed_time : float, optional
+            Elapsed wall-clock time in seconds.
         """
+        # --- Benchmark Logging ---
+        if "success_rate" in results_dict:
+            success_rate = results_dict["success_rate"]
+            collision_rate = results_dict.get("collision_rate", 0.0)
+
+            for threshold in self.success_thresholds:
+                if success_rate >= threshold and threshold not in self.reached_thresholds:
+                    self.reached_thresholds.add(threshold)
+                    
+                    # Add to results_dict for TB/Console
+                    key = f"time_to_reach_{threshold}"
+                    results_dict[key] = elapsed_time
+                    
+                    # Save to CSV
+                    import csv
+                    log_path = os.path.join(self.writer.log_dir, "benchmark_results.csv")
+                    file_exists = os.path.isfile(log_path)
+                    
+                    with open(log_path, "a", newline="") as f:
+                        writer = csv.writer(f)
+                        if not file_exists:
+                            writer.writerow(["threshold", "success_rate", "collision_rate", "global_step", "iteration", "elapsed_time"])
+                        
+                        writer.writerow([
+                            threshold,
+                            success_rate,
+                            collision_rate,
+                            global_step,
+                            iteration,
+                            elapsed_time
+                        ])
+                    
+                    self._logger.info(
+                        f"🏆 Reached success threshold {threshold} at step {global_step} "
+                        f"(Iter: {iteration}, Time: {elapsed_time:.2f}s)"
+                    )
         # Log to TensorBoard
         for key, value in results_dict.items():
             try:

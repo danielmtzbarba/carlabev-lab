@@ -12,13 +12,10 @@ from CarlaBEV.envs import make_env
 
 
 def evaluate_ppo(
-    cfg, model_path, num_episodes=1000, num_envs=14, render=False, device="cuda"
+    cfg, model_path, num_episodes=1000, num_envs=14, render=False, device="cuda", file_name="ppo-eval.npy"
 ):
     """
     Evaluate a trained PPO model and report statistics.
-
-    Uses (possibly) vectorized environments, following the same
-    reset/options pattern as in train_ppo.
     """
     console = Console()
 
@@ -28,6 +25,7 @@ def evaluate_ppo(
 
     # --- Setup environment (vectorized) ---
     # Assumes make_env returns a SyncVectorEnv-like object when eval=True
+    cfg_eval.num_envs = num_envs
     eval_env = make_env(cfg_eval, eval=True)
 
     # --- Load model ---
@@ -170,9 +168,6 @@ def evaluate_ppo(
     table.add_row("Collision Rate", f"{collision_rate*100:.1f}%")
     table.add_row("Unfinished Rate", f"{unfinished_rate*100:.1f}%")
 
-    # If you want to see it in console, uncomment:
-    # console.print(table)
-
     # --- Save results ---
     results = {
         "mean_return": mean_return,
@@ -184,7 +179,7 @@ def evaluate_ppo(
         # still compatible with your previous code
     }
 
-    save_path = os.path.join("runs", exp_name, "eval-results-1000.npy")
+    save_path = os.path.join("runs", exp_name, file_name)
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     np.save(save_path, results)
     console.print(f"[green]✅ Saved evaluation results to:[/green] {save_path}")
