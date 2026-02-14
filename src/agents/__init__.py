@@ -3,7 +3,7 @@ import torch.optim as optim
 from stable_baselines3.common.buffers import ReplayBuffer
 
 from .dqn import QNetwork
-from .cnn_ppo import ConvolutionalPPO 
+from .cnn_ppo import DiscreteConvolutionalPPO, ContinuousConvolutionalPPO 
 from .ppo_vector import VectorPPO 
 from .sac import SoftQNetwork, Actor
 
@@ -24,7 +24,15 @@ def build_agent(args, envs, device):
         return q_network, optimizer, target_network, rb
 
     elif "debug" in args.exp_name or "cnn-ppo" in args.exp_name:
-        agent = ConvolutionalPPO(envs).to(device)
+        import gymnasium as gym
+        from .cnn_ppo import DiscreteConvolutionalPPO, ContinuousConvolutionalPPO
+        
+        is_continuous = isinstance(envs.single_action_space, gym.spaces.Box)
+        if is_continuous:
+            agent = ContinuousConvolutionalPPO(envs).to(device)
+        else:
+            agent = DiscreteConvolutionalPPO(envs).to(device)
+            
         optimizer = optim.Adam(agent.parameters(), lr=args.ppo.learning_rate, eps=1e-5)
         return agent, optimizer
 

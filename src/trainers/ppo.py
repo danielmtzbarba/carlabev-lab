@@ -56,7 +56,7 @@ def train_ppo(cfg, envs, logger, device):
     curr_state = CurriculumState(cfg.env)
     return_buffer = deque(maxlen=50)
 
-    model_channels = agent.network[0].in_channels
+    model_channels = agent.backbone.in_channels
     logger.msg(f"Observation space: {envs.observation_space}")
     logger.msg(f"Model_channels: {model_channels}")
     # Storage
@@ -66,6 +66,12 @@ def train_ppo(cfg, envs, logger, device):
         device=device,
     )
     actions = torch.zeros(
+        (ppo_cfg.num_steps, num_envs) + envs.single_action_space.shape,
+        dtype=torch.float32,
+        device=device,
+    )
+    # Store raw actions for continuous agents
+    raw_actions = torch.zeros(
         (ppo_cfg.num_steps, num_envs) + envs.single_action_space.shape,
         dtype=torch.float32,
         device=device,
@@ -127,7 +133,7 @@ def train_ppo(cfg, envs, logger, device):
             progress,
             ppo_cfg.decay_schedule,
         )
-        if iteration % (ppo_cfg.num_iterations // 6) == 0:
+        if ppo_cfg.num_iterations >= 6 and iteration % (ppo_cfg.num_iterations // 6) == 0:
             ppo_cfg.ent_coef *= 1.2  # small entropy boost
             ppo_cfg.ent_coef = min(ppo_cfg.ent_coef, ppo_cfg.ent_coef_start)
 
@@ -138,12 +144,16 @@ def train_ppo(cfg, envs, logger, device):
 
             # action selection
             with torch.no_grad():
-                action, logprob, _, value = agent.get_action_and_value(next_obs)
-                # value shape should be (N,1) or (N,)
+                if agent.is_continuous:
+                    raw_action, action, logprob, _, value = agent.get_action_and_value(next_obs)
+                else:
+                    action, logprob, _, value = agent.get_action_and_value(next_obs)
+                    raw_action = action
                 values[step].copy_(value.view(-1))
 
             # store
             actions[step].copy_(action)
+            raw_actions[step].copy_(raw_action)
             logprobs[step].copy_(logprob.view(-1))
 
             # Step envs
@@ -221,6 +231,7 @@ def train_ppo(cfg, envs, logger, device):
         # flatten
         b_obs = obs.reshape((-1,) + envs.single_observation_space.shape).to(device)
         b_actions = actions.reshape((-1,) + envs.single_action_space.shape).to(device)
+        b_raw_actions = raw_actions.reshape((-1,) + envs.single_action_space.shape).to(device)
         b_logprobs = logprobs.reshape(-1).to(device)
         b_advantages = advantages.reshape(-1).to(device)
         b_returns = returns.reshape(-1).to(device)
@@ -241,9 +252,17 @@ def train_ppo(cfg, envs, logger, device):
 
                 mb_obs = b_obs[mb_inds]
                 mb_actions = b_actions[mb_inds]
-                _, newlogprob, entropy, newvalue = agent.get_action_and_value(
-                    mb_obs, mb_actions.long()
-                )
+                mb_raw_actions = b_raw_actions[mb_inds]
+                
+                # Handle discrete vs continuous for action indexing
+                if not agent.is_continuous:
+                    _, newlogprob, entropy, newvalue = agent.get_action_and_value(
+                        mb_obs, mb_raw_actions.long()
+                    )
+                else:
+                    _, _, newlogprob, entropy, newvalue = agent.get_action_and_value(
+                        mb_obs, mb_raw_actions
+                    )
 
                 logratio = newlogprob - b_logprobs[mb_inds]
                 ratio = logratio.exp()

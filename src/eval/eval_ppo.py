@@ -65,7 +65,11 @@ def evaluate_ppo(
             # --- Agent action ---
             with torch.no_grad():
                 # obs_t shape: (num_envs, *obs_shape)
-                action, _, _, _ = agent.get_action_and_value(obs_t)
+                out = agent.get_action_and_value(obs_t)
+                if agent.is_continuous:
+                    _, action, _, _, _ = out
+                else:
+                    action, _, _, _ = out
 
             # Step vector env
             next_obs, reward, terminated, truncated, info = eval_env.step(
