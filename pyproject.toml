@@ -21,6 +21,7 @@ dependencies = [
     "tyro>=0.9.26",
     "jupyter",
     "seaborn",
+    "optuna>=4.7.0",
 ]
 
 [tool.uv.sources]

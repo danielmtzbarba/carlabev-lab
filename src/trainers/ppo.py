@@ -45,7 +45,18 @@ def decay_schedule(start, end, progress, mode="linear"):
         return start
 
 
-def train_ppo(cfg, envs, logger, device):
+def compute_safety_score(eval_results, w_success=0.5, w_return=0.1, w_collision=0.3, w_unfinished=0.1):
+    speed_factor = 0.01  # Arbitrary scaling down for raw returns
+    score = (
+        (w_success * eval_results.get("success_rate", 0.0))
+        + (w_return * eval_results.get("mean_return", 0.0) * speed_factor)
+        - (w_collision * eval_results.get("collision_rate", 0.0))
+        - (w_unfinished * eval_results.get("unfinished_rate", 0.0))
+    )
+    return score
+
+
+def train_ppo(cfg, envs, logger, device, trial=None):
     num_envs = cfg.num_envs
     ppo_cfg = cfg.ppo
 
@@ -363,6 +374,16 @@ def train_ppo(cfg, envs, logger, device):
                 elapsed_time=elapsed_time,
             )
 
+            # Optuna partial reporting and pruning
+            if trial is not None:
+                import optuna
+                score = compute_safety_score(eval_results)
+                trial.report(score, iteration)
+                if trial.should_prune():
+                    envs.close()
+                    logger.writer.close()
+                    raise optuna.TrialPruned()
+
     model_path = os.path.join(f"runs/{cfg.exp_name}", "ppo_final.pt")
     torch.save(agent.state_dict(), model_path)
     eval_results = evaluate_ppo(
@@ -384,3 +405,6 @@ def train_ppo(cfg, envs, logger, device):
 
     envs.close()
     logger.writer.close()
+
+    if trial is not None:
+        return compute_safety_score(eval_results)
