@@ -17,7 +17,7 @@ from src.trainers.ppo import train_ppo
 
 @dataclass
 class OptunaArgs:
-    exp_id: int = 1
+    exp_id: int = 26
     n_trials: int = 100
     timesteps_budget: int = 2_000_000
     save_every: int = 100

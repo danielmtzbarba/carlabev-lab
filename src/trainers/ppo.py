@@ -45,7 +45,7 @@ def decay_schedule(start, end, progress, mode="linear"):
         return start
 
 
-def compute_safety_score(eval_results, w_success=0.5, w_return=0.1, w_collision=0.3, w_unfinished=0.1):
+def compute_safety_score(eval_results, w_success=1.0, w_return=0.1, w_collision=0.9, w_unfinished=0.3):
     speed_factor = 0.01  # Arbitrary scaling down for raw returns
     score = (
         (w_success * eval_results.get("success_rate", 0.0))
