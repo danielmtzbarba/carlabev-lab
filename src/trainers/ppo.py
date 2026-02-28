@@ -45,11 +45,9 @@ def decay_schedule(start, end, progress, mode="linear"):
         return start
 
 
-def compute_safety_score(eval_results, w_success=1.0, w_return=0.1, w_collision=0.9, w_unfinished=0.3):
-    speed_factor = 0.01  # Arbitrary scaling down for raw returns
+def compute_safety_score(eval_results, w_success=1.0, w_collision=1.0, w_unfinished=0.3):
     score = (
         (w_success * eval_results.get("success_rate", 0.0))
-        + (w_return * eval_results.get("mean_return", 0.0) * speed_factor)
         - (w_collision * eval_results.get("collision_rate", 0.0))
         - (w_unfinished * eval_results.get("unfinished_rate", 0.0))
     )
@@ -62,7 +60,7 @@ def train_ppo(cfg, envs, logger, device, trial=None):
 
     ppo_cfg.batch_size = int(num_envs * ppo_cfg.num_steps)
     ppo_cfg.minibatch_size = int(ppo_cfg.batch_size // ppo_cfg.num_minibatches)
-    ppo_cfg.num_iterations = ppo_cfg.total_timesteps // ppo_cfg.batch_size
+    ppo_cfg.num_iterations = max(1, ppo_cfg.total_timesteps // ppo_cfg.batch_size)
     agent, optimizer = build_agent(cfg, envs, device)
     curr_state = CurriculumState(cfg.env)
     return_buffer = deque(maxlen=50)
@@ -337,6 +335,7 @@ def train_ppo(cfg, envs, logger, device, trial=None):
                 entropy=entropy_loss.item(),
                 approx_kl=approx_kl if approx_kl is not None else None,
                 clip_frac=clip_frac_mean,
+                ent_coef=ppo_cfg.ent_coef
             )
             logger.writer.add_scalar(
                 "schedules/ent_coef", ppo_cfg.ent_coef, global_step
@@ -361,7 +360,7 @@ def train_ppo(cfg, envs, logger, device, trial=None):
             eval_results = evaluate_ppo(
                 cfg,
                 model_path=model_path,
-                num_episodes=30,
+                num_episodes=cfg.eval_episodes,
                 render=False,  # turn True for visualization
                 device="cuda",
                 file_name="ppo-eval-last.npy"
@@ -389,10 +388,10 @@ def train_ppo(cfg, envs, logger, device, trial=None):
     eval_results = evaluate_ppo(
         cfg,
         model_path=model_path,
-        num_episodes=1000,
+        num_episodes=cfg.eval_final_episodes,
         render=False,  # turn True for visualization
         device="cuda",
-        file_name="ppo-eval-final-1000.npy"
+        file_name="ppo-eval-final-last.npy"
     )
     elapsed_time = time.time() - start_time
     logger.log_evaluation(
@@ -407,4 +406,8 @@ def train_ppo(cfg, envs, logger, device, trial=None):
     logger.writer.close()
 
     if trial is not None:
+        for k, v in logger.threshold_stats.items():
+            trial.set_user_attr(k, v)
+        for k, v in eval_results.items():
+            trial.set_user_attr(f"final_{k}", v)
         return compute_safety_score(eval_results)

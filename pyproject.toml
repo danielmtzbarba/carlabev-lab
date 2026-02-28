@@ -22,6 +22,8 @@ dependencies = [
     "jupyter",
     "seaborn",
     "optuna>=4.7.0",
+    "plotly>=6.5.2",
+    "scikit-learn>=1.8.0",
 ]
 
 [tool.uv.sources]

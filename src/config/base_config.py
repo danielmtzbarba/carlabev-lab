@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 class LoggerConfig:
     enabled: bool = False
     dir: str = "results/carlabev/runs/"
+    db_path: str = None
+    trial_number: int = None
 
 
 @dataclass
@@ -36,7 +38,7 @@ class EnvConfig:
     max_vehicles: int = 25
 
     # Reward
-    reward_type: str = "shaping"  # "shaping" | "carl"
+    reward_type: str = "carl"  # "shaping" | "carl"
 
 
 @dataclass
@@ -95,4 +97,6 @@ class ArgsCarlaBEV:
     capture_every: int = 50
     save_model: bool = True
     save_every: int = 200
+    eval_episodes: int = 30
+    eval_final_episodes: int = 1000
     torch_deterministic: bool = True
