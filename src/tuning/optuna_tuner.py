@@ -18,15 +18,16 @@ from src.trainers.ppo import train_ppo
 @dataclass
 class OptunaArgs:
     exp_id: int = 26
+    phase: int = 1 # Choose 1 or 2
     n_trials_phase_1: int = 100
     n_trials_phase_2: int = 50
     timesteps_phase_1: int = 1_000_000
     timesteps_phase_2: int = 2_000_000
-    save_every_phase_1: int = 100
-    save_every_phase_2: int = 100
+    save_every_phase_1: int = 25 
+    save_every_phase_2: int = 25
     eval_episodes: int = 30
-    eval_final_episodes: int = 1000
-    phase: int = 1 # Choose 1 or 2
+    eval_final_episodes: int = 100
+    
     top_k_phase_1: int = 10 # Number of best trials to consider for Phase 2
 
 def phase_1_objective(trial: optuna.Trial, base_args: ArgsCarlaBEV, opt_args: OptunaArgs) -> float:
