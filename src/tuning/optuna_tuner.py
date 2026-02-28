@@ -157,14 +157,28 @@ def main():
 
     sampler = optuna.samplers.TPESampler(constant_liar=True)
     
-    study = optuna.create_study(
-        storage=storage,
-        load_if_exists=True,
-        direction="maximize", 
-        pruner=pruner,
-        sampler=sampler,
-        study_name=f"carlabev_optuna_{cli_args.exp_id}"
-    )
+    study = None
+    import time
+    import random
+    
+    # Attempt to create or load the study robustly to avoid race conditions when many Slurm nodes start simultaneously
+    for _ in range(20):
+        try:
+            study = optuna.create_study(
+                storage=storage,
+                load_if_exists=True,
+                direction="maximize", 
+                pruner=pruner,
+                sampler=sampler,
+                study_name=f"carlabev_optuna_{cli_args.exp_id}"
+            )
+            break
+        except Exception as e:
+            print(f"Study creation collision or lock detected: {e}. Retrying in a few seconds...")
+            time.sleep(random.uniform(2, 6))
+            
+    if study is None:
+        raise RuntimeError("Failed to create or load the Optuna study after multiple attempts due to database locking.")
 
     try:
         if cli_args.phase == 1:

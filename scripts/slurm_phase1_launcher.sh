@@ -30,6 +30,12 @@ mkdir -p results/logs
 echo "Starting Optuna Phase 1 worker on node: $(hostname)"
 echo "Array Task ID: $SLURM_ARRAY_TASK_ID"
 
+# Stagger the start time of each node to guarantee the SQLite database schema
+# is fully initialized by the first node before the others hit it.
+sleep_time=$((SLURM_ARRAY_TASK_ID * 5))
+echo "Staggering start by sleeping for $sleep_time seconds to prevent SQLite creation race conditions..."
+sleep $sleep_time
+
 # Run the Optuna Tuner Phase 1 using uv
 srun uv run python -m src.tuning.optuna_tuner \
     --exp-id 26 \
