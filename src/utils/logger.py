@@ -76,6 +76,7 @@ class DRLogger(object):
         self.db_conn = None
         self.trial_number = getattr(config.logging, "trial_number", None)
         self.db_path = getattr(config.logging, "db_path", None)
+        self.seed = getattr(config, "seed", None)
         
         if self.db_path is not None and self.trial_number is not None:
             import sqlite3
@@ -90,6 +91,7 @@ class DRLogger(object):
         CREATE TABLE IF NOT EXISTS trial_train_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             trial_number INTEGER,
+            seed INTEGER,
             global_step INTEGER,
             walltime REAL,
             mean_return REAL,
@@ -108,6 +110,7 @@ class DRLogger(object):
         CREATE TABLE IF NOT EXISTS trial_eval_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             trial_number INTEGER,
+            seed INTEGER,
             global_step INTEGER,
             walltime REAL,
             mean_return REAL,
@@ -132,6 +135,18 @@ class DRLogger(object):
         cursor = self.db_conn.cursor()
         cursor.execute(query_train)
         cursor.execute(query_eval)
+        
+        # Backwards compatibility: inject seed column if DB exists prior to this change
+        try:
+            cursor.execute("ALTER TABLE trial_train_logs ADD COLUMN seed INTEGER;")
+        except:
+            pass
+            
+        try:
+            cursor.execute("ALTER TABLE trial_eval_logs ADD COLUMN seed INTEGER;")
+        except:
+            pass
+
         self.db_conn.commit()
 
     def log_episode(self, infos, mean_return, idx, global_step=0):
@@ -236,10 +251,10 @@ class DRLogger(object):
             cursor = self.db_conn.cursor()
             cursor.execute('''
                 INSERT INTO trial_train_logs 
-                (trial_number, global_step, walltime, mean_return, pg_loss, v_loss, entropy, approx_kl, clip_frac, ent_coef, train_success_rate, train_collision_rate, train_unfinished_rate)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (trial_number, seed, global_step, walltime, mean_return, pg_loss, v_loss, entropy, approx_kl, clip_frac, ent_coef, train_success_rate, train_collision_rate, train_unfinished_rate)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
-                self.trial_number, global_step, time.time(), mean_ret, 
+                self.trial_number, self.seed, global_step, time.time(), mean_ret, 
                 pg_loss if pg_loss is not None else 0.0, 
                 v_loss if v_loss is not None else 0.0, 
                 entropy if entropy is not None else 0.0, 
@@ -359,14 +374,14 @@ class DRLogger(object):
             
             cursor.execute('''
                 INSERT INTO trial_eval_logs 
-                (trial_number, global_step, walltime, 
+                (trial_number, seed, global_step, walltime, 
                  mean_return, std_return, mean_length, 
                  success_rate, collision_rate, unfinished_rate,
                  time_to_reach_0_1, time_to_reach_0_2, time_to_reach_0_3, time_to_reach_0_4, time_to_reach_0_5, 
                  time_to_reach_0_6, time_to_reach_0_7, time_to_reach_0_8, time_to_reach_0_9, time_to_reach_0_95, time_to_reach_0_99)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
-                self.trial_number, global_step if global_step is not None else 0, time.time(),
+                self.trial_number, self.seed, global_step if global_step is not None else 0, time.time(),
                 float(results_dict.get("mean_return", 0.0)),
                 float(results_dict.get("std_return", 0.0)),
                 float(results_dict.get("mean_length", 0.0)),

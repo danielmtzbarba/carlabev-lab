@@ -12,77 +12,30 @@ class AnalyzeArgs:
     show_plots: bool = False
     save_dir: str = "results"
 
-def print_trial_info(trial, db_conn, rank=None):
-    prefix = f"Rank {rank}: " if rank else ""
-    print(f"\n{prefix}Trial {trial.number}")
-    print(f"  Value: {trial.value}")
-    print("  Parameters:")
-    for k, v in trial.params.items():
-        print(f"    {k}: {v}")
-    
-    phase = trial.user_attrs.get("phase", "Unknown")
-    print(f"  Phase: {phase}")
+def print_compact_trial_info(trial, db_conn, rank=None):
+    if db_conn is None:
+        print(f"Rank {rank} | Trial {trial.number:<3} | Score: {trial.value:.4f} | Phase: {trial.user_attrs.get('phase', '?')}")
+        return
 
-    if db_conn is not None:
-        cursor = db_conn.cursor()
-        
-        # Fetch the latest evaluation logs for this trial
-        cursor.execute('''
-            SELECT * FROM trial_eval_logs 
-            WHERE trial_number = ? 
-            ORDER BY global_step DESC LIMIT 1
-        ''', (trial.number,))
-        
-        eval_row = cursor.fetchone()
-        if eval_row:
-            # Reconstruct column names to values mapping
-            col_names = [description[0] for description in cursor.description]
-            eval_data = dict(zip(col_names, eval_row))
-            
-            print("  Final Evaluation Metrics (from DB):")
-            metrics_keys = ['mean_return', 'std_return', 'mean_length', 'success_rate', 'collision_rate', 'unfinished_rate']
-            for k in metrics_keys:
-                if k in eval_data and eval_data[k] is not None:
-                    print(f"    {k}: {eval_data[k]:.4f}")
-            
-            print("  Success Thresholds Reached (from DB):")
-            threshold_keys = [k for k in col_names if k.startswith('time_to_reach_')]
-            found_thresholds = False
-            for k in threshold_keys:
-                if eval_data[k] is not None:
-                    found_thresholds = True
-                    print(f"    {k}: {eval_data[k]}")
-            if not found_thresholds:
-                print("    None")
-                
-        # Give a quick summary of training performance
-        cursor.execute('''
-            SELECT MAX(global_step), AVG(mean_return), AVG(pg_loss), AVG(v_loss)
-            FROM trial_train_logs
-            WHERE trial_number = ?
-        ''', (trial.number,))
-        train_row = cursor.fetchone()
-        if train_row and train_row[0] is not None:
-            print(f"  Training Summary (from DB):")
-            print(f"    Total Steps: {train_row[0]}")
-            print(f"    Avg Return:  {train_row[1]:.4f}")
-            print(f"    Avg PG Loss: {train_row[2]:.4f}")
-            print(f"    Avg V Loss:  {train_row[3]:.4f}")
-            
-    else:
-        # Fallback to user attributes if DB is not available
-        thresholds = {k: v for k, v in trial.user_attrs.items() if "time_to_reach" in k or "step_to_reach" in k}
-        metrics = {k: v for k, v in trial.user_attrs.items() if k.startswith("final_")}
-        
-        if metrics:
-            print("  Final Evaluation Metrics (Attributes Backup):")
-            for k, v in metrics.items():
-                print(f"    {k.replace('final_', '')}: {v:.4f}" if isinstance(v, float) else f"    {k.replace('final_', '')}: {v}")
-                
-        if thresholds:
-            print("  Success Thresholds Reached (Attributes Backup):")
-            for k, v in thresholds.items():
-                print(f"    {k}: {v}")
+    cursor = db_conn.cursor()
+    # Get final eval
+    cursor.execute('SELECT success_rate, collision_rate FROM trial_eval_logs WHERE trial_number = ? ORDER BY global_step DESC LIMIT 1', (trial.number,))
+    eval_row = cursor.fetchone()
+    
+    succ = eval_row[0] if eval_row and eval_row[0] is not None else 0.0
+    coll = eval_row[1] if eval_row and eval_row[1] is not None else 0.0
+    
+    # Get train summary 
+    cursor.execute('SELECT MAX(global_step), AVG(mean_return) FROM trial_train_logs WHERE trial_number = ?', (trial.number,))
+    train_row = cursor.fetchone()
+    steps = train_row[0] if train_row and train_row[0] is not None else 0
+    ret = train_row[1] if train_row and train_row[1] is not None else 0.0
+    
+    # Format params compactly
+    params_str = ", ".join([f"{k}={v:.4g}" if isinstance(v, float) else f"{k}={v}" for k, v in trial.params.items()])
+    
+    print(f"Rank {rank} | Trial {trial.number:<3} | Score: {trial.value:7.4f} | Succ: {succ:5.2f} Coll: {coll:5.2f} | Ret: {ret:6.2f} ({steps:<8} steps) | Phase: {trial.user_attrs.get('phase', '?'):<2} | {params_str}")
+
 
 def main():
     args = tyro.cli(AnalyzeArgs)
@@ -119,16 +72,14 @@ def main():
         return
 
     print("\n🏆 Best Trial Overall:")
-    print_trial_info(study.best_trial, db_conn=db_conn)
+    print_compact_trial_info(study.best_trial, db_conn=db_conn, rank="BEST")
     
     complete_trials.sort(key=lambda t: t.value, reverse=True) # Maximize direction
     
     print(f"\n--- Top {min(args.top_k, len(complete_trials))} Trials ---")
-    for i, trial in enumerate(complete_trials[:args.top_k]):
-        print_trial_info(trial, db_conn=db_conn, rank=i+1)
-
-    if db_conn is not None:
-        db_conn.close()
+    top_trials = complete_trials[:args.top_k]
+    for i, trial in enumerate(top_trials):
+        print_compact_trial_info(trial, db_conn=db_conn, rank=i+1)
 
     # Visualization
     plot_dir = os.path.join(args.save_dir, f"{study_name}_plots")
@@ -171,11 +122,53 @@ def main():
             fig_contour = apply_publication_style(fig_contour, "Search Space Topography")
             fig_contour.write_html(os.path.join(plot_dir, "contour_plot.html"))
             
-        # 4. Slice Plot
-        if len(complete_trials) > 1:
             fig_slice = vis.plot_slice(study)
             fig_slice = apply_publication_style(fig_slice, "Parameter Slice Analysis")
             fig_slice.write_html(os.path.join(plot_dir, "slice_plot.html"))
+
+        # 5. Top Trials Learning Curves
+        if db_conn is not None and len(top_trials) > 0:
+            import plotly.graph_objects as go
+            fig_learning = go.Figure()
+            
+            for rank, trial in enumerate(top_trials):
+                # Fetch mean return curve
+                df = pd.read_sql_query('SELECT global_step, mean_return FROM trial_train_logs WHERE trial_number = ? ORDER BY global_step', db_conn, params=(trial.number,))
+                if not df.empty:
+                    fig_learning.add_trace(go.Scatter(x=df['global_step'], y=df['mean_return'], mode='lines', name=f"Rank {rank+1} (Trial {trial.number})"))
+                    
+            if len(fig_learning.data) > 0:
+                fig_learning = apply_publication_style(fig_learning, "Learning Curves (Top Trials)")
+                fig_learning.write_html(os.path.join(plot_dir, "top_trials_learning_curves.html"))
+                
+        # 6. Time-to-Reach Success Thresholds
+        if db_conn is not None and len(top_trials) > 0:
+            fig_thresholds = go.Figure()
+            threshold_cols = [
+                '0_1','0_2','0_3','0_4','0_5','0_6','0_7','0_8','0_9','0_95','0_99'
+            ]
+            
+            for rank, trial in enumerate(top_trials):
+                # Fetch threshold array (latest row for this trial)
+                df = pd.read_sql_query('SELECT * FROM trial_eval_logs WHERE trial_number = ? ORDER BY global_step DESC LIMIT 1', db_conn, params=(trial.number,))
+                if not df.empty:
+                    x_vals = []
+                    y_vals = []
+                    for tc in threshold_cols:
+                        col_name = f'time_to_reach_{tc}'
+                        if col_name in df.columns and pd.notna(df.iloc[0][col_name]):
+                            hr_threshold = float(tc.replace('_', '.'))
+                            x_vals.append(hr_threshold)
+                            y_vals.append(df.iloc[0][col_name] / 3600.0) # Convert seconds to hours
+                            
+                    if len(x_vals) > 0:
+                        fig_thresholds.add_trace(go.Scatter(x=x_vals, y=y_vals, mode='lines+markers', name=f"Rank {rank+1} (Trial {trial.number})"))
+            
+            if len(fig_thresholds.data) > 0:
+                fig_thresholds = apply_publication_style(fig_thresholds, "Walltime to Success Threshold (Hours)")
+                fig_thresholds.update_xaxes(title_text="Success Rate Threshold")
+                fig_thresholds.update_yaxes(title_text="Training Elapsed Time (Hours)")
+                fig_thresholds.write_html(os.path.join(plot_dir, "top_trials_time_to_reach.html"))
             
         print("Plots successfully saved!")
         
@@ -188,6 +181,10 @@ def main():
                 
     except Exception as e:
         print(f"Warning: Could not save some plots (perhaps parsing error or only 1 trial?). Error: {e}")
+        
+    finally:
+        if db_conn is not None:
+            db_conn.close()
 
 if __name__ == "__main__":
     main()
