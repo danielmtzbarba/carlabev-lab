@@ -58,6 +58,10 @@ class PPOConfig:
 
     clip_coef: float = 0.15
     ent_coef: float = 0.003
+    
+    # Network Architecture Policy
+    channels: list = field(default_factory=lambda: [32, 64, 64])
+    fc_size: int = 512
     vf_coef: float = 0.7
 
     max_grad_norm: float = 0.4
@@ -84,6 +88,7 @@ class PPOConfig:
 class ArgsCarlaBEV:
     exp_id: int = 1
     exp_name: str = "default"
+    algorithm: str = "cnn-ppo"
     num_envs: int = 14
 
     cuda: bool = True
@@ -93,9 +98,9 @@ class ArgsCarlaBEV:
     ppo: PPOConfig = field(default_factory=PPOConfig)
     logging: LoggerConfig = field(default_factory=LoggerConfig)
 
-    capture_video: bool = True
-    capture_every: int = 50
-    save_model: bool = True
+    capture_video: bool = False
+    capture_every: int = 100
+    save_model: bool = False
     save_every: int = 200
     eval_episodes: int = 30
     eval_final_episodes: int = 1000

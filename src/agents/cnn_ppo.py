@@ -15,20 +15,41 @@ def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
 
 class CNNBackbone(nn.Module):
     """Shared feature extractor for both discrete and continuous agents."""
-    def __init__(self, in_channels):
+    def __init__(self, in_channels, channels=[32, 64, 64], fc_size=512):
         super().__init__()
         self.in_channels = in_channels
-        self.network = nn.Sequential(
-            layer_init(nn.Conv2d(in_channels, 32, 8, stride=4)),
-            nn.ReLU(),
-            layer_init(nn.Conv2d(32, 64, 4, stride=2)),
-            nn.ReLU(),
-            layer_init(nn.Conv2d(64, 64, 3, stride=1)),
-            nn.ReLU(),
-            nn.Flatten(),
-            layer_init(nn.Linear(4096, 512)),
-            nn.ReLU(),
-        )
+        
+        layers = []
+        current_channels = in_channels
+        
+        # Build Conv layers dynamically based on the channels list
+        if len(channels) > 0:
+            layers.append(layer_init(nn.Conv2d(current_channels, channels[0], kernel_size=8, stride=4)))
+            layers.append(nn.ReLU())
+            current_channels = channels[0]
+            
+        if len(channels) > 1:
+            layers.append(layer_init(nn.Conv2d(current_channels, channels[1], kernel_size=4, stride=2)))
+            layers.append(nn.ReLU())
+            current_channels = channels[1]
+            
+        if len(channels) > 2:
+            layers.append(layer_init(nn.Conv2d(current_channels, channels[2], kernel_size=3, stride=1)))
+            layers.append(nn.ReLU())
+            current_channels = channels[2]
+            
+        layers.append(nn.Flatten())
+        
+        # Dummy forward pass to calculate the output size of the conv+flatten layers
+        with torch.no_grad():
+            dummy_input = torch.zeros(1, in_channels, 96, 96) # Default observation size
+            dummy_backend = nn.Sequential(*layers)
+            flattened_size = dummy_backend(dummy_input).shape[1]
+            
+        layers.append(layer_init(nn.Linear(flattened_size, fc_size)))
+        layers.append(nn.ReLU())
+        
+        self.network = nn.Sequential(*layers)
 
     def forward(self, x):
         return self.network(x)
@@ -36,11 +57,11 @@ class CNNBackbone(nn.Module):
 
 class BasePPOAgent(nn.Module):
     """Base class for PPO agents with shared utilities."""
-    def __init__(self, envs):
+    def __init__(self, envs, channels=[32, 64, 64], fc_size=512):
         super().__init__()
         obs_shape = envs.single_observation_space.shape
-        self.backbone = CNNBackbone(obs_shape[0])
-        self.critic = layer_init(nn.Linear(512, 1), std=1)
+        self.backbone = CNNBackbone(obs_shape[0], channels, fc_size)
+        self.critic = layer_init(nn.Linear(fc_size, 1), std=1)
 
     def _normalize_input(self, x):
         if x.max() > 1.5:
@@ -53,9 +74,9 @@ class BasePPOAgent(nn.Module):
 
 
 class DiscreteConvolutionalPPO(BasePPOAgent):
-    def __init__(self, envs):
-        super().__init__(envs)
-        self.actor = layer_init(nn.Linear(512, envs.single_action_space.n), std=0.01)
+    def __init__(self, envs, channels=[32, 64, 64], fc_size=512):
+        super().__init__(envs, channels, fc_size)
+        self.actor = layer_init(nn.Linear(fc_size, envs.single_action_space.n), std=0.01)
         self.is_continuous = False
 
     def get_action_and_value(self, x, action=None, deterministic=False):
@@ -74,10 +95,10 @@ class DiscreteConvolutionalPPO(BasePPOAgent):
 
 
 class ContinuousConvolutionalPPO(BasePPOAgent):
-    def __init__(self, envs):
-        super().__init__(envs)
+    def __init__(self, envs, channels=[32, 64, 64], fc_size=512):
+        super().__init__(envs, channels, fc_size)
         action_dim = np.prod(envs.single_action_space.shape)
-        self.actor_mean = layer_init(nn.Linear(512, action_dim), std=0.01)
+        self.actor_mean = layer_init(nn.Linear(fc_size, action_dim), std=0.01)
         self.actor_logstd = nn.Parameter(torch.zeros(1, action_dim))
         self.is_continuous = True
 

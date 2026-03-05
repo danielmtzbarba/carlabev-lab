@@ -136,24 +136,45 @@ def main():
     
     print(f"\nGenerating plots in {plot_dir}...")
     
+    # Common layout enhancements for publication quality
+    layout_enhancements = dict(
+        font=dict(family="Computer Modern, Arial, sans-serif", size=16, color="black"),
+        title_font=dict(size=22, color="black", family="Computer Modern, Arial, sans-serif"),
+        title_x=0.5, # Center title
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        margin=dict(l=80, r=40, t=80, b=80),
+    )
+    
+    def apply_publication_style(fig, title):
+        fig.update_layout(**layout_enhancements)
+        fig.update_layout(title=title)
+        fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='LightGray', color='black')
+        fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='LightGray', color='black')
+        return fig
+    
     try:
         # 1. Optimization History
         fig_history = vis.plot_optimization_history(study)
+        fig_history = apply_publication_style(fig_history, "Optimization History")
         fig_history.write_html(os.path.join(plot_dir, "optimization_history.html"))
         
         # 2. Parameter Importances
         if len(complete_trials) > 1:
             fig_importance = vis.plot_param_importances(study)
+            fig_importance = apply_publication_style(fig_importance, "Hyperparameter Importances")
             fig_importance.write_html(os.path.join(plot_dir, "param_importances.html"))
             
-        # 3. Parallel Coordinate
+        # 3. Contour (Topography / Heatmap)
         if len(complete_trials) > 1:
-            fig_parallel = vis.plot_parallel_coordinate(study)
-            fig_parallel.write_html(os.path.join(plot_dir, "parallel_coordinate.html"))
+            fig_contour = vis.plot_contour(study)
+            fig_contour = apply_publication_style(fig_contour, "Search Space Topography")
+            fig_contour.write_html(os.path.join(plot_dir, "contour_plot.html"))
             
         # 4. Slice Plot
         if len(complete_trials) > 1:
             fig_slice = vis.plot_slice(study)
+            fig_slice = apply_publication_style(fig_slice, "Parameter Slice Analysis")
             fig_slice.write_html(os.path.join(plot_dir, "slice_plot.html"))
             
         print("Plots successfully saved!")
@@ -162,7 +183,8 @@ def main():
             fig_history.show()
             if len(complete_trials) > 1:
                 fig_importance.show()
-                fig_parallel.show()
+                fig_contour.show()
+                fig_slice.show()
                 
     except Exception as e:
         print(f"Warning: Could not save some plots (perhaps parsing error or only 1 trial?). Error: {e}")

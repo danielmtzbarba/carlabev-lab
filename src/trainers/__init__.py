@@ -15,7 +15,5 @@ def build_trainer(experiment):
         from src.trainers.muzero import train_muzero
 
         return train_muzero
-    elif "debug" in experiment:
-        return train_ppo
     else:
         exit("Unimplemented DRL algorithm")

@@ -28,10 +28,14 @@ def build_agent(args, envs, device):
         from .cnn_ppo import DiscreteConvolutionalPPO, ContinuousConvolutionalPPO
         
         is_continuous = isinstance(envs.single_action_space, gym.spaces.Box)
+        
+        channels = getattr(args.ppo, 'channels', [32, 64, 64])
+        fc_size = getattr(args.ppo, 'fc_size', 512)
+
         if is_continuous:
-            agent = ContinuousConvolutionalPPO(envs).to(device)
+            agent = ContinuousConvolutionalPPO(envs, channels=channels, fc_size=fc_size).to(device)
         else:
-            agent = DiscreteConvolutionalPPO(envs).to(device)
+            agent = DiscreteConvolutionalPPO(envs, channels=channels, fc_size=fc_size).to(device)
             
         optimizer = optim.Adam(agent.parameters(), lr=args.ppo.learning_rate, eps=1e-5)
         return agent, optimizer

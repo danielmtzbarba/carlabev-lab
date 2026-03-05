@@ -6,6 +6,12 @@ import yaml
 
 from src.config.base_config import ArgsCarlaBEV, EnvConfig, PPOConfig
 
+def get_global_study_name():
+    return "carlabev"
+
+def get_global_db_path():
+    return "results/carlabev_optuna.db"
+
 
 # ============================================================
 # 1. Tabla de 24 configuraciones experimentales
@@ -102,7 +108,7 @@ def apply_experiment_config(args: ArgsCarlaBEV, exp_id: int):
             env.curriculum_mode = "both"
 
     # ===== Base name
-    args.exp_name = f"exp-{exp_id}_cnn-ppo_act-{action_space}_traffic-{traffic}_input-{input_type}_rwd-{reward_type}_curr-{curriculum}_fovmask-{fov_mask}"
+    args.exp_name = f"exp-{exp_id}_{args.algorithm}_act-{action_space}_traffic-{traffic}_input-{input_type}_rwd-{reward_type}_curr-{curriculum}_fovmask-{fov_mask}"
 
     return args
 
@@ -140,6 +146,92 @@ def load_experiment():
     save_run_config(args)
 
     return args
+
+# ============================================================
+# 5. Universal Execution Wrapper (Manual + Optuna)
+# ============================================================
+
+def run_experiment(args: ArgsCarlaBEV, trial=None, seed_idx: int = None) -> float:
+    """Universal execution wrapper for both single standalone trains and Optuna searches."""
+    import torch
+    import optuna
+    from CarlaBEV.envs import make_env
+    from src.utils.logger import DRLogger
+    from src.trainers import build_trainer
+
+    # If running normally (not orchestrated by Optuna Tuner directly), we enqueue it into the global study
+    if trial is None:
+        print(f"🔗 Integrating standalone run into Optuna SQLite Database (Exp ID: {args.exp_id})")
+        db_path = get_global_db_path()
+        storage_name = f"sqlite:///{db_path}"
+        
+        study = optuna.create_study(
+            storage=storage_name,
+            load_if_exists=True,
+            direction="maximize",
+            study_name=get_global_study_name()
+        )
+        
+        # Enqueue this exact config so Optuna logs it as the next trial
+        enqueued_params = {
+            "learning_rate": args.ppo.learning_rate,
+            "gae_lambda": args.ppo.gae_lambda,
+            "gamma": args.ppo.gamma,
+            "num_steps": args.ppo.num_steps,
+            "update_epochs": args.ppo.update_epochs,
+            "num_minibatches": args.ppo.num_minibatches,
+        }
+        study.enqueue_trial(enqueued_params)
+        
+        # Execute exactly 1 trial (the one we just enqueued)
+        # That trial block will recursively call run_experiment AGAIN, but this time with a valid `trial` object!
+        final_scores = []
+        def _manual_objective(t):
+            return run_experiment(args, trial=t, seed_idx=seed_idx)
+            
+        study.optimize(_manual_objective, n_trials=1)
+        return
+        
+    # --- IF REACHING HERE, WE HAVE AN ACTIVE OPTUNA TRIAL ---
+
+    # Modify exp_name to be trial-specific and optionally seed-specific
+    if seed_idx is not None:
+        args.exp_name = f"{args.exp_name}_optuna_trial_{trial.number}_seed_{args.seed}"
+    else:
+        args.exp_name = f"{args.exp_name}_optuna_trial_{trial.number}"
+    
+    # Save config for this trial execution
+    save_run_config(args)
+
+    # Universally format database path
+    args.logging.db_path = get_global_db_path()
+    args.logging.trial_number = trial.number
+
+    # Save trial attributes for filtering in DB
+    trial.set_user_attr("base_exp_id", args.exp_id)
+    trial.set_user_attr("action_space", args.env.action_space)
+    trial.set_user_attr("traffic_enabled", args.env.traffic_enabled)
+    trial.set_user_attr("input_type", "masks" if args.env.masked else "rgb")
+    trial.set_user_attr("fov_masked", args.env.fov_masked)
+    trial.set_user_attr("reward_type", args.env.reward_type)
+    trial.set_user_attr("curriculum", args.env.curriculum_mode if args.env.curriculum_enabled else "off")
+
+    device = torch.device("cuda" if args.cuda and torch.cuda.is_available() else "cpu")
+
+    # Initialize environments and logger
+    envs = make_env(args)
+    logger = DRLogger(config=args, stats_interval=100)
+    logger.msg(f"Environments - {args.env.env_id}:{args.num_envs} built.")
+
+    # Dynamically build trainer based on the algorithm specified in config
+    trainer = build_trainer(args.algorithm)
+    logger.msg(f"Trainer built for algorithm: {args.algorithm}")
+
+    # Run training
+    # Optuna may raise TrialPruned inside the trainer loop
+    final_score = trainer(args, envs, logger, device, trial=trial)
+    
+    return final_score
 
 
 if __name__ == "__main__":

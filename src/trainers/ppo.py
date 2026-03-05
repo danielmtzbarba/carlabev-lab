@@ -60,6 +60,12 @@ def train_ppo(cfg, envs, logger, device, trial=None):
 
     ppo_cfg.batch_size = int(num_envs * ppo_cfg.num_steps)
     ppo_cfg.minibatch_size = int(ppo_cfg.batch_size // ppo_cfg.num_minibatches)
+    
+    # Enforce minimum minibatch size of 256
+    if ppo_cfg.minibatch_size < 256:
+        ppo_cfg.minibatch_size = min(256, ppo_cfg.batch_size)
+        ppo_cfg.num_minibatches = max(1, ppo_cfg.batch_size // ppo_cfg.minibatch_size)
+        
     ppo_cfg.num_iterations = max(1, ppo_cfg.total_timesteps // ppo_cfg.batch_size)
     agent, optimizer = build_agent(cfg, envs, device)
     curr_state = CurriculumState(cfg.env)
