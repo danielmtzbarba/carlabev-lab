@@ -4,10 +4,11 @@ import optuna
 import optuna.visualization as vis
 import pandas as pd
 from dataclasses import dataclass
+from typing import Optional
 
 @dataclass
 class AnalyzeArgs:
-    exp_id: int = 26
+    exp_id: Optional[int] = None
     top_k: int = 5
     show_plots: bool = False
     save_dir: str = "results"
@@ -39,11 +40,17 @@ def print_compact_trial_info(trial, db_conn, rank=None):
 
 def main():
     args = tyro.cli(AnalyzeArgs)
-    study_name = f"carlabev_optuna_{args.exp_id}"
-    storage_name = f"sqlite:///results/{study_name}.db"
+    if args.exp_id is not None:
+        study_name = f"carlabev_optuna_{args.exp_id}"
+        db_name = study_name
+    else:
+        study_name = "carlabev"
+        db_name = "carlabev_optuna"
+        
+    storage_name = f"sqlite:///results/{db_name}.db"
     
-    if not os.path.exists(f"results/{study_name}.db"):
-        print(f"Database results/{study_name}.db does not exist!")
+    if not os.path.exists(f"results/{db_name}.db"):
+        print(f"Database results/{db_name}.db does not exist!")
         return
 
     import sqlite3
@@ -82,7 +89,7 @@ def main():
         print_compact_trial_info(trial, db_conn=db_conn, rank=i+1)
 
     # Visualization
-    plot_dir = os.path.join(args.save_dir, f"{study_name}_plots")
+    plot_dir = os.path.join(args.save_dir, f"{db_name}_plots")
     os.makedirs(plot_dir, exist_ok=True)
     
     print(f"\nGenerating plots in {plot_dir}...")
