@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=carlabev_optuna_phase1
-#SBATCH --output=results/logs/phase1_%A_%a.out
-#SBATCH --error=results/logs/phase1_%A_%a.err
+#SBATCH --job-name=carlabev_optuna_phase3
+#SBATCH --output=results/logs/phase3_%A_%a.out
+#SBATCH --error=results/logs/phase3_%A_%a.err
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=14
@@ -27,7 +27,7 @@ cd $SLURM_SUBMIT_DIR
 # Ensure the results/logs directory exists
 mkdir -p results/logs
 
-echo "Starting Optuna Phase 1 worker on node: $(hostname)"
+echo "Starting Optuna Phase 3 worker on node: $(hostname)"
 echo "Array Task ID: $SLURM_ARRAY_TASK_ID"
 
 # Stagger the start time of each node to guarantee the SQLite database schema
@@ -36,7 +36,7 @@ sleep_time=$((SLURM_ARRAY_TASK_ID * 5))
 echo "Staggering start by sleeping for $sleep_time seconds to prevent SQLite creation race conditions..."
 sleep $sleep_time
 
-# Run the Optuna Tuner Phase 1 using uv
+# Run the Optuna Tuner Phase 3 using uv
 srun uv run python -m src.tuning.optuna_tuner \
     --exp-id 26 \
-    --phase 1
+    --phase 3

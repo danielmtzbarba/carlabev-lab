@@ -44,15 +44,9 @@ def decay_schedule(start, end, progress, mode="linear"):
     else:
         return start
 
-
 def compute_safety_score(eval_results, w_success=1.0, w_collision=1.0, w_unfinished=0.3):
-    score = (
-        (w_success * eval_results.get("success_rate", 0.0))
-        - (w_collision * eval_results.get("collision_rate", 0.0))
-        - (w_unfinished * eval_results.get("unfinished_rate", 0.0))
-    )
+    score = eval_results.get("success_rate", 0.0) - eval_results.get("collision_rate", 0.0)
     return score
-
 
 def train_ppo(cfg, envs, logger, device, trial=None):
     num_envs = cfg.num_envs
@@ -123,6 +117,9 @@ def train_ppo(cfg, envs, logger, device, trial=None):
     normalizer = RewardNormalizer(clip_range=(-1, 1), decay=0.99)
     # --- At the start of training ---
     best_return = -float("inf")  # track best episodic return
+    eval_interval_steps = max(1, ppo_cfg.total_timesteps // getattr(cfg, 'num_evals', 5))
+    next_eval_step = eval_interval_steps
+    eval_idx = 0
 
     for iteration in range(1, ppo_cfg.num_iterations + 1):
         # LR annealing
@@ -133,24 +130,30 @@ def train_ppo(cfg, envs, logger, device, trial=None):
 
         # --- Adaptive coefficient decays ---
         progress = (iteration - 1) / ppo_cfg.num_iterations
+        
+        ent_coef_end = ppo_cfg.ent_coef_start * ppo_cfg.ent_decay_factor
         ppo_cfg.ent_coef = decay_schedule(
             ppo_cfg.ent_coef_start,
-            ppo_cfg.ent_coef_end,
+            ent_coef_end,
             progress,
-            ppo_cfg.decay_schedule,
+            ppo_cfg.ent_decay_schedule,
         )
+        
+        vf_coef_end = ppo_cfg.vf_coef_start * ppo_cfg.vf_decay_factor
         ppo_cfg.vf_coef = decay_schedule(
-            ppo_cfg.vf_coef_start, ppo_cfg.vf_coef_end, progress, ppo_cfg.decay_schedule
+            ppo_cfg.vf_coef_start,
+            vf_coef_end,
+            progress,
+            ppo_cfg.vf_decay_schedule
         )
+        
+        clip_coef_end = ppo_cfg.clip_coef_start * ppo_cfg.clip_decay_factor
         ppo_cfg.clip_coef = decay_schedule(
             ppo_cfg.clip_coef_start,
-            ppo_cfg.clip_coef_end,
+            clip_coef_end,
             progress,
-            ppo_cfg.decay_schedule,
+            ppo_cfg.clip_decay_schedule,
         )
-        if ppo_cfg.num_iterations >= 6 and iteration % (ppo_cfg.num_iterations // 6) == 0:
-            ppo_cfg.ent_coef *= 1.2  # small entropy boost
-            ppo_cfg.ent_coef = min(ppo_cfg.ent_coef, ppo_cfg.ent_coef_start)
 
         for step in range(ppo_cfg.num_steps):
             global_step += num_envs
@@ -354,23 +357,24 @@ def train_ppo(cfg, envs, logger, device, trial=None):
                 "schedules/lr", optimizer.param_groups[0]["lr"], global_step
             )
 
-        # inject entropy boosts to enforce exploration in middle of training
-        # if iteration % 5000 == 0:
-        #    ppo_cfg.ent_coef = min(ppo_cfg.ent_coef * 1.3, ppo_cfg.ent_coef_start)
+        # Evaluate model based on equidistant intervals (num_evals steps)
+        if global_step >= next_eval_step:
+            logger.msg(f"📊 Evaluating model at iteration {iteration} ({global_step} env steps)")
 
-        # Save last model every iteration
-        if iteration % cfg.save_every == 0:
-            model_path = os.path.join(f"runs/{cfg.exp_name}", "ppo_last.pt")
-            torch.save(agent.state_dict(), model_path)
-            logger.msg(f"🌟 Model saved at {iteration} iteration!")
+            # Save temp model and eval
+            eval_model_path = os.path.join(f"runs/{cfg.exp_name}", f"ppo-eval-{global_step}.pt")
+            torch.save(agent.state_dict(), eval_model_path)
+
             eval_results = evaluate_ppo(
                 cfg,
-                model_path=model_path,
+                model_path=eval_model_path,
                 num_episodes=cfg.eval_episodes,
                 render=False,  # turn True for visualization
                 device="cuda",
-                file_name="ppo-eval-last.npy"
+                file_name=f"ppo-eval-{global_step}.npy"
             )
+
+            # Log evaluation results
             elapsed_time = time.time() - start_time
             logger.log_evaluation(
                 eval_results,
@@ -378,17 +382,27 @@ def train_ppo(cfg, envs, logger, device, trial=None):
                 iteration=iteration,
                 elapsed_time=elapsed_time,
             )
+         
+            # Keep model if specified
+            if not cfg.save_model:
+                os.remove(eval_model_path)
+            else:
+                logger.msg(f"🌟 Model saved at {iteration} iteration!")
 
             # Optuna partial reporting and pruning
             if trial is not None:
                 import optuna
+                eval_idx += 1
                 score = compute_safety_score(eval_results)
-                trial.report(score, iteration)
+                trial.report(score, eval_idx)
                 if trial.should_prune():
                     envs.close()
                     logger.writer.close()
                     raise optuna.TrialPruned()
+            
+            next_eval_step += eval_interval_steps
 
+    # Final evaluation
     model_path = os.path.join(f"runs/{cfg.exp_name}", "ppo_final.pt")
     torch.save(agent.state_dict(), model_path)
     eval_results = evaluate_ppo(
@@ -399,6 +413,7 @@ def train_ppo(cfg, envs, logger, device, trial=None):
         device="cuda",
         file_name="ppo-eval-final-last.npy"
     )
+
     elapsed_time = time.time() - start_time
     logger.log_evaluation(
         eval_results,
@@ -406,6 +421,10 @@ def train_ppo(cfg, envs, logger, device, trial=None):
         iteration=iteration,
         elapsed_time=elapsed_time,
     )
+
+    if not cfg.save_model:
+        os.remove(model_path)
+    
     logger.msg(f"🌟 Training finished at {iteration} iteration!")
 
     envs.close()

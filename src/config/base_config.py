@@ -43,28 +43,43 @@ class EnvConfig:
 
 @dataclass
 class PPOConfig:
-    total_timesteps: int = 10_000_000
-    learning_rate: float = 3e-4
-
+    total_timesteps: int = 1_000_000
     num_envs: int = 14
-    num_steps: int = 256
 
+    # Phase 1
     anneal_lr: bool = True
+    learning_rate: float = 3e-4
+    gae_lambda: float = 0.9
     gamma: float = 0.995
 
-    gae_lambda: float = 0.9
+    # Phase 2a 
+    num_steps: int = 256
     num_minibatches: int = 4
-    update_epochs: int = 8
+    update_epochs: int = 6
 
-    clip_coef: float = 0.15
-    ent_coef: float = 0.003
+    # Phase 2b
+    ent_coef: float = 0.015
+    vf_coef: float = 0.65
+    clip_coef: float = 0.18
+    max_grad_norm: float = 0.4
+
+    ent_coef_start: float = 0.015
+    ent_decay_factor: float = 0.2
+    ent_decay_schedule: str = "cosine"
     
-    # Network Architecture Policy
+    vf_coef_start: float = 0.65
+    vf_decay_factor: float = 0.85
+    vf_decay_schedule: str = "linear"
+    
+    clip_coef_start: float = 0.18
+    clip_decay_factor: float = 0.65
+    clip_decay_schedule: str = "cosine"
+    
+    # Phase 3: Network Architecture Policy
     channels: list = field(default_factory=lambda: [32, 64, 64])
     fc_size: int = 512
-    vf_coef: float = 0.7
 
-    max_grad_norm: float = 0.4
+    # Other
     target_kl: float = 0.015
     norm_adv: bool = True
     clip_vloss: bool = True
@@ -74,14 +89,6 @@ class PPOConfig:
     minibatch_size: int = 0
     num_iterations: int = 0
 
-    # Decay configuration
-    ent_coef_start: float = 0.05
-    ent_coef_end: float = 0.01
-    vf_coef_start: float = 0.6
-    vf_coef_end: float = 0.4
-    clip_coef_start: float = 0.2
-    clip_coef_end: float = 0.1
-    decay_schedule: str = "linear"
 
 
 @dataclass
@@ -93,6 +100,7 @@ class ArgsCarlaBEV:
 
     cuda: bool = True
     seed: int = 1000
+    torch_deterministic: bool = True
 
     env: EnvConfig = field(default_factory=EnvConfig)
     ppo: PPOConfig = field(default_factory=PPOConfig)
@@ -100,8 +108,10 @@ class ArgsCarlaBEV:
 
     capture_video: bool = False
     capture_every: int = 100
+
     save_model: bool = False
     save_every: int = 200
+
+    num_evals: int = 5
     eval_episodes: int = 30
-    eval_final_episodes: int = 1000
-    torch_deterministic: bool = True
+    eval_final_episodes: int = 100

@@ -20,9 +20,12 @@ def phase_3_objective(trial: optuna.Trial, base_args: ArgsCarlaBEV, opt_args: Op
     scores = []
     base_seed = base_args.seed
 
+    # Robust seeding: ensures independence across trials but strict reproducibility
+    trial_offset = trial.number * 10000
+    
     for i in range(opt_args.num_seeds):
         args = copy.deepcopy(base_args)
-        args.seed = base_seed + i
+        args.seed = base_seed + trial_offset + i
         
         # Apply the best Phase 1/2 fixed parameters
         args.ppo.learning_rate = top_params["learning_rate"]
@@ -38,9 +41,9 @@ def phase_3_objective(trial: optuna.Trial, base_args: ArgsCarlaBEV, opt_args: Op
         args.ppo.vf_coef_start = top_params["vf_coef_start"]
         args.ppo.max_grad_norm = top_params["max_grad_norm"]
 
-        args.ppo.ent_coef_end = args.ppo.ent_coef_start * top_params["ent_decay_factor"]
-        args.ppo.vf_coef_end = args.ppo.vf_coef_start * top_params["vf_decay_factor"]
-        args.ppo.clip_coef_end = max(0.01, args.ppo.clip_coef_start * 0.5)
+        args.ppo.ent_decay_factor = top_params["ent_decay_factor"]
+        args.ppo.vf_decay_factor = top_params["vf_decay_factor"]
+        args.ppo.clip_decay_factor = top_params["clip_decay_factor"]
 
         # Apply the sampled Phase 3 parameters
         args.ppo.channels = sampled_channels
@@ -48,7 +51,6 @@ def phase_3_objective(trial: optuna.Trial, base_args: ArgsCarlaBEV, opt_args: Op
 
         # Budget settings
         args.ppo.total_timesteps = opt_args.timesteps_phase_3
-        args.save_every = opt_args.save_every_phase_3
         args.eval_episodes = opt_args.eval_episodes
         args.eval_final_episodes = opt_args.eval_final_episodes
         

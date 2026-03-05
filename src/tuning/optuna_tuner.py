@@ -23,9 +23,12 @@ def main():
     base_args = apply_experiment_config(base_args, cli_args.exp_id)
     print(f"⚙️ Running Optuna Hyperparameter tuning for Base Experiment ID = {cli_args.exp_id}")
     
-    # We will use MedianPruner
-    pruner = optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=100, interval_steps=50)
-    
+    # We will use HyperbandPruner, evaluated by step count index
+    pruner = optuna.pruners.HyperbandPruner(
+        min_resource=2,  # Only allow pruning after the second evaluation
+        max_resource=base_args.num_evals, 
+        reduction_factor=3
+    )
     # Implement SQLite storage with concurrency support
     os.makedirs("results", exist_ok=True)
     db_path = get_global_db_path()
@@ -62,7 +65,12 @@ def main():
     try:
         if str(cli_args.phase) == "1":
             print(f"--- Starting Phase 1: Continuous Params (Budget: {cli_args.timesteps_phase_1}) ---")
-            study.optimize(lambda trial: phase_1_objective(trial, base_args, cli_args), n_trials=cli_args.n_trials_phase_1)
+            completed_phase_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE and str(t.user_attrs.get("phase")) == "1"]
+            trials_needed = cli_args.n_trials_phase_1 - len(completed_phase_trials)
+            if trials_needed <= 0:
+                print(f"Phase 1 already has {len(completed_phase_trials)} completed trials (Target: {cli_args.n_trials_phase_1}). Skipping optimization.")
+            else:
+                study.optimize(lambda trial: phase_1_objective(trial, base_args, cli_args), n_trials=trials_needed)
         
         elif str(cli_args.phase) == "2a":
             print(f"--- Starting Phase 2a: Categorical Params (Budget: {cli_args.timesteps_phase_2a}) ---")
@@ -86,7 +94,12 @@ def main():
             }
             
             print("Selected continuous params for Phase 2a:", top_params)
-            study.optimize(lambda trial: phase_2a_objective(trial, base_args, cli_args, top_params), n_trials=cli_args.n_trials_phase_2a)
+            completed_phase_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE and str(t.user_attrs.get("phase")) == "2a"]
+            trials_needed = cli_args.n_trials_phase_2a - len(completed_phase_trials)
+            if trials_needed <= 0:
+                print(f"Phase 2a already has {len(completed_phase_trials)} completed trials (Target: {cli_args.n_trials_phase_2a}). Skipping optimization.")
+            else:
+                study.optimize(lambda trial: phase_2a_objective(trial, base_args, cli_args, top_params), n_trials=trials_needed)
             
         elif str(cli_args.phase) == "2b":
             print(f"--- Starting Phase 2b: PPO Coefficients (Budget: {cli_args.timesteps_phase_2b}) ---")
@@ -117,7 +130,12 @@ def main():
             }
             
             print("Selected fixed params for Phase 2b Tuning:", top_params)
-            study.optimize(lambda trial: phase_2b_objective(trial, base_args, cli_args, top_params), n_trials=cli_args.n_trials_phase_2b)
+            completed_phase_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE and str(t.user_attrs.get("phase")) == "2b"]
+            trials_needed = cli_args.n_trials_phase_2b - len(completed_phase_trials)
+            if trials_needed <= 0:
+                print(f"Phase 2b already has {len(completed_phase_trials)} completed trials (Target: {cli_args.n_trials_phase_2b}). Skipping optimization.")
+            else:
+                study.optimize(lambda trial: phase_2b_objective(trial, base_args, cli_args, top_params), n_trials=trials_needed)
             
         elif str(cli_args.phase) == "3":
             print(f"--- Starting Phase 3: Architecture Params (Budget: {cli_args.timesteps_phase_3}) ---")
@@ -156,10 +174,16 @@ def main():
                 "max_grad_norm": best_phase_2b_trial.params["max_grad_norm"],
                 "ent_decay_factor": best_phase_2b_trial.params["ent_decay_factor"],
                 "vf_decay_factor": best_phase_2b_trial.params["vf_decay_factor"],
+                "clip_decay_factor": best_phase_2b_trial.params["clip_decay_factor"],
             }
             
             print("Selected fixed params for Phase 3 Network Tuning:", top_params)
-            study.optimize(lambda trial: phase_3_objective(trial, base_args, cli_args, top_params), n_trials=cli_args.n_trials_phase_3)
+            completed_phase_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE and str(t.user_attrs.get("phase")) == "3"]
+            trials_needed = cli_args.n_trials_phase_3 - len(completed_phase_trials)
+            if trials_needed <= 0:
+                print(f"Phase 3 already has {len(completed_phase_trials)} completed trials (Target: {cli_args.n_trials_phase_3}). Skipping optimization.")
+            else:
+                study.optimize(lambda trial: phase_3_objective(trial, base_args, cli_args, top_params), n_trials=trials_needed)
             
     except KeyboardInterrupt:
         print("\nInterrupted early! Saving study results so far...")
