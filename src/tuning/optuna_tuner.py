@@ -23,11 +23,11 @@ def main():
     base_args = apply_experiment_config(base_args, cli_args.exp_id)
     print(f"⚙️ Running Optuna Hyperparameter tuning for Base Experiment ID = {cli_args.exp_id}")
     
-    # We will use HyperbandPruner, evaluated by step count index
-    pruner = optuna.pruners.HyperbandPruner(
-        min_resource=2,  # Only allow pruning after the second evaluation
-        max_resource=base_args.num_evals, 
-        reduction_factor=3
+    # Reverted to MedianPruner per user request
+    pruner = optuna.pruners.MedianPruner(
+        n_startup_trials=10,  # Number of initial trials before pruning starts
+        n_warmup_steps=5,    # Number of evaluations to wait before pruning a given trial
+        interval_steps=1
     )
     # Implement SQLite storage with concurrency support
     os.makedirs("results", exist_ok=True)

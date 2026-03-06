@@ -44,8 +44,8 @@ def decay_schedule(start, end, progress, mode="linear"):
     else:
         return start
 
-def compute_safety_score(eval_results, w_success=1.0, w_collision=1.0, w_unfinished=0.3):
-    score = eval_results.get("success_rate", 0.0) - eval_results.get("collision_rate", 0.0)
+def compute_safety_score(eval_results, w_success=1.0, w_collision=0.8, w_unfinished=0.3):
+    score = w_success * eval_results.get("success_rate", 0.0) - w_collision * eval_results.get("collision_rate", 0.0) - w_unfinished * eval_results.get("unfinished_rate", 0.0) + 0.1 * eval_results.get("mean_return", 0.0)
     return score
 
 def train_ppo(cfg, envs, logger, device, trial=None):

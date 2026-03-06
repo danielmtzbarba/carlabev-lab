@@ -8,10 +8,10 @@ class OptunaArgs:
     n_trials_phase_2a: int = 60
     n_trials_phase_2b: int = 100
     n_trials_phase_3: int = 50
-    timesteps_phase_1: int = 1_000_000
-    timesteps_phase_2a: int = 1_000_000
-    timesteps_phase_2b: int = 1_000_000
-    timesteps_phase_3: int = 2_000_000
+    timesteps_phase_1: int = 1_100_000
+    timesteps_phase_2a: int = 1_100_000
+    timesteps_phase_2b: int = 1_100_000
+    timesteps_phase_3: int = 2_100_000
     #
     eval_episodes: int = 30
     eval_final_episodes: int = 100

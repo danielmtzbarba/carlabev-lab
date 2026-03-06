@@ -112,6 +112,6 @@ class ArgsCarlaBEV:
     save_model: bool = False
     save_every: int = 200
 
-    num_evals: int = 5
+    num_evals: int = 10
     eval_episodes: int = 30
     eval_final_episodes: int = 100
