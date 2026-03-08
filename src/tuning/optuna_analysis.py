@@ -9,6 +9,7 @@ from typing import Optional
 @dataclass
 class AnalyzeArgs:
     exp_id: Optional[int] = None
+    phase: Optional[str] = None  # Add phase filtering
     top_k: int = 5
     show_plots: bool = False
     save_dir: str = "results"
@@ -59,20 +60,42 @@ def main():
     if os.path.exists(real_path):
         db_conn = sqlite3.connect(real_path)
 
+    # Suppress verbose Optuna logging during analysis
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
+    
     print(f"Loading study: {study_name} from {storage_name}")
     study = optuna.load_study(study_name=study_name, storage=storage_name)
     
-    print("\n--- Study Statistics ---")
+    complete_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+    
+    print("\n--- Study Statistics by Phase ---")
     print(f"Total Trials: {len(study.trials)}")
     
-    complete_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
-    pruned_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.PRUNED]
-    failed_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.FAIL]
-    
-    print(f"  Complete: {len(complete_trials)}")
-    print(f"  Pruned:   {len(pruned_trials)}")
-    print(f"  Failed:   {len(failed_trials)}")
-    print("-" * 24)
+    # Create a summary dataframe
+    summary_data = []
+    for t in study.trials:
+        phase = str(t.user_attrs.get("phase", "Unknown"))
+        state = t.state.name
+        summary_data.append({"Phase": phase, "State": state})
+        
+    if summary_data:
+        df_summary = pd.DataFrame(summary_data)
+        # Pivot to get Phase as rows, States as columns
+        pivot_df = df_summary.pivot_table(index='Phase', columns='State', aggfunc=len, fill_value=0)
+        
+        # Ensure standard columns exist even if zero
+        for col in ['COMPLETE', 'PRUNED', 'RUNNING', 'FAIL']:
+            if col not in pivot_df.columns:
+                pivot_df[col] = 0
+                
+        # Calculate Total per phase
+        pivot_df['TOTAL'] = pivot_df[['COMPLETE', 'PRUNED', 'RUNNING', 'FAIL']].sum(axis=1)
+        
+        # Reorder columns for readability
+        pivot_df = pivot_df[['COMPLETE', 'PRUNED', 'RUNNING', 'FAIL', 'TOTAL']]
+        
+        print("\n" + pivot_df.to_string())
+    print("-" * 40)
 
     if not complete_trials:
         print("No complete trials found yet.")
@@ -81,117 +104,143 @@ def main():
     print("\n🏆 Best Trial Overall:")
     print_compact_trial_info(study.best_trial, db_conn=db_conn, rank="BEST")
     
-    complete_trials.sort(key=lambda t: t.value, reverse=True) # Maximize direction
-    
-    print(f"\n--- Top {min(args.top_k, len(complete_trials))} Trials ---")
-    top_trials = complete_trials[:args.top_k]
-    for i, trial in enumerate(top_trials):
-        print_compact_trial_info(trial, db_conn=db_conn, rank=i+1)
-
-    # Visualization
-    plot_dir = os.path.join(args.save_dir, f"{db_name}_plots")
-    os.makedirs(plot_dir, exist_ok=True)
-    
-    print(f"\nGenerating plots in {plot_dir}...")
-    
-    # Common layout enhancements for publication quality
-    layout_enhancements = dict(
-        font=dict(family="Computer Modern, Arial, sans-serif", size=16, color="black"),
-        title_font=dict(size=22, color="black", family="Computer Modern, Arial, sans-serif"),
-        title_x=0.5, # Center title
-        plot_bgcolor="white",
-        paper_bgcolor="white",
-        margin=dict(l=80, r=40, t=80, b=80),
-    )
-    
-    def apply_publication_style(fig, title):
-        fig.update_layout(**layout_enhancements)
-        fig.update_layout(title=title)
-        fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='LightGray', color='black')
-        fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='LightGray', color='black')
-        return fig
-    
-    try:
-        # 1. Optimization History
-        fig_history = vis.plot_optimization_history(study)
-        fig_history = apply_publication_style(fig_history, "Optimization History")
-        fig_history.write_html(os.path.join(plot_dir, "optimization_history.html"))
+    # Analyze and Plot by Phase
+    phases = set([str(t.user_attrs.get("phase", "Unknown")) for t in complete_trials])
+    if args.phase:
+        phases = {args.phase}
         
-        # 2. Parameter Importances
-        if len(complete_trials) > 1:
-            fig_importance = vis.plot_param_importances(study)
-            fig_importance = apply_publication_style(fig_importance, "Hyperparameter Importances")
-            fig_importance.write_html(os.path.join(plot_dir, "param_importances.html"))
+    best_trials_by_phase = {}
+        
+    for phase in sorted(list(phases)):
+        phase_trials = [t for t in complete_trials if str(t.user_attrs.get("phase", "Unknown")) == phase]
+        if not phase_trials:
+            continue
             
-        # 3. Contour (Topography / Heatmap)
-        if len(complete_trials) > 1:
-            fig_contour = vis.plot_contour(study)
-            fig_contour = apply_publication_style(fig_contour, "Search Space Topography")
-            fig_contour.write_html(os.path.join(plot_dir, "contour_plot.html"))
-            
-            fig_slice = vis.plot_slice(study)
-            fig_slice = apply_publication_style(fig_slice, "Parameter Slice Analysis")
-            fig_slice.write_html(os.path.join(plot_dir, "slice_plot.html"))
+        phase_trials.sort(key=lambda t: t.value, reverse=True) # Maximize direction
+        best_trials_by_phase[phase] = phase_trials[0]
 
-        # 5. Top Trials Learning Curves
-        if db_conn is not None and len(top_trials) > 0:
-            import plotly.graph_objects as go
-            fig_learning = go.Figure()
+    print("\n" + "="*80)
+    print("--- 🥇 Best Trial By Phase Overview ---")
+    for phase, best_trial in best_trials_by_phase.items():
+        print_compact_trial_info(best_trial, db_conn=db_conn, rank=f"🥇 BEST (Ph {phase})")
+    print("="*80 + "\n")
+
+    for phase in sorted(list(phases)):
+        phase_trials = [t for t in complete_trials if str(t.user_attrs.get("phase", "Unknown")) == phase]
+        if not phase_trials:
+            continue
             
-            for rank, trial in enumerate(top_trials):
-                # Fetch mean return curve
-                df = pd.read_sql_query('SELECT global_step, mean_return FROM trial_train_logs WHERE trial_number = ? ORDER BY global_step', db_conn, params=(trial.number,))
-                if not df.empty:
-                    fig_learning.add_trace(go.Scatter(x=df['global_step'], y=df['mean_return'], mode='lines', name=f"Rank {rank+1} (Trial {trial.number})"))
+        phase_trials.sort(key=lambda t: t.value, reverse=True) # Maximize direction
+        
+        print(f"\n--- Top {min(args.top_k, len(phase_trials))} Trials (Phase {phase}) ---")
+        top_curr_phase = phase_trials[:args.top_k]
+        best_trials_by_phase[phase] = top_curr_phase[0]
+        for i, trial in enumerate(top_curr_phase):
+            print_compact_trial_info(trial, db_conn=db_conn, rank=i+1)
+
+        # Build isolated in-memory study specifically for visualizations of this phase
+        phase_study = optuna.create_study(direction=study.direction)
+        for t in study.trials:
+            if str(t.user_attrs.get("phase", "Unknown")) == phase:
+                phase_study.add_trial(t)
+
+        # Visualization for Phase
+        plot_dir = os.path.join(args.save_dir, f"{db_name}_phase_{phase}_plots")
+        os.makedirs(plot_dir, exist_ok=True)
+        print(f"\nGenerating Phase {phase} plots in {plot_dir}...")
+        
+        # Common layout enhancements for publication quality
+        layout_enhancements = dict(
+            font=dict(family="Computer Modern, Arial, sans-serif", size=16, color="black"),
+            title_font=dict(size=22, color="black", family="Computer Modern, Arial, sans-serif"),
+            title_x=0.5, # Center title
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+            margin=dict(l=80, r=40, t=80, b=80),
+        )
+        
+        def apply_publication_style(fig, title):
+            fig.update_layout(**layout_enhancements)
+            fig.update_layout(title=title)
+            fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='LightGray', color='black')
+            fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='LightGray', color='black')
+            return fig
+        
+        try:
+            # 1. Optimization History
+            fig_history = vis.plot_optimization_history(phase_study)
+            fig_history = apply_publication_style(fig_history, f"Phase {phase} - Optimization History")
+            fig_history.write_html(os.path.join(plot_dir, "optimization_history.html"))
+            if args.show_plots:
+                fig_history.show()
+            
+            # 2. Parameter Importances
+            if len(phase_trials) > 1:
+                fig_importance = vis.plot_param_importances(phase_study)
+                fig_importance = apply_publication_style(fig_importance, f"Phase {phase} - Hyperparameter Importances")
+                fig_importance.write_html(os.path.join(plot_dir, "param_importances.html"))
+                if args.show_plots:
+                    fig_importance.show()
+                
+            # 3. Contour (Topography / Heatmap)
+            if len(phase_trials) > 1:
+                fig_contour = vis.plot_contour(phase_study)
+                fig_contour = apply_publication_style(fig_contour, f"Phase {phase} - Search Space Topography")
+                fig_contour.write_html(os.path.join(plot_dir, "contour_plot.html"))
+                
+                fig_slice = vis.plot_slice(phase_study)
+                fig_slice = apply_publication_style(fig_slice, f"Phase {phase} - Parameter Slice Analysis")
+                fig_slice.write_html(os.path.join(plot_dir, "slice_plot.html"))
+
+            # 5. Top Trials Learning Curves
+            if db_conn is not None and len(top_curr_phase) > 0:
+                import plotly.graph_objects as go
+                fig_learning = go.Figure()
+                
+                for rank, trial in enumerate(top_curr_phase):
+                    # Fetch mean return curve
+                    df = pd.read_sql_query('SELECT global_step, mean_return FROM trial_train_logs WHERE trial_number = ? ORDER BY global_step', db_conn, params=(trial.number,))
+                    if not df.empty:
+                        fig_learning.add_trace(go.Scatter(x=df['global_step'], y=df['mean_return'], mode='lines', name=f"Rank {rank+1} (Trial {trial.number})"))
+                        
+                if len(fig_learning.data) > 0:
+                    fig_learning = apply_publication_style(fig_learning, f"Phase {phase} - Learning Curves (Top Trials)")
+                    fig_learning.write_html(os.path.join(plot_dir, "top_trials_learning_curves.html"))
                     
-            if len(fig_learning.data) > 0:
-                fig_learning = apply_publication_style(fig_learning, "Learning Curves (Top Trials)")
-                fig_learning.write_html(os.path.join(plot_dir, "top_trials_learning_curves.html"))
+            # 6. Time-to-Reach Success Thresholds
+            if db_conn is not None and len(top_curr_phase) > 0:
+                fig_thresholds = go.Figure()
+                threshold_cols = [
+                    '0_1','0_2','0_3','0_4','0_5','0_6','0_7','0_8','0_9','0_95','0_99'
+                ]
                 
-        # 6. Time-to-Reach Success Thresholds
-        if db_conn is not None and len(top_trials) > 0:
-            fig_thresholds = go.Figure()
-            threshold_cols = [
-                '0_1','0_2','0_3','0_4','0_5','0_6','0_7','0_8','0_9','0_95','0_99'
-            ]
-            
-            for rank, trial in enumerate(top_trials):
-                # Fetch threshold array (latest row for this trial)
-                df = pd.read_sql_query('SELECT * FROM trial_eval_logs WHERE trial_number = ? ORDER BY global_step DESC LIMIT 1', db_conn, params=(trial.number,))
-                if not df.empty:
-                    x_vals = []
-                    y_vals = []
-                    for tc in threshold_cols:
-                        col_name = f'time_to_reach_{tc}'
-                        if col_name in df.columns and pd.notna(df.iloc[0][col_name]):
-                            hr_threshold = float(tc.replace('_', '.'))
-                            x_vals.append(hr_threshold)
-                            y_vals.append(df.iloc[0][col_name] / 3600.0) # Convert seconds to hours
-                            
-                    if len(x_vals) > 0:
-                        fig_thresholds.add_trace(go.Scatter(x=x_vals, y=y_vals, mode='lines+markers', name=f"Rank {rank+1} (Trial {trial.number})"))
-            
-            if len(fig_thresholds.data) > 0:
-                fig_thresholds = apply_publication_style(fig_thresholds, "Walltime to Success Threshold (Hours)")
-                fig_thresholds.update_xaxes(title_text="Success Rate Threshold")
-                fig_thresholds.update_yaxes(title_text="Training Elapsed Time (Hours)")
-                fig_thresholds.write_html(os.path.join(plot_dir, "top_trials_time_to_reach.html"))
-            
-        print("Plots successfully saved!")
-        
-        if args.show_plots:
-            fig_history.show()
-            if len(complete_trials) > 1:
-                fig_importance.show()
-                fig_contour.show()
-                fig_slice.show()
+                for rank, trial in enumerate(top_curr_phase):
+                    df = pd.read_sql_query('SELECT * FROM trial_eval_logs WHERE trial_number = ? ORDER BY global_step DESC LIMIT 1', db_conn, params=(trial.number,))
+                    if not df.empty:
+                        x_vals = []
+                        y_vals = []
+                        for tc in threshold_cols:
+                            col_name = f'time_to_reach_{tc}'
+                            if col_name in df.columns and pd.notna(df.iloc[0][col_name]):
+                                hr_threshold = float(tc.replace('_', '.'))
+                                x_vals.append(hr_threshold)
+                                y_vals.append(df.iloc[0][col_name] / 3600.0) # Convert seconds to hours
+                                
+                        if len(x_vals) > 0:
+                            fig_thresholds.add_trace(go.Scatter(x=x_vals, y=y_vals, mode='lines+markers', name=f"Rank {rank+1} (Trial {trial.number})"))
                 
-    except Exception as e:
-        print(f"Warning: Could not save some plots (perhaps parsing error or only 1 trial?). Error: {e}")
-        
-    finally:
-        if db_conn is not None:
-            db_conn.close()
+                if len(fig_thresholds.data) > 0:
+                    fig_thresholds = apply_publication_style(fig_thresholds, f"Phase {phase} - Walltime to Success Threshold (Hours)")
+                    fig_thresholds.update_xaxes(title_text="Success Rate Threshold")
+                    fig_thresholds.update_yaxes(title_text="Training Elapsed Time (Hours)")
+                    fig_thresholds.write_html(os.path.join(plot_dir, "top_trials_time_to_reach.html"))
+                
+            print(f"Phase {phase} plots successfully saved!")
+            
+        except Exception as e:
+            print(f"Warning: Could not save Phase {phase} plots. Error: {e}")
+    if db_conn is not None:
+        db_conn.close()
 
 if __name__ == "__main__":
     main()
