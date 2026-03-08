@@ -9,6 +9,7 @@ videos/
 runs/
 bkup/
 logs/
+results/
 *.cleanrl_model
 *.DS_Store
 
