@@ -31,7 +31,7 @@ dependencies = [
 #CarlaBEV = {path = "/Users/danielmtz/Data/projects/driverless/carlabev-env", editable= true}
 
 #MSI
-CarlaBEV = {path = "/home/danielmtz/Projects/driverless/carlabev-env", editable= true}
+CarlaBEV = {path = "/home/danielmtz/Projects/carlabev-env", editable= true}
 
 #HPC
 #CarlaBEV = {path = "/data/horse/ws/dama898h-danielmtz/carlabev", editable= true}
