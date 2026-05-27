@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 @dataclass
 class OptunaArgs:
+    study_id: str = "PPO_NAVIGATION"
     exp_id: int = 26
     phase: str = "1" # Choose "1", "2a", "2b", or "3"
     n_trials_phase_1: int = 100

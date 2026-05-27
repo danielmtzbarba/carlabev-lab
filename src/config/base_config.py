@@ -93,6 +93,7 @@ class PPOConfig:
 
 @dataclass
 class ArgsCarlaBEV:
+    study_id: str = "PPO_NAVIGATION"
     exp_id: int = 1
     exp_name: str = "default"
     algorithm: str = "cnn-ppo"

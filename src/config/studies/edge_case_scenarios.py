@@ -1,0 +1,60 @@
+from src.config.studies.models import ExperimentSpec, StudyConfig
+
+
+EDGE_CASE_SCENARIOS = StudyConfig(
+    study_id="EDGE_CASE_SCENARIOS",
+    description="Scenario-focused study for structured edge-case evaluation and training around curated hazardous situations.",
+    optuna_study_name="EDGE_CASE_SCENARIOS",
+    db_path="results/edge_case_scenarios_optuna.db",
+    metadata={
+        "owner": "carlabev-lab",
+        "kind": "scenario",
+        "notes": "Structured catalogue for edge-case runs. Trainer-side scenario selection can consume scene/scenario_preset_id from the experiment spec.",
+    },
+    experiments={
+        1: ExperimentSpec(
+            action_space="discrete",
+            traffic="on",
+            input_type="masks",
+            reward_type="carl",
+            curriculum="off",
+            fov_mask="off",
+            scene="jaywalk",
+            scenario_preset_id="jaywalk_debug",
+            tags=["edge-case", "jaywalk"],
+        ),
+        2: ExperimentSpec(
+            action_space="discrete",
+            traffic="on",
+            input_type="masks",
+            reward_type="carl",
+            curriculum="off",
+            fov_mask="off",
+            scene="lead_brake",
+            scenario_preset_id="lead_brake_debug",
+            tags=["edge-case", "lead-brake"],
+        ),
+        3: ExperimentSpec(
+            action_space="discrete",
+            traffic="on",
+            input_type="masks",
+            reward_type="carl",
+            curriculum="off",
+            fov_mask="off",
+            scene="red_light_runner",
+            scenario_preset_id="red_light_debug",
+            tags=["edge-case", "red-light"],
+        ),
+        4: ExperimentSpec(
+            action_space="continuous",
+            traffic="on",
+            input_type="masks",
+            reward_type="carl",
+            curriculum="off",
+            fov_mask="off",
+            scene="lead_brake",
+            scenario_preset_id="lead_brake_debug",
+            tags=["edge-case", "lead-brake", "continuous"],
+        ),
+    },
+)

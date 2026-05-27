@@ -7,7 +7,11 @@ import time
 import random
 
 from src.config.base_config import ArgsCarlaBEV
-from src.config.experiment_loader import apply_experiment_config, get_global_db_path, get_global_study_name
+from src.config.experiment_loader import (
+    apply_experiment_config,
+    get_study_db_path,
+    get_study_name,
+)
 from src.tuning.optuna_utils import OptunaArgs
 from src.tuning.phase1 import phase_1_objective
 from src.tuning.phase2a import phase_2a_objective
@@ -19,9 +23,12 @@ def main():
     cli_args = tyro.cli(OptunaArgs)
     
     # Create base ArgsCarlaBEV to get environment configuration
-    base_args = ArgsCarlaBEV(exp_id=cli_args.exp_id)
-    base_args = apply_experiment_config(base_args, cli_args.exp_id)
-    print(f"⚙️ Running Optuna Hyperparameter tuning for Base Experiment ID = {cli_args.exp_id}")
+    base_args = ArgsCarlaBEV(study_id=cli_args.study_id, exp_id=cli_args.exp_id)
+    base_args = apply_experiment_config(base_args, cli_args.exp_id, study_id=cli_args.study_id)
+    print(
+        f"⚙️ Running Optuna Hyperparameter tuning for "
+        f"Study = {cli_args.study_id}, Base Experiment ID = {cli_args.exp_id}"
+    )
     
     # Reverted to MedianPruner per user request
     pruner = optuna.pruners.MedianPruner(
@@ -31,7 +38,7 @@ def main():
     )
     # Implement SQLite storage with concurrency support
     os.makedirs("results", exist_ok=True)
-    db_path = get_global_db_path()
+    db_path = get_study_db_path(cli_args.study_id)
     storage_name = f"sqlite:///{db_path}"
     
     storage = optuna.storages.RDBStorage(
@@ -52,7 +59,7 @@ def main():
                 direction="maximize", 
                 pruner=pruner,
                 sampler=sampler,
-                study_name=get_global_study_name()
+                study_name=get_study_name(cli_args.study_id)
             )
             break
         except Exception as e:
@@ -207,7 +214,9 @@ def main():
     # Save study statistics to CSV
     os.makedirs("results", exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    csv_path = f"results/optuna_study_{base_args.exp_id}_{timestamp}.csv"
+    csv_path = (
+        f"results/optuna_study_{base_args.study_id}_exp_{base_args.exp_id}_{timestamp}.csv"
+    )
     df = study.trials_dataframe()
     df.to_csv(csv_path, index=False)
     print(f"✅ Saved Optuna statistics to: {csv_path}")

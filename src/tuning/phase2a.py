@@ -3,7 +3,7 @@ import numpy as np
 import optuna
 
 from src.config.base_config import ArgsCarlaBEV
-from src.config.experiment_loader import run_experiment
+from src.config.experiment_loader import get_study_db_path, run_experiment
 from src.tuning.optuna_utils import OptunaArgs
 
 def phase_2a_objective(trial: optuna.Trial, base_args: ArgsCarlaBEV, opt_args: OptunaArgs, top_continuous_params: dict) -> float:
@@ -42,7 +42,7 @@ def phase_2a_objective(trial: optuna.Trial, base_args: ArgsCarlaBEV, opt_args: O
         args.eval_final_episodes = opt_args.eval_final_episodes
         
         # Enable SQLite auxiliary logging
-        args.logging.db_path = f"results/carlabev_optuna_{opt_args.exp_id}.db"
+        args.logging.db_path = get_study_db_path(opt_args.study_id)
         args.logging.trial_number = trial.number
         trial.set_user_attr("phase", "2a")
         

@@ -53,8 +53,27 @@ CarlaBEV-Lab depends directly on `CarlaBEV` being locally accessible. Use [`uv`]
 To verify everything is working, you can manually execute an evaluation, debugging loop, or train a base agent.
 
 ```bash
+uv run python train.py exp --study-id PPO_NAVIGATION --exp-id 26
 uv run python eval.py
 uv run python test.py
+```
+
+### Study Registry
+
+Experiments are now organized under named studies instead of one global mutable experiment table.
+
+- A study contains metadata, its Optuna study name, its SQLite database path, and a dictionary of `exp_id -> ExperimentSpec`.
+- Study definitions live in separate modules under `src/config/studies/`.
+- Registry and lookup helpers live in `src/config/studies/registry.py`.
+- `PPO_NAVIGATION` is the default migrated navigation study containing the original 29 experiment variants.
+- `EDGE_CASE_SCENARIOS` is a second study for curated hazardous scenarios such as `jaywalk`, `lead_brake`, and `red_light_runner`.
+
+Typical workflow:
+
+```bash
+uv run python train.py exp --study-id PPO_NAVIGATION --exp-id 26
+uv run python eval.py exp --study-id PPO_NAVIGATION --exp-id 26
+uv run python train.py exp --study-id EDGE_CASE_SCENARIOS --exp-id 1
 ```
 
 ---
@@ -70,11 +89,11 @@ Execute tuning phases sequentially from your terminal:
 **Phase 1: Tune Continuous Hyperparameters**
 ```bash
 uv run python -m src.tuning.optuna_tuner \
+    --study-id PPO_NAVIGATION \
     --exp-id 26 \
     --phase 1 \
     --n-trials-phase-1 100 \
     --timesteps-phase-1 1000000 \
-    --save-every-phase-1 25 \
     --eval-episodes 30 \
     --eval-final-episodes 100
 ```
@@ -83,11 +102,11 @@ uv run python -m src.tuning.optuna_tuner \
 **Phase 2: Tune Categorical Hyperparameters**
 ```bash
 uv run python -m src.tuning.optuna_tuner \
+    --study-id PPO_NAVIGATION \
     --exp-id 26 \
-    --phase 2 \
-    --n-trials-phase-2 50 \
-    --timesteps-phase-2 2000000 \
-    --save-every-phase-2 25
+    --phase 2a \
+    --n-trials-phase-2a 50 \
+    --timesteps-phase-2a 2000000
 ```
 
 ### 2. Large Scale HPC Grids
@@ -103,9 +122,9 @@ sbatch scripts/slurm_phase1_launcher.sh
 
 Review tuning runs instantly:
 ```bash
-uv run python -m src.tuning.optuna_analysis --exp-id 26 --top-k 5
+uv run python -m src.tuning.optuna_analysis --study-id PPO_NAVIGATION --exp-id 26 --top-k 5
 ```
-This generates parameter curves, importance breakdowns, and history charts stored in `results/carlabev_optuna_26_plots/`.
+This loads the Optuna study configured for `PPO_NAVIGATION`, filters to experiment `26`, and generates parameter curves, importance breakdowns, and history charts under `results/`.
 
 ---
 
@@ -113,7 +132,7 @@ This generates parameter curves, importance breakdowns, and history charts store
 
 The project splits the Deep RL process cleanly from tuning logic:
 - `src/agents/`: Definitions, policy constructors, and hyperparameter ingestion.
-- `src/config/`: Configuration loaders that bridge the user CLI arguments to the SB3 training loops.
+- `src/config/`: Study registry, typed experiment definitions, and configuration loaders that bridge CLI arguments to the SB3 training loops.
 - `src/trainers/`: Main logic for initializing `CarlaBEV` environments, applying Gym Wrappers, and training via model checkpoints.
 - `src/tuning/`: Contains the distributed Optuna optimizer logic (`optuna_tuner.py`), and visualization toolings (`optuna_analysis.py`).
 - `scripts/`: Collection of Bash scripts for HPC massive slurm-launch grid scaling.
