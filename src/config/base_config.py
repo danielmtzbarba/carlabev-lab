@@ -43,7 +43,7 @@ class EnvConfig:
 
 @dataclass
 class PPOConfig:
-    total_timesteps: int = 1_000_000
+    total_timesteps: int = 3_000_000
     num_envs: int = 14
 
     # Phase 1
@@ -109,10 +109,10 @@ class ArgsCarlaBEV:
     ppo: PPOConfig = field(default_factory=PPOConfig)
     logging: LoggerConfig = field(default_factory=LoggerConfig)
 
-    capture_video: bool = False
-    capture_every: int = 100
+    capture_video: bool = True 
+    capture_every: int = 250
 
-    save_model: bool = False
+    save_model: bool = True 
     save_every: int = 200
 
     num_evals: int = 10
