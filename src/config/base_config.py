@@ -43,7 +43,7 @@ class EnvConfig:
 
 @dataclass
 class PPOConfig:
-    total_timesteps: int = 3_000_000
+    total_timesteps: int = 5_000_000
     num_envs: int = 14
 
     # Phase 1
@@ -115,6 +115,6 @@ class ArgsCarlaBEV:
     save_model: bool = True 
     save_every: int = 200
 
-    num_evals: int = 10
-    eval_episodes: int = 30
-    eval_final_episodes: int = 100
+    num_evals: int = 5
+    eval_episodes: int = 100
+    eval_final_episodes: int = 1000

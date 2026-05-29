@@ -98,6 +98,24 @@ For authored-scene studies, the reset protocol can also declare:
 
 This allows train/eval variation policy to remain fully declarative.
 
+### Manual Runs vs Optuna
+
+A normal training command such as:
+
+```bash
+uv run python train.py exp --study-id EDGE_CASE_SCENARIOS --exp-id 1
+```
+
+is still recorded through Optuna. It is treated as a single fixed trial using the current config values for that experiment.
+
+Use this when you want:
+
+- one baseline run
+- one reproduced run with fixed parameters
+- one study/experiment run logged into the same Optuna database
+
+Use `src.tuning.optuna_tuner` when you want actual hyperparameter search across many trials.
+
 Typical workflow:
 
 ```bash
