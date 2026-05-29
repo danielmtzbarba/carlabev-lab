@@ -1,5 +1,5 @@
 from src.config.studies.edge_case_scenarios import EDGE_CASE_SCENARIOS
-from src.config.studies.models import ExperimentSpec, StudyConfig
+from src.config.studies.models import ExperimentSpec, ProtocolSpec, StudyConfig
 from src.config.studies.ppo_navigation import PPO_NAVIGATION
 
 
@@ -29,4 +29,26 @@ def get_experiment_spec(study_id: str, exp_id: int) -> ExperimentSpec:
         available = ", ".join(str(key) for key in sorted(study.experiments))
         raise KeyError(
             f"Unknown exp_id '{exp_id}' for study '{study_id}'. Available exp_ids: {available}"
+        ) from exc
+
+
+def get_train_protocol(study_id: str, protocol_id: str) -> ProtocolSpec:
+    study = get_study_config(study_id)
+    try:
+        return study.train_protocols[protocol_id]
+    except KeyError as exc:
+        available = ", ".join(sorted(study.train_protocols))
+        raise KeyError(
+            f"Unknown train protocol '{protocol_id}' for study '{study_id}'. Available train protocols: {available}"
+        ) from exc
+
+
+def get_eval_protocol(study_id: str, protocol_id: str) -> ProtocolSpec:
+    study = get_study_config(study_id)
+    try:
+        return study.eval_protocols[protocol_id]
+    except KeyError as exc:
+        available = ", ".join(sorted(study.eval_protocols))
+        raise KeyError(
+            f"Unknown eval protocol '{protocol_id}' for study '{study_id}'. Available eval protocols: {available}"
         ) from exc

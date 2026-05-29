@@ -9,7 +9,7 @@ base_path = "runs"
 if __name__ == "__main__":
     cfg = load_experiment()
     model_path = os.path.join(base_path, cfg.exp_name, "ppo_final.pt")
-    results = evaluate_ppo(
+    payload = evaluate_ppo(
         cfg=cfg,
         model_path=model_path,
         num_episodes=1000,
@@ -18,4 +18,4 @@ if __name__ == "__main__":
         device="cuda",
     )
     logger = DRLogger(cfg)
-    logger.log_evaluation(results, 0)
+    logger.log_evaluation(payload["aggregate"], 0)

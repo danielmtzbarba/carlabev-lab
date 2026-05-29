@@ -62,11 +62,41 @@ uv run python test.py
 
 Experiments are now organized under named studies instead of one global mutable experiment table.
 
-- A study contains metadata, its Optuna study name, its SQLite database path, and a dictionary of `exp_id -> ExperimentSpec`.
+- A study contains metadata, its Optuna study name, its SQLite database path, train/eval protocol registries, and a dictionary of `exp_id -> ExperimentSpec`.
 - Study definitions live in separate modules under `src/config/studies/`.
 - Registry and lookup helpers live in `src/config/studies/registry.py`.
 - `PPO_NAVIGATION` is the default migrated navigation study containing the original 29 experiment variants.
 - `EDGE_CASE_SCENARIOS` is a second study for curated hazardous scenarios such as `jaywalk`, `lead_brake`, and `red_light_runner`.
+- Authored edge-case scenes are copied locally under `assets/scenes/` and grouped by family through `src/config/authored_scenarios.py`.
+- Authored-scene variation behavior is declared in the study protocol specs, not hardcoded in trainers:
+  - edge-case train protocols use randomized authored variants
+  - edge-case eval protocols use the same authored scenes with variation disabled
+
+Each experiment now references:
+
+- one `train_protocol_id`
+- one or more `eval_protocol_ids`
+
+That lets a study train on one distribution and evaluate on another.
+
+Current examples:
+
+- `PPO_NAVIGATION`: trains on random generated navigation scenes and evaluates on random generated navigation scenes
+- `EDGE_CASE_SCENARIOS`:
+  - `exp-id 1`: train on all authored `jaywalk-*` scenes, evaluate on all authored edge-case scenes
+  - `exp-id 2`: train on all authored `leadbrake-*` scenes, evaluate on all authored edge-case scenes
+  - `exp-id 3`: train on all authored `redlightrunner-*` scenes, evaluate on all authored edge-case scenes
+  - `exp-id 4`: train on all authored edge-case scenes, evaluate on all authored edge-case scenes
+
+For authored-scene studies, the reset protocol can also declare:
+
+- `variation_enabled`
+- `variation_seed_mode`
+- `variation_seed`
+- `variation_seed_min`
+- `variation_seed_max`
+
+This allows train/eval variation policy to remain fully declarative.
 
 Typical workflow:
 
@@ -74,6 +104,7 @@ Typical workflow:
 uv run python train.py exp --study-id PPO_NAVIGATION --exp-id 26
 uv run python eval.py exp --study-id PPO_NAVIGATION --exp-id 26
 uv run python train.py exp --study-id EDGE_CASE_SCENARIOS --exp-id 1
+uv run python train.py exp --study-id EDGE_CASE_SCENARIOS --exp-id 4
 ```
 
 ---
@@ -133,6 +164,7 @@ This loads the Optuna study configured for `PPO_NAVIGATION`, filters to experime
 The project splits the Deep RL process cleanly from tuning logic:
 - `src/agents/`: Definitions, policy constructors, and hyperparameter ingestion.
 - `src/config/`: Study registry, typed experiment definitions, and configuration loaders that bridge CLI arguments to the SB3 training loops.
+- `src/config/reset_protocol.py`: Shared train/eval reset samplers built from study protocol definitions.
 - `src/trainers/`: Main logic for initializing `CarlaBEV` environments, applying Gym Wrappers, and training via model checkpoints.
 - `src/tuning/`: Contains the distributed Optuna optimizer logic (`optuna_tuner.py`), and visualization toolings (`optuna_analysis.py`).
 - `scripts/`: Collection of Bash scripts for HPC massive slurm-launch grid scaling.

@@ -334,10 +334,8 @@ class DRLogger(object):
                     )
         # Log to TensorBoard
         for key, value in results_dict.items():
-            try:
+            if isinstance(value, (int, float, np.floating, np.integer)):
                 self.writer.add_scalar(f"eval/{key}", value, global_step)
-            except Exception as e:
-                self._logger.warning(f"⚠️ Could not log {key}: {e}")
 
         # Rich console table
         from rich.table import Table

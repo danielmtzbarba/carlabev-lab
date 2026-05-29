@@ -7,6 +7,7 @@ from torch import nn
 
 from random import choice
 from src.agents import build_agent
+from src.config.reset_protocol import build_train_protocol_sampler
 from src.trainers.utils import CurriculumState
 from src.eval.eval_ppo import evaluate_ppo
 
@@ -101,14 +102,8 @@ def train_ppo(cfg, envs, logger, device, trial=None):
     global_step = 0
     start_time = time.time()
 
-    options = {
-        # edge cases
-        #"scene": choice(["lead_brake", "jaywalk"]),
-        "scene": "rdm",
-        "num_vehicles": 0,
-        "route_dist_range": [50, 150],
-        "reset_mask": np.full((num_envs), True),
-    }
+    train_sampler = build_train_protocol_sampler(cfg)
+    options = train_sampler.initial_options(num_envs)
 
     next_obs, _ = envs.reset(seed=cfg.seed, options=options)
     next_obs = torch.as_tensor(next_obs, dtype=torch.float32, device=device)
@@ -205,14 +200,11 @@ def train_ppo(cfg, envs, logger, device, trial=None):
                     )
 
                     # === Reset the finished env ===
-                    options = {
-                        # edge cases
-                        #     "scene": choice(["lead_brake", "jaywalk"]),
-                        "scene": "rdm",
-                        "num_vehicles": curr_state.vehicle_schedule(mean_return),
-                        "route_dist_range": curr_state.route_schedule(mean_return),
-                        "reset_mask": dones_np,
-                    }
+                    options = train_sampler.next_options(
+                        reset_mask=dones_np,
+                        mean_return=mean_return,
+                        curriculum_state=curr_state,
+                    )
                     # reset() returns FULL batch of obs for ALL envs
                     next_obs_np, reset_info = envs.reset(seed=cfg.seed, options=options)
 
@@ -365,7 +357,7 @@ def train_ppo(cfg, envs, logger, device, trial=None):
             eval_model_path = os.path.join(f"runs/{cfg.exp_name}", f"ppo-eval-{global_step}.pt")
             torch.save(agent.state_dict(), eval_model_path)
 
-            eval_results = evaluate_ppo(
+            eval_payload = evaluate_ppo(
                 cfg,
                 model_path=eval_model_path,
                 num_episodes=cfg.eval_episodes,
@@ -373,6 +365,7 @@ def train_ppo(cfg, envs, logger, device, trial=None):
                 device="cuda",
                 file_name=f"ppo-eval-{global_step}.npy"
             )
+            eval_results = eval_payload["aggregate"]
 
             # Log evaluation results
             elapsed_time = time.time() - start_time
@@ -405,7 +398,7 @@ def train_ppo(cfg, envs, logger, device, trial=None):
     # Final evaluation
     model_path = os.path.join(f"runs/{cfg.exp_name}", "ppo_final.pt")
     torch.save(agent.state_dict(), model_path)
-    eval_results = evaluate_ppo(
+    eval_payload = evaluate_ppo(
         cfg,
         model_path=model_path,
         num_episodes=cfg.eval_final_episodes,
@@ -413,6 +406,7 @@ def train_ppo(cfg, envs, logger, device, trial=None):
         device="cuda",
         file_name="ppo-eval-final-last.npy"
     )
+    eval_results = eval_payload["aggregate"]
 
     elapsed_time = time.time() - start_time
     logger.log_evaluation(

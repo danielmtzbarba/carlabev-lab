@@ -97,6 +97,8 @@ class ArgsCarlaBEV:
     exp_id: int = 1
     exp_name: str = "default"
     algorithm: str = "cnn-ppo"
+    train_protocol_id: str | None = None
+    eval_protocol_ids: list[str] = field(default_factory=list)
     num_envs: int = 14
 
     cuda: bool = True

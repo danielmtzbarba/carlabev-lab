@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -22,11 +22,54 @@ class ExperimentSpec(BaseModel):
     reward_type: RewardType
     curriculum: CurriculumMode
     fov_mask: Toggle
-    scene: str | None = None
-    scenario_preset_id: str | None = None
+    train_protocol_id: str
+    eval_protocol_ids: list[str]
     notes: str | None = None
     tags: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ScenarioEntry(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    scene: str | None = None
+    scenario_preset_id: str | None = None
+    level: int | None = None
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    config_file: str | None = None
+    notes: str | None = None
+
+
+class RandomNavigationProtocol(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    protocol_id: str
+    mode: Literal["random_navigation"]
+    initial_num_vehicles: int = 0
+    initial_route_dist_range: tuple[int, int] = (50, 150)
+    eval_num_vehicles: int = 25
+    eval_route_dist_range: tuple[int, int] = (250, 500)
+    use_curriculum: bool = True
+
+
+class ScenarioCatalogProtocol(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    protocol_id: str
+    mode: Literal["scenario_catalog"]
+    entries: list[ScenarioEntry]
+    sample_strategy: Literal["random", "cycle"] = "random"
+    variation_enabled: bool = False
+    variation_seed_mode: Literal["none", "random_per_reset", "fixed"] = "none"
+    variation_seed: int | None = None
+    variation_seed_min: int = 0
+    variation_seed_max: int = 2_147_483_647
+
+
+ProtocolSpec = Annotated[
+    RandomNavigationProtocol | ScenarioCatalogProtocol,
+    Field(discriminator="mode"),
+]
 
 
 class StudyConfig(BaseModel):
@@ -38,4 +81,6 @@ class StudyConfig(BaseModel):
     db_path: str
     default_algorithm: str = "cnn-ppo"
     metadata: dict[str, Any] = Field(default_factory=dict)
+    train_protocols: dict[str, ProtocolSpec]
+    eval_protocols: dict[str, ProtocolSpec]
     experiments: dict[int, ExperimentSpec]

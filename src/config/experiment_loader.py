@@ -5,11 +5,12 @@ import tyro
 import yaml
 
 from src.config.base_config import ArgsCarlaBEV
-from src.config.studies import (
-    ExperimentSpec,
-    StudyConfig,
+from src.config.studies.models import ExperimentSpec, StudyConfig
+from src.config.studies.registry import (
+    get_eval_protocol,
     get_experiment_spec,
     get_study_config,
+    get_train_protocol,
 )
 
 
@@ -31,6 +32,9 @@ def apply_experiment_config(
 
     args.study_id = study.study_id
     args.exp_id = exp_id
+    args.algorithm = study.default_algorithm
+    args.train_protocol_id = experiment.train_protocol_id
+    args.eval_protocol_ids = list(experiment.eval_protocol_ids)
 
     env = args.env
 
@@ -74,6 +78,11 @@ def apply_experiment_config(
 def save_run_config(args: ArgsCarlaBEV):
     study = get_study_config(args.study_id)
     experiment = get_experiment_spec(args.study_id, args.exp_id)
+    train_protocol = get_train_protocol(args.study_id, args.train_protocol_id)
+    eval_protocols = [
+        get_eval_protocol(args.study_id, protocol_id)
+        for protocol_id in args.eval_protocol_ids
+    ]
 
     out_dir = os.path.join("runs", args.exp_name)
     os.makedirs(out_dir, exist_ok=True)
@@ -83,6 +92,10 @@ def save_run_config(args: ArgsCarlaBEV):
             "exp_id": args.exp_id,
             **experiment.model_dump(mode="json"),
         },
+        "train_protocol": train_protocol.model_dump(mode="json"),
+        "eval_protocols": [
+            protocol.model_dump(mode="json") for protocol in eval_protocols
+        ],
         "args": asdict(args),
     }
     with open(os.path.join(out_dir, "config.yaml"), "w", encoding="utf-8") as handle:
@@ -159,6 +172,8 @@ def run_experiment(args: ArgsCarlaBEV, trial=None, seed_idx: int = None) -> floa
     trial.set_user_attr("study_name", study.optuna_study_name)
     trial.set_user_attr("study_metadata", study.metadata)
     trial.set_user_attr("base_exp_id", args.exp_id)
+    trial.set_user_attr("train_protocol_id", args.train_protocol_id)
+    trial.set_user_attr("eval_protocol_ids", list(args.eval_protocol_ids))
     trial.set_user_attr("action_space", args.env.action_space)
     trial.set_user_attr("traffic_enabled", args.env.traffic_enabled)
     trial.set_user_attr("input_type", "masks" if args.env.masked else "rgb")

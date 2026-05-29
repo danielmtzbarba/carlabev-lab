@@ -1,119 +1,69 @@
 import os
-import torch
-import numpy as np
 from copy import deepcopy
+
+import numpy as np
+import torch
 from rich.console import Console
-from rich.table import Table
 from rich.progress import Progress
+from rich.table import Table
 
-from random import choice
-from src.agents import build_agent
 from CarlaBEV.envs import make_env
+from src.agents import build_agent
+from src.config.reset_protocol import build_eval_protocol_samplers
 
 
-def evaluate_ppo(
-    cfg, model_path, num_episodes=1000, num_envs=14, render=False, device="cuda", file_name="ppo-eval.npy"
-):
-    """
-    Evaluate a trained PPO model and report statistics.
-    """
-    console = Console()
-
-    # --- Copy config to avoid mutating original ---
-    cfg_eval = deepcopy(cfg)
-    exp_name = cfg_eval.exp_name
-
-    # --- Setup environment (vectorized) ---
-    # Assumes make_env returns a SyncVectorEnv-like object when eval=True
-    cfg_eval.num_envs = num_envs
-    eval_env = make_env(cfg_eval, eval=True)
-
-    # --- Load model ---
-    agent, _ = build_agent(cfg_eval, eval_env, device)
-    agent.load_state_dict(torch.load(model_path, map_location=device))
-    agent.eval()
-
-    # --- Evaluation storage across all episodes ---
+def _run_eval_protocol(eval_env, agent, cfg_eval, protocol_id, sampler, num_episodes, render, device):
     all_returns, all_lengths = [], []
-    causes = []
     success_count = 0
     collision_count = 0
     unfinished_count = 0
 
-    # Per-env episode trackers
+    num_envs = cfg_eval.num_envs
     ep_returns = np.zeros(num_envs, dtype=np.float32)
     ep_lengths = np.zeros(num_envs, dtype=np.int32)
 
-    # Initial reset for all envs
-    options = {
-        #   "scene": choice(["lead_brake", "jaywalk"]),
-        "scene": "rdm",
-        "num_vehicles": 25,
-        "route_dist_range": [250, 500],
-        "reset_mask": np.full((num_envs,), True, dtype=bool),
-    }
-    obs, info = eval_env.reset(seed=cfg_eval.seed, options=options)
+    options = sampler.initial_options(num_envs)
+    obs, _ = eval_env.reset(seed=cfg_eval.seed, options=options)
     obs_t = torch.tensor(obs, dtype=torch.float32, device=device)
 
     episodes_finished = 0
 
-    # We don't know how many "iterations" we need in advance, so we loop until
-    # we've collected `num_episodes` finished episodes.
     with Progress() as progress:
-        task = progress.add_task("[green]Evaluating...", total=num_episodes)
+        task = progress.add_task(f"[green]Evaluating {protocol_id}...", total=num_episodes)
         while episodes_finished < num_episodes:
-            # --- Agent action ---
             with torch.no_grad():
-                # obs_t shape: (num_envs, *obs_shape)
                 out = agent.get_action_and_value(obs_t)
                 if agent.is_continuous:
                     _, action, _, _, _ = out
                 else:
                     action, _, _, _ = out
 
-            # Step vector env
             next_obs, reward, terminated, truncated, info = eval_env.step(
                 action.cpu().numpy()
             )
 
-            # Ensure numpy arrays
             reward = np.array(reward, dtype=np.float32)
             terminated = np.array(terminated, dtype=bool)
             truncated = np.array(truncated, dtype=bool)
-
             done = np.logical_or(terminated, truncated)
 
-            # Accumulate rewards / lengths for all envs
             ep_returns += reward
             ep_lengths += 1
 
             if render:
                 eval_env.render()
 
-            # --- Handle finished episodes in each env ---
-            if "episode_info" in info:
-                ep_info = info["episode_info"]
-            else:
-                ep_info = None
+            ep_info = info["episode_info"] if "episode_info" in info else None
 
             for i, d in enumerate(done):
-                if not d:
+                if not d or episodes_finished >= num_episodes:
                     continue
 
-                if episodes_finished >= num_episodes:
-                    # We've already collected enough episodes; ignore extras
-                    continue
-
-                # Extract termination cause if available
                 cause_i = None
                 if ep_info is not None and "termination" in ep_info:
-                    # ep_info["termination"] is vectorized over envs
                     cause_i = ep_info["termination"][i]
-
                 if cause_i is None:
                     cause_i = "unknown"
-
-                causes.append(cause_i)
 
                 if cause_i == "success":
                     success_count += 1
@@ -127,65 +77,125 @@ def evaluate_ppo(
                 episodes_finished += 1
                 progress.update(task, advance=1)
 
-                # Reset per-env accumulators for next episode
                 ep_returns[i] = 0.0
                 ep_lengths[i] = 0
 
-            # --- If we still need more episodes, reset finished envs ---
             if np.any(done) and episodes_finished < num_episodes:
-                reset_mask = done.copy()
-                options["reset_mask"] = reset_mask
-                next_obs, reset_info = eval_env.reset(
-                    seed=cfg_eval.seed, options=options
+                next_obs, _ = eval_env.reset(
+                    seed=cfg_eval.seed,
+                    options=sampler.next_options(reset_mask=done.copy()),
                 )
 
-            # Update obs tensor for next step
             obs = next_obs
             obs_t = torch.tensor(obs, dtype=torch.float32, device=device)
 
-    eval_env.close()
-
-    # --- Compute aggregate statistics ---
     all_returns = np.array(all_returns, dtype=np.float32)
     all_lengths = np.array(all_lengths, dtype=np.float32)
 
-    mean_return = float(all_returns.mean()) if len(all_returns) > 0 else 0.0
-    std_return = float(all_returns.std()) if len(all_returns) > 0 else 0.0
-    mean_length = float(all_lengths.mean()) if len(all_lengths) > 0 else 0.0
+    results = {
+        "protocol_id": protocol_id,
+        "episodes": num_episodes,
+        "mean_return": float(all_returns.mean()) if len(all_returns) > 0 else 0.0,
+        "std_return": float(all_returns.std()) if len(all_returns) > 0 else 0.0,
+        "mean_length": float(all_lengths.mean()) if len(all_lengths) > 0 else 0.0,
+        "success_rate": success_count / num_episodes,
+        "collision_rate": collision_count / num_episodes,
+        "unfinished_rate": unfinished_count / num_episodes,
+    }
+    return results
 
-    success_rate = success_count / num_episodes
-    collision_rate = collision_count / num_episodes
-    unfinished_rate = unfinished_count / num_episodes
 
-    # --- Rich summary table ---
+def _aggregate_protocol_results(protocol_results):
+    total_episodes = sum(item.get("episodes", 0) for item in protocol_results.values())
+    if total_episodes == 0:
+        return {
+            "mean_return": 0.0,
+            "std_return": 0.0,
+            "mean_length": 0.0,
+            "success_rate": 0.0,
+            "collision_rate": 0.0,
+            "unfinished_rate": 0.0,
+        }
+
+    weighted = {}
+    for key in ("mean_return", "mean_length", "success_rate", "collision_rate", "unfinished_rate"):
+        weighted[key] = sum(
+            result[key] * result["episodes"] for result in protocol_results.values()
+        ) / total_episodes
+
+    weighted["std_return"] = sum(
+        result["std_return"] * result["episodes"] for result in protocol_results.values()
+    ) / total_episodes
+    weighted["evaluated_protocol_ids"] = list(protocol_results.keys())
+    return weighted
+
+
+def evaluate_ppo(
+    cfg,
+    model_path,
+    num_episodes=1000,
+    num_envs=14,
+    render=False,
+    device="cuda",
+    file_name="ppo-eval.npy",
+    eval_protocol_ids=None,
+):
+    """
+    Evaluate a trained PPO model against the experiment's configured eval protocols.
+    """
+    console = Console()
+
+    cfg_eval = deepcopy(cfg)
+    exp_name = cfg_eval.exp_name
+    cfg_eval.num_envs = num_envs
+    eval_env = make_env(cfg_eval, eval=True)
+
+    agent, _ = build_agent(cfg_eval, eval_env, device)
+    agent.load_state_dict(torch.load(model_path, map_location=device))
+    agent.eval()
+
+    samplers = build_eval_protocol_samplers(cfg_eval, eval_protocol_ids)
+    protocol_results = {}
+
+    for protocol_id, sampler in samplers.items():
+        protocol_results[protocol_id] = _run_eval_protocol(
+            eval_env=eval_env,
+            agent=agent,
+            cfg_eval=cfg_eval,
+            protocol_id=protocol_id,
+            sampler=sampler,
+            num_episodes=num_episodes,
+            render=render,
+            device=device,
+        )
+
+    eval_env.close()
+
+    aggregate = _aggregate_protocol_results(protocol_results)
+
     table = Table(
-        title=f"Evaluation Results ({num_episodes} episodes)",
+        title=f"Evaluation Results ({num_episodes} episodes per protocol)",
         show_header=True,
         header_style="bold magenta",
     )
     table.add_column("Metric", justify="left", style="bold")
     table.add_column("Value", justify="right")
+    table.add_row("Mean Return", f"{aggregate['mean_return']:.2f} ± {aggregate['std_return']:.2f}")
+    table.add_row("Mean Length", f"{aggregate['mean_length']:.1f} steps")
+    table.add_row("Success Rate", f"{aggregate['success_rate']*100:.1f}%")
+    table.add_row("Collision Rate", f"{aggregate['collision_rate']*100:.1f}%")
+    table.add_row("Unfinished Rate", f"{aggregate['unfinished_rate']*100:.1f}%")
+    table.add_row("Protocols", ", ".join(aggregate.get("evaluated_protocol_ids", [])))
+    console.print(table)
 
-    table.add_row("Mean Return", f"{mean_return:.2f} ± {std_return:.2f}")
-    table.add_row("Mean Length", f"{mean_length:.1f} steps")
-    table.add_row("Success Rate", f"{success_rate*100:.1f}%")
-    table.add_row("Collision Rate", f"{collision_rate*100:.1f}%")
-    table.add_row("Unfinished Rate", f"{unfinished_rate*100:.1f}%")
-
-    # --- Save results ---
-    results = {
-        "mean_return": mean_return,
-        "std_return": std_return,
-        "mean_length": mean_length,
-        "success_rate": success_rate,
-        "collision_rate": collision_rate,
-        "unfinished_rate": unfinished_rate,
-        # still compatible with your previous code
+    payload = {
+        "aggregate": aggregate,
+        "protocols": protocol_results,
     }
 
     save_path = os.path.join("runs", exp_name, file_name)
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
-    np.save(save_path, results)
+    np.save(save_path, payload, allow_pickle=True)
     console.print(f"[green]✅ Saved evaluation results to:[/green] {save_path}")
 
-    return results
+    return payload
