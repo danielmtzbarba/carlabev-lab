@@ -62,7 +62,9 @@ def train_ppo(cfg, envs, logger, device, trial=None):
         ppo_cfg.num_minibatches = max(1, ppo_cfg.batch_size // ppo_cfg.minibatch_size)
         
     ppo_cfg.num_iterations = max(1, ppo_cfg.total_timesteps // ppo_cfg.batch_size)
-    agent, optimizer = build_agent(cfg, envs, device)
+    ppo_artifacts = build_agent(cfg, envs, device)
+    agent = ppo_artifacts.agent
+    optimizer = ppo_artifacts.optimizer
     curr_state = CurriculumState(cfg.env)
     return_buffer = deque(maxlen=50)
 

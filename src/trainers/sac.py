@@ -18,7 +18,15 @@ import stable_baselines3 as sb3
 
 def train_sac(args, envs, logger, device): 
     writer = logger.writer
-    actor, qf1, qf2, qf1_target, qf2_target, q_optimizer, actor_optimizer, rb = build_agent(args, envs, device)
+    sac_artifacts = build_agent(args, envs, device)
+    actor = sac_artifacts.actor
+    qf1 = sac_artifacts.qf1
+    qf2 = sac_artifacts.qf2
+    qf1_target = sac_artifacts.qf1_target
+    qf2_target = sac_artifacts.qf2_target
+    q_optimizer = sac_artifacts.q_optimizer
+    actor_optimizer = sac_artifacts.actor_optimizer
+    rb = sac_artifacts.replay_buffer
 
     # Automatic entropy tuning
     if args.autotune:

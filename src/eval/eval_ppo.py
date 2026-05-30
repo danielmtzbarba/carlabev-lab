@@ -150,7 +150,8 @@ def evaluate_ppo(
     cfg_eval.num_envs = num_envs
     eval_env = make_env(cfg_eval, eval=True)
 
-    agent, _ = build_agent(cfg_eval, eval_env, device)
+    ppo_artifacts = build_agent(cfg_eval, eval_env, device)
+    agent = ppo_artifacts.agent
     agent.load_state_dict(torch.load(model_path, map_location=device))
     agent.eval()
 

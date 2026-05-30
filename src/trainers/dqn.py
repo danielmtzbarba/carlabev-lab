@@ -10,7 +10,11 @@ from src.utils.utils import linear_schedule
 
 
 def train_dqn(args, envs, logger, device):
-    q_network, optimizer, target_network, rb = build_agent(args, envs, device)
+    dqn_artifacts = build_agent(args, envs, device)
+    q_network = dqn_artifacts.q_network
+    optimizer = dqn_artifacts.optimizer
+    target_network = dqn_artifacts.target_network
+    rb = dqn_artifacts.replay_buffer
     # save blank model
     model_path = f"runs/{args.exp_name}/{args.exp_name}.cleanrl_model"
     torch.save(q_network.state_dict(), model_path)
