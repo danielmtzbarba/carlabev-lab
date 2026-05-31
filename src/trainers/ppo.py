@@ -1,11 +1,9 @@
 import time
 import os
-import random
 import torch
 import numpy as np
 from torch import nn
 
-from random import choice
 from src.agents import build_agent
 from src.config.reset_protocol import build_train_protocol_sampler
 from src.trainers.utils import CurriculumState
@@ -113,7 +111,6 @@ def train_ppo(cfg, envs, logger, device, trial=None):
 
     normalizer = RewardNormalizer(clip_range=(-1, 1), decay=0.99)
     # --- At the start of training ---
-    best_return = -float("inf")  # track best episodic return
     eval_interval_steps = max(1, ppo_cfg.total_timesteps // getattr(cfg, 'num_evals', 5))
     next_eval_step = eval_interval_steps
     eval_idx = 0
@@ -242,7 +239,6 @@ def train_ppo(cfg, envs, logger, device, trial=None):
 
         # flatten
         b_obs = obs.reshape((-1,) + envs.single_observation_space.shape).to(device)
-        b_actions = actions.reshape((-1,) + envs.single_action_space.shape).to(device)
         b_raw_actions = raw_actions.reshape((-1,) + envs.single_action_space.shape).to(device)
         b_logprobs = logprobs.reshape(-1).to(device)
         b_advantages = advantages.reshape(-1).to(device)
@@ -263,7 +259,6 @@ def train_ppo(cfg, envs, logger, device, trial=None):
                 mb_inds = b_inds[start:end]
 
                 mb_obs = b_obs[mb_inds]
-                mb_actions = b_actions[mb_inds]
                 mb_raw_actions = b_raw_actions[mb_inds]
                 
                 # Handle discrete vs continuous for action indexing
@@ -324,10 +319,6 @@ def train_ppo(cfg, envs, logger, device, trial=None):
                 break
 
         # diagnostics
-        y_pred, y_true = b_values.cpu().numpy(), b_returns.cpu().numpy()
-        var_y = np.var(y_true)
-        explained_var = np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
-
         # optional logging
         if iteration % 10 == 0:
             clip_frac_mean = np.mean(clipfracs) if clipfracs else 0

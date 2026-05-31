@@ -27,6 +27,17 @@ dependencies = [
     "scikit-learn>=1.8.0",
 ]
 
+[dependency-groups]
+dev = [
+    "pytest>=9.0.0",
+    "ruff>=0.9.9",
+    "pre-commit>=4.2.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
 [tool.uv.sources]
 #MAC
 #CarlaBEV = {path = "/Users/danielmtz/Data/projects/driverless/carlabev-env", editable= true}

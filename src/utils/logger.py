@@ -139,12 +139,12 @@ class DRLogger(object):
         # Backwards compatibility: inject seed column if DB exists prior to this change
         try:
             cursor.execute("ALTER TABLE trial_train_logs ADD COLUMN seed INTEGER;")
-        except:
+        except Exception:
             pass
             
         try:
             cursor.execute("ALTER TABLE trial_eval_logs ADD COLUMN seed INTEGER;")
-        except:
+        except Exception:
             pass
 
         self.db_conn.commit()

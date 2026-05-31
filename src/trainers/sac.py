@@ -1,19 +1,13 @@
 import torch
 import time
-from torch import nn
 import numpy as np
 
 from src.agents import build_agent
 
-import os
-import random
 
 
 import torch.nn.functional as F
 import torch.optim as optim
-from stable_baselines3.common.buffers import ReplayBuffer
-from torch.distributions.categorical import Categorical
-import stable_baselines3 as sb3
 
 
 def train_sac(args, envs, logger, device): 
@@ -74,7 +68,7 @@ def train_sac(args, envs, logger, device):
                 break
 
         if terminations[0] or truncations[0]:
-            num_ep = logger.log_episode(infos)
+            logger.log_episode(infos)
 
         #   ReplayBuffer
         real_next_obs = next_obs.copy()

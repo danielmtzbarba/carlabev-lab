@@ -4,7 +4,6 @@ import numpy as np
 
 from torch.distributions.categorical import Categorical
 from torch.distributions.normal import Normal
-import gymnasium as gym
 
 
 def layer_init(layer, std=np.sqrt(2), bias_const=0.0):

@@ -4,7 +4,6 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from src.evals.dqn_eval import eval_dqn_model
 from src.agents import build_agent
 from src.utils.utils import linear_schedule
 

@@ -4,7 +4,6 @@ import optuna
 import optuna.visualization as vis
 import pandas as pd
 import plotly.graph_objects as go
-import plotly.io as pio
 from dataclasses import dataclass
 from typing import Optional
 
@@ -468,10 +467,13 @@ def generate_dashboard(save_dir: str, db_name: str, phases: list[str]) -> None:
         table_lines = []
         
         for line in lines:
-            if "## Phase 1:" in line: current_phase = "1"
-            elif "## Phase 2a:" in line: current_phase = "2a"
-            elif "## Phase 2b:" in line: current_phase = "2b"
-            
+            if "## Phase 1:" in line:
+                current_phase = "1"
+            elif "## Phase 2a:" in line:
+                current_phase = "2a"
+            elif "## Phase 2b:" in line:
+                current_phase = "2b"
+
             if current_phase:
                 if "| Parameter |" in line:
                     in_table = True
@@ -484,11 +486,13 @@ def generate_dashboard(save_dir: str, db_name: str, phases: list[str]) -> None:
                         # Convert MD table to Simple HTML table
                         html_table = '<table style="width:100%; border-collapse: collapse; margin-bottom: 20px; font-size: 13px;">'
                         for i, tl in enumerate(table_lines):
-                            if "---" in tl: continue
+                            if "---" in tl:
+                                continue
                             cells = [c.strip() for c in tl.split("|")[1:-1]]
                             tag = "th" if i == 0 else "td"
                             style = "border: 1px solid #e5e7eb; padding: 8px; text-align: left;"
-                            if i == 0: style += "background-color: #f9fafb; color: #1e3a8a; font-weight: 600;"
+                            if i == 0:
+                                style += "background-color: #f9fafb; color: #1e3a8a; font-weight: 600;"
                             html_table += "<tr>" + "".join([f'<{tag} style="{style}">{c}</{tag}>' for c in cells]) + "</tr>"
                         html_table += "</table>"
                         phase_params[current_phase] = html_table

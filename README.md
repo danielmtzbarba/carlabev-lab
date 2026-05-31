@@ -54,18 +54,19 @@ To verify everything is working, you can manually execute an evaluation, debuggi
 
 ### Git Hooks
 
-This repo includes versioned Git hooks under `.githooks/`.
+This repo uses `pre-commit` to run local quality checks.
 
-Install them once per clone:
+Install the hooks once per clone:
 
 ```bash
-./scripts/install-git-hooks.sh
+./scripts/setup-hooks.sh
 ```
 
 Hook behavior:
 
-- `pre-commit`: `uv run python -m compileall src`
-- `pre-push`: `uv run python -m unittest tests.test_carlabev_integration`
+- `pre-commit`: `ruff --fix` and `ruff-format`
+- `pre-push`: `ruff --fix` and `ruff-format`
+- `pre-push`: `uv run pytest`
 
 
 ```bash

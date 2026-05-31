@@ -67,10 +67,6 @@ def evaluate(
         if terminations[0]:
             num_ep = infos["stats_ep"]["episode"]
             ret = infos["stats_ep"]["return"]
-            cause = infos["stats_ep"]["termination"]
-            stats = infos["stats_ep"]["stats"]
-            success_rate = infos["stats_ep"]["success_rate"]
-            collision_rate = infos["stats_ep"]["collision_rate"]
 
             #
             writer.add_scalar(f"eval/{num_episode[0]}/episodic_return", ret, num_ep)

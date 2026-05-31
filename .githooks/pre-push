@@ -1,7 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
-cd "$(git rev-parse --show-toplevel)"
-
-echo "[pre-push] running carlabev-lab integration tests"
-uv run python -m unittest tests.test_carlabev_integration
