@@ -52,6 +52,22 @@ CarlaBEV-Lab depends directly on `CarlaBEV` being locally accessible. Use [`uv`]
 
 To verify everything is working, you can manually execute an evaluation, debugging loop, or train a base agent.
 
+### Git Hooks
+
+This repo includes versioned Git hooks under `.githooks/`.
+
+Install them once per clone:
+
+```bash
+./scripts/install-git-hooks.sh
+```
+
+Hook behavior:
+
+- `pre-commit`: `uv run python -m compileall src`
+- `pre-push`: `uv run python -m unittest tests.test_carlabev_integration`
+
+
 ```bash
 uv run python train.py exp --study-id PPO_NAVIGATION --exp-id 26
 uv run python eval.py
