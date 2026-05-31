@@ -43,6 +43,55 @@ class EnvConfig:
     # Reward
     reward_type: str = "carl"  # "shaping" | "carl"
 
+    @property
+    def obs_mode(self) -> str:
+        if self.obs_space == "vector":
+            return "vector"
+        return "bev_semantic" if self.masked else "bev_rgb"
+
+    @obs_mode.setter
+    def obs_mode(self, value: str):
+        if value == "vector":
+            self.obs_space = "vector"
+            self.masked = False
+            return
+        self.obs_space = "bev"
+        if value == "bev_semantic":
+            self.masked = True
+        elif value == "bev_rgb":
+            self.masked = False
+        else:
+            raise ValueError(f"Unsupported obs_mode: {value}")
+
+    @property
+    def action_mode(self) -> str:
+        return self.action_space
+
+    @action_mode.setter
+    def action_mode(self, value: str):
+        self.action_space = value
+
+    @property
+    def reward_mode(self) -> str:
+        return "carl" if self.reward_type == "carl" else "shaping"
+
+    @reward_mode.setter
+    def reward_mode(self, value: str):
+        self.reward_type = "carl" if value == "carl" else "shaping"
+
+    @property
+    def input_type(self) -> str:
+        return "masks" if self.obs_mode == "bev_semantic" else "rgb"
+
+    @input_type.setter
+    def input_type(self, value: str):
+        if value == "masks":
+            self.obs_mode = "bev_semantic"
+        elif value == "rgb":
+            self.obs_mode = "bev_rgb"
+        else:
+            raise ValueError(f"Unsupported input_type: {value}")
+
 
 @dataclass
 class PPOConfig:
@@ -124,13 +173,6 @@ class ArgsCarlaBEV:
 
 
 def to_carlabev_env_config(env_cfg: EnvConfig) -> CarlaBEVEnvConfig:
-    if env_cfg.obs_space == "vector":
-        obs_mode = "vector"
-    elif env_cfg.masked:
-        obs_mode = "bev_semantic"
-    else:
-        obs_mode = "bev_rgb"
-
     return CarlaBEVEnvConfig(
         seed=env_cfg.seed,
         fps=env_cfg.fps,
@@ -138,14 +180,14 @@ def to_carlabev_env_config(env_cfg: EnvConfig) -> CarlaBEVEnvConfig:
         env_id=env_cfg.env_id,
         map_name=env_cfg.map_name,
         obs_size=env_cfg.obs_size,
-        obs_mode=obs_mode,
+        obs_mode=env_cfg.obs_mode,
         fov_masked=env_cfg.fov_masked,
         frame_stack=env_cfg.frame_stack,
-        action_mode=env_cfg.action_space,
+        action_mode=env_cfg.action_mode,
         render_mode=env_cfg.render_mode,
         max_actions=env_cfg.max_actions,
         scenes_path=env_cfg.scenes_path,
-        reward_mode=env_cfg.reward_type,
+        reward_mode=env_cfg.reward_mode,
         traffic_enabled=env_cfg.traffic_enabled,
         max_vehicles=env_cfg.max_vehicles,
     )

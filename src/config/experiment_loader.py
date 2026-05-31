@@ -39,18 +39,11 @@ def apply_experiment_config(
 
     env = args.env
 
-    env.action_space = experiment.action_space
+    env.action_mode = experiment.action_mode
     env.fov_masked = experiment.fov_mask == "on"
     env.traffic_enabled = experiment.traffic == "on"
-
-    if experiment.input_type == "rgb":
-        env.masked = False
-        env.obs_space = "bev"
-    elif experiment.input_type == "masks":
-        env.masked = True
-        env.obs_space = "bev"
-
-    env.reward_type = experiment.reward_type
+    env.input_type = experiment.input_type
+    env.reward_mode = experiment.reward_mode
 
     if experiment.curriculum == "off":
         env.curriculum_enabled = False
@@ -65,10 +58,10 @@ def apply_experiment_config(
 
     args.exp_name = (
         f"{study.study_id}_exp-{exp_id}_{args.algorithm}"
-        f"_act-{experiment.action_space}"
+        f"_act-{experiment.action_mode}"
         f"_traffic-{experiment.traffic}"
         f"_input-{experiment.input_type}"
-        f"_rwd-{experiment.reward_type}"
+        f"_rwd-{experiment.reward_mode}"
         f"_curr-{experiment.curriculum}"
         f"_fovmask-{experiment.fov_mask}"
     )
@@ -177,11 +170,11 @@ def run_experiment(args: ArgsCarlaBEV, trial=None, seed_idx: int = None) -> floa
     trial.set_user_attr("base_exp_id", args.exp_id)
     trial.set_user_attr("train_protocol_id", args.train_protocol_id)
     trial.set_user_attr("eval_protocol_ids", list(args.eval_protocol_ids))
-    trial.set_user_attr("action_space", args.env.action_space)
+    trial.set_user_attr("action_mode", args.env.action_mode)
     trial.set_user_attr("traffic_enabled", args.env.traffic_enabled)
-    trial.set_user_attr("input_type", "masks" if args.env.masked else "rgb")
+    trial.set_user_attr("input_type", args.env.input_type)
     trial.set_user_attr("fov_masked", args.env.fov_masked)
-    trial.set_user_attr("reward_type", args.env.reward_type)
+    trial.set_user_attr("reward_mode", args.env.reward_mode)
     trial.set_user_attr(
         "curriculum",
         args.env.curriculum_mode if args.env.curriculum_enabled else "off",

@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from typing import Any, Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, computed_field
 
 
-ActionSpace = Literal["discrete", "continuous"]
+ActionMode = Literal["discrete", "continuous"]
 TrafficMode = Literal["on", "off"]
 InputType = Literal["rgb", "masks"]
-RewardType = Literal["shaping", "carl"]
+RewardMode = Literal["shaping", "carl"]
 CurriculumMode = Literal["off", "vehicles_only", "route_only", "both"]
 Toggle = Literal["on", "off"]
 
@@ -16,10 +16,14 @@ Toggle = Literal["on", "off"]
 class ExperimentSpec(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    action_space: ActionSpace
+    action_mode: ActionMode = Field(
+        validation_alias=AliasChoices("action_mode", "action_space")
+    )
     traffic: TrafficMode
     input_type: InputType
-    reward_type: RewardType
+    reward_mode: RewardMode = Field(
+        validation_alias=AliasChoices("reward_mode", "reward_type")
+    )
     curriculum: CurriculumMode
     fov_mask: Toggle
     train_protocol_id: str
@@ -27,6 +31,16 @@ class ExperimentSpec(BaseModel):
     notes: str | None = None
     tags: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @computed_field(return_type=str)
+    @property
+    def action_space(self) -> str:
+        return self.action_mode
+
+    @computed_field(return_type=str)
+    @property
+    def reward_type(self) -> str:
+        return self.reward_mode
 
 
 class ScenarioEntry(BaseModel):
