@@ -58,6 +58,17 @@ uv run python eval.py
 uv run python test.py
 ```
 
+### Configuration Contract
+
+CarlaBEV-Lab now uses CarlaBEV's public config contract internally. The canonical environment fields are:
+
+- `map_name`
+- `obs_mode` (`bev_rgb`, `bev_semantic`, `vector`)
+- `action_mode` (`discrete`, `continuous`)
+- `reward_mode` (`shaping`, `carl`)
+
+Legacy aliases such as `obs_space`, `action_space`, and `reward_type` are still accepted for compatibility, but they emit deprecation warnings and are only retained at the boundary of older configs or experiments.
+
 ### Study Registry
 
 Experiments are now organized under named studies instead of one global mutable experiment table.

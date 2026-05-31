@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from typing import Any, Annotated, Literal
+import warnings
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, computed_field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, computed_field, model_validator
 
 
 ActionMode = Literal["discrete", "continuous"]
@@ -11,6 +12,14 @@ InputType = Literal["rgb", "masks"]
 RewardMode = Literal["shaping", "carl"]
 CurriculumMode = Literal["off", "vehicles_only", "route_only", "both"]
 Toggle = Literal["on", "off"]
+
+
+def _warn_legacy_alias(legacy: str, canonical: str):
+    warnings.warn(
+        f"`{legacy}` is deprecated in carlabev-lab study definitions; use `{canonical}` instead.",
+        FutureWarning,
+        stacklevel=3,
+    )
 
 
 class ExperimentSpec(BaseModel):
@@ -31,6 +40,17 @@ class ExperimentSpec(BaseModel):
     notes: str | None = None
     tags: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _warn_legacy_aliases(cls, data: Any):
+        if not isinstance(data, dict):
+            return data
+        if "action_space" in data and "action_mode" not in data:
+            _warn_legacy_alias("action_space", "action_mode")
+        if "reward_type" in data and "reward_mode" not in data:
+            _warn_legacy_alias("reward_type", "reward_mode")
+        return data
 
     @computed_field(return_type=str)
     @property

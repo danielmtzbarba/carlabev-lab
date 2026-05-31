@@ -1,5 +1,4 @@
 import os
-from dataclasses import asdict
 
 import tyro
 import yaml
@@ -84,14 +83,24 @@ def save_run_config(args: ArgsCarlaBEV):
         "study": study.model_dump(mode="json", exclude={"experiments"}),
         "experiment": {
             "exp_id": args.exp_id,
-            **experiment.model_dump(mode="json"),
+            **experiment.model_dump(
+                mode="json",
+                exclude={"action_space", "reward_type"},
+            ),
         },
         "train_protocol": train_protocol.model_dump(mode="json"),
         "eval_protocols": [
             protocol.model_dump(mode="json") for protocol in eval_protocols
         ],
-        "args": asdict(args),
+        "args": args.to_dict(),
         "carlabev_run_config": to_carlabev_run_config(args).model_dump(mode="json"),
+        "compatibility": {
+            "legacy_env_aliases": args.legacy_aliases(),
+            "legacy_experiment_aliases": {
+                "action_space": experiment.action_space,
+                "reward_type": experiment.reward_type,
+            },
+        },
     }
     with open(os.path.join(out_dir, "config.yaml"), "w", encoding="utf-8") as handle:
         yaml.safe_dump(payload, handle, sort_keys=False)

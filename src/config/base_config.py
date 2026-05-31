@@ -1,83 +1,167 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
+import warnings
 
 from CarlaBEV.config import EnvConfig as CarlaBEVEnvConfig
 from CarlaBEV.config import RunConfig as CarlaBEVRunConfig
+
+
+def _warn_legacy_name(legacy: str, canonical: str):
+    warnings.warn(
+        f"`{legacy}` is deprecated in carlabev-lab; use `{canonical}` instead.",
+        FutureWarning,
+        stacklevel=3,
+    )
 
 
 @dataclass
 class LoggerConfig:
     enabled: bool = False
     dir: str = "results/carlabev/runs/"
-    db_path: str = None
-    trial_number: int = None
+    db_path: str | None = None
+    trial_number: int | None = None
 
 
-@dataclass
+@dataclass(init=False)
 class EnvConfig:
-    seed: int = 0
-    fps: int = 60
-    size: int = 128
-    env_id: str = "CarlaBEV-v0"
-    map_name: str = "Town01"
-    obs_space: str = "bev"
-    obs_size: tuple = (96, 96)
-    masked: bool = True
-    fov_masked: bool = True
-    frame_stack: int = 4
+    seed: int
+    fps: int
+    size: int
+    env_id: str
+    map_name: str
+    obs_mode: str
+    obs_size: tuple[int, int]
+    fov_masked: bool
+    frame_stack: int
 
-    action_space: str = "discrete"
-    render_mode: str = "rgb_array"
-    max_actions: int = 5000
+    action_mode: str
+    render_mode: str
+    max_actions: int
+    scenes_path: str
 
-    scenes_path: str = "assets/scenes"
+    curriculum_enabled: bool
+    curriculum_mode: str
+    route_dist_range: tuple[int, int]
 
-    # Curriculum
-    curriculum_enabled: bool = False
-    curriculum_mode: str = "vehicles"
-    route_dist_range: tuple = (30, 100)
+    traffic_enabled: bool
+    max_vehicles: int
 
-    # Traffic
-    traffic_enabled: bool = False
-    max_vehicles: int = 25
+    reward_mode: str
 
-    # Reward
-    reward_type: str = "carl"  # "shaping" | "carl"
+    def __init__(
+        self,
+        *,
+        seed: int = 0,
+        fps: int = 60,
+        size: int = 128,
+        env_id: str = "CarlaBEV-v0",
+        map_name: str = "Town01",
+        obs_mode: str | None = None,
+        obs_size: tuple[int, int] = (96, 96),
+        fov_masked: bool = True,
+        frame_stack: int = 4,
+        action_mode: str | None = None,
+        render_mode: str = "rgb_array",
+        max_actions: int = 5000,
+        scenes_path: str = "assets/scenes",
+        curriculum_enabled: bool = False,
+        curriculum_mode: str = "vehicles",
+        route_dist_range: tuple[int, int] = (30, 100),
+        traffic_enabled: bool = False,
+        max_vehicles: int = 25,
+        reward_mode: str | None = None,
+        obs_space: str | None = None,
+        masked: bool | None = None,
+        action_space: str | None = None,
+        reward_type: str | None = None,
+    ):
+        if obs_space is not None:
+            _warn_legacy_name("obs_space", "obs_mode")
+        if masked is not None:
+            _warn_legacy_name("masked", "obs_mode")
+        if action_space is not None:
+            _warn_legacy_name("action_space", "action_mode")
+        if reward_type is not None:
+            _warn_legacy_name("reward_type", "reward_mode")
+
+        if obs_mode is None:
+            if obs_space == "vector":
+                obs_mode = "vector"
+            elif masked is False:
+                obs_mode = "bev_rgb"
+            else:
+                obs_mode = "bev_semantic"
+
+        if action_mode is None:
+            action_mode = action_space or "discrete"
+
+        if reward_mode is None:
+            reward_mode = "carl" if reward_type == "carl" else "shaping"
+        elif reward_mode not in {"shaping", "carl"}:
+            reward_mode = "carl" if reward_mode == "carl" else "shaping"
+
+        self.seed = seed
+        self.fps = fps
+        self.size = size
+        self.env_id = env_id
+        self.map_name = map_name
+        self.obs_mode = obs_mode
+        self.obs_size = obs_size
+        self.fov_masked = fov_masked
+        self.frame_stack = frame_stack
+        self.action_mode = action_mode
+        self.render_mode = render_mode
+        self.max_actions = max_actions
+        self.scenes_path = scenes_path
+        self.curriculum_enabled = curriculum_enabled
+        self.curriculum_mode = curriculum_mode
+        self.route_dist_range = route_dist_range
+        self.traffic_enabled = traffic_enabled
+        self.max_vehicles = max_vehicles
+        self.reward_mode = reward_mode
 
     @property
-    def obs_mode(self) -> str:
-        if self.obs_space == "vector":
-            return "vector"
-        return "bev_semantic" if self.masked else "bev_rgb"
+    def obs_space(self) -> str:
+        return "vector" if self.obs_mode == "vector" else "bev"
 
-    @obs_mode.setter
-    def obs_mode(self, value: str):
+    @obs_space.setter
+    def obs_space(self, value: str):
+        _warn_legacy_name("obs_space", "obs_mode")
         if value == "vector":
-            self.obs_space = "vector"
-            self.masked = False
-            return
-        self.obs_space = "bev"
-        if value == "bev_semantic":
-            self.masked = True
-        elif value == "bev_rgb":
-            self.masked = False
+            self.obs_mode = "vector"
+        elif value == "bev":
+            if self.obs_mode == "vector":
+                self.obs_mode = "bev_semantic"
         else:
-            raise ValueError(f"Unsupported obs_mode: {value}")
+            raise ValueError(f"Unsupported obs_space: {value}")
 
     @property
-    def action_mode(self) -> str:
-        return self.action_space
+    def masked(self) -> bool:
+        return self.obs_mode == "bev_semantic"
 
-    @action_mode.setter
-    def action_mode(self, value: str):
-        self.action_space = value
+    @masked.setter
+    def masked(self, value: bool):
+        _warn_legacy_name("masked", "obs_mode")
+        self.obs_mode = "bev_semantic" if value else "bev_rgb"
 
     @property
-    def reward_mode(self) -> str:
-        return "carl" if self.reward_type == "carl" else "shaping"
+    def action_space(self) -> str:
+        return self.action_mode
 
-    @reward_mode.setter
-    def reward_mode(self, value: str):
-        self.reward_type = "carl" if value == "carl" else "shaping"
+    @action_space.setter
+    def action_space(self, value: str):
+        _warn_legacy_name("action_space", "action_mode")
+        self.action_mode = value
+
+    @property
+    def reward_type(self) -> str:
+        return self.reward_mode
+
+    @reward_type.setter
+    def reward_type(self, value: str):
+        _warn_legacy_name("reward_type", "reward_mode")
+        self.reward_mode = "carl" if value == "carl" else "shaping"
 
     @property
     def input_type(self) -> str:
@@ -92,24 +176,52 @@ class EnvConfig:
         else:
             raise ValueError(f"Unsupported input_type: {value}")
 
+    def to_dict(self) -> dict:
+        return {
+            "seed": self.seed,
+            "fps": self.fps,
+            "size": self.size,
+            "env_id": self.env_id,
+            "map_name": self.map_name,
+            "obs_mode": self.obs_mode,
+            "obs_size": self.obs_size,
+            "fov_masked": self.fov_masked,
+            "frame_stack": self.frame_stack,
+            "action_mode": self.action_mode,
+            "render_mode": self.render_mode,
+            "max_actions": self.max_actions,
+            "scenes_path": self.scenes_path,
+            "curriculum_enabled": self.curriculum_enabled,
+            "curriculum_mode": self.curriculum_mode,
+            "route_dist_range": self.route_dist_range,
+            "traffic_enabled": self.traffic_enabled,
+            "max_vehicles": self.max_vehicles,
+            "reward_mode": self.reward_mode,
+        }
+
+    def legacy_aliases(self) -> dict:
+        return {
+            "obs_space": self.obs_space,
+            "masked": self.masked,
+            "action_space": self.action_space,
+            "reward_type": self.reward_type,
+        }
+
 
 @dataclass
 class PPOConfig:
     total_timesteps: int = 5_000_000
     num_envs: int = 14
 
-    # Phase 1
     anneal_lr: bool = True
     learning_rate: float = 3e-4
     gae_lambda: float = 0.9
     gamma: float = 0.995
 
-    # Phase 2a 
     num_steps: int = 256
     num_minibatches: int = 4
     update_epochs: int = 6
 
-    # Phase 2b
     ent_coef: float = 0.015
     vf_coef: float = 0.65
     clip_coef: float = 0.18
@@ -118,29 +230,25 @@ class PPOConfig:
     ent_coef_start: float = 0.015
     ent_decay_factor: float = 0.2
     ent_decay_schedule: str = "cosine"
-    
+
     vf_coef_start: float = 0.65
     vf_decay_factor: float = 0.85
     vf_decay_schedule: str = "linear"
-    
+
     clip_coef_start: float = 0.18
     clip_decay_factor: float = 0.65
     clip_decay_schedule: str = "cosine"
-    
-    # Phase 3: Network Architecture Policy
+
     channels: list = field(default_factory=lambda: [32, 64, 64])
     fc_size: int = 512
 
-    # Other
     target_kl: float = 0.015
     norm_adv: bool = True
     clip_vloss: bool = True
 
-    # Computed at runtime
     batch_size: int = 0
     minibatch_size: int = 0
     num_iterations: int = 0
-
 
 
 @dataclass
@@ -161,15 +269,42 @@ class ArgsCarlaBEV:
     ppo: PPOConfig = field(default_factory=PPOConfig)
     logging: LoggerConfig = field(default_factory=LoggerConfig)
 
-    capture_video: bool = True 
+    capture_video: bool = True
     capture_every: int = 250
 
-    save_model: bool = True 
+    save_model: bool = True
     save_every: int = 200
 
     num_evals: int = 5
     eval_episodes: int = 100
     eval_final_episodes: int = 1000
+
+    def to_dict(self) -> dict:
+        return {
+            "study_id": self.study_id,
+            "exp_id": self.exp_id,
+            "exp_name": self.exp_name,
+            "algorithm": self.algorithm,
+            "train_protocol_id": self.train_protocol_id,
+            "eval_protocol_ids": list(self.eval_protocol_ids),
+            "num_envs": self.num_envs,
+            "cuda": self.cuda,
+            "seed": self.seed,
+            "torch_deterministic": self.torch_deterministic,
+            "env": self.env.to_dict(),
+            "ppo": self.ppo.__dict__.copy(),
+            "logging": self.logging.__dict__.copy(),
+            "capture_video": self.capture_video,
+            "capture_every": self.capture_every,
+            "save_model": self.save_model,
+            "save_every": self.save_every,
+            "num_evals": self.num_evals,
+            "eval_episodes": self.eval_episodes,
+            "eval_final_episodes": self.eval_final_episodes,
+        }
+
+    def legacy_aliases(self) -> dict:
+        return {"env": self.env.legacy_aliases()}
 
 
 def to_carlabev_env_config(env_cfg: EnvConfig) -> CarlaBEVEnvConfig:
