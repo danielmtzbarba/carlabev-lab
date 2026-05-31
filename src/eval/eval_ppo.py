@@ -10,6 +10,7 @@ from rich.table import Table
 from CarlaBEV.envs import make_env
 from src.agents import build_agent
 from src.config.reset_protocol import build_eval_protocol_samplers
+from src.config.base_config import to_carlabev_run_config
 
 
 def _run_eval_protocol(eval_env, agent, cfg_eval, protocol_id, sampler, num_episodes, render, device):
@@ -148,7 +149,7 @@ def evaluate_ppo(
     cfg_eval = deepcopy(cfg)
     exp_name = cfg_eval.exp_name
     cfg_eval.num_envs = num_envs
-    eval_env = make_env(cfg_eval, eval=True)
+    eval_env = make_env(to_carlabev_run_config(cfg_eval), eval=True)
 
     ppo_artifacts = build_agent(cfg_eval, eval_env, device)
     agent = ppo_artifacts.agent

@@ -1,5 +1,8 @@
 from dataclasses import dataclass, field
 
+from CarlaBEV.config import EnvConfig as CarlaBEVEnvConfig
+from CarlaBEV.config import RunConfig as CarlaBEVRunConfig
+
 
 @dataclass
 class LoggerConfig:
@@ -118,3 +121,44 @@ class ArgsCarlaBEV:
     num_evals: int = 5
     eval_episodes: int = 100
     eval_final_episodes: int = 1000
+
+
+def to_carlabev_env_config(env_cfg: EnvConfig) -> CarlaBEVEnvConfig:
+    if env_cfg.obs_space == "vector":
+        obs_mode = "vector"
+    elif env_cfg.masked:
+        obs_mode = "bev_semantic"
+    else:
+        obs_mode = "bev_rgb"
+
+    return CarlaBEVEnvConfig(
+        seed=env_cfg.seed,
+        fps=env_cfg.fps,
+        size=env_cfg.size,
+        env_id=env_cfg.env_id,
+        map_name=env_cfg.map_name,
+        obs_size=env_cfg.obs_size,
+        obs_mode=obs_mode,
+        fov_masked=env_cfg.fov_masked,
+        frame_stack=env_cfg.frame_stack,
+        action_mode=env_cfg.action_space,
+        render_mode=env_cfg.render_mode,
+        max_actions=env_cfg.max_actions,
+        scenes_path=env_cfg.scenes_path,
+        reward_mode=env_cfg.reward_type,
+        traffic_enabled=env_cfg.traffic_enabled,
+        max_vehicles=env_cfg.max_vehicles,
+    )
+
+
+def to_carlabev_run_config(args: ArgsCarlaBEV) -> CarlaBEVRunConfig:
+    return CarlaBEVRunConfig(
+        env=to_carlabev_env_config(args.env),
+        exp_name=args.exp_name,
+        num_envs=args.num_envs,
+        seed=args.seed,
+        capture_video=args.capture_video,
+        capture_every=args.capture_every,
+        cuda=args.cuda,
+        torch_deterministic=args.torch_deterministic,
+    )

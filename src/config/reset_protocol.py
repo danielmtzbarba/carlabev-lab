@@ -5,6 +5,16 @@ import hashlib
 import random
 
 import numpy as np
+from CarlaBEV.config import (
+    AuthoredSceneReset,
+    RandomNavigationReset,
+    ScenarioConfigReset,
+    ScenarioPresetReset,
+    build_authored_scene_options,
+    build_random_navigation_options,
+    build_scenario_config_options,
+    build_scenario_preset_options,
+)
 
 from src.config.studies.models import (
     ProtocolSpec,
@@ -53,14 +63,16 @@ class ResetProtocolSampler:
             num_vehicles = curriculum_state.vehicle_schedule(mean_return)
             route_dist_range = list(curriculum_state.route_schedule(mean_return))
 
-        return {
-            "scene": "rdm",
-            "num_vehicles": int(num_vehicles),
-            "route_dist_range": route_dist_range,
-            "reset_mask": np.asarray(reset_mask, dtype=bool),
-            "protocol_id": protocol.protocol_id,
-            "protocol_mode": protocol.mode,
-        }
+        options = build_random_navigation_options(
+            RandomNavigationReset(
+                num_vehicles=int(num_vehicles),
+                route_dist_range=tuple(route_dist_range),
+            ),
+            reset_mask=reset_mask,
+        )
+        options["protocol_id"] = protocol.protocol_id
+        options["protocol_mode"] = protocol.mode
+        return options
 
     def _scenario_catalog_options(self, reset_mask) -> dict:
         protocol: ScenarioCatalogProtocol = self.protocol
@@ -70,27 +82,44 @@ class ResetProtocolSampler:
         else:
             entry = self._rng.choice(protocol.entries)
 
-        options = {
-            "reset_mask": np.asarray(reset_mask, dtype=bool),
-        }
-        if entry.scene is not None:
-            options["scene"] = entry.scene
-        if entry.scenario_preset_id is not None:
-            options["scenario_preset_id"] = entry.scenario_preset_id
-        if entry.level is not None:
-            options["level"] = entry.level
-        if entry.config_file is not None:
-            options["config_file"] = entry.config_file
-        options.update(deepcopy(entry.parameters))
-        options["variation_enabled"] = protocol.variation_enabled
+        variation_seed = None
         if protocol.variation_enabled:
             if protocol.variation_seed_mode == "random_per_reset":
-                options["variation_seed"] = self._rng.randint(
+                variation_seed = self._rng.randint(
                     protocol.variation_seed_min,
                     protocol.variation_seed_max,
                 )
             elif protocol.variation_seed_mode == "fixed" and protocol.variation_seed is not None:
-                options["variation_seed"] = protocol.variation_seed
+                variation_seed = protocol.variation_seed
+
+        if entry.config_file is not None:
+            options = build_authored_scene_options(
+                AuthoredSceneReset(
+                    config_file=entry.config_file,
+                    variation_enabled=protocol.variation_enabled,
+                    variation_seed=variation_seed,
+                ),
+                reset_mask=reset_mask,
+            )
+        elif entry.scenario_preset_id is not None:
+            options = build_scenario_preset_options(
+                ScenarioPresetReset(
+                    preset_id=entry.scenario_preset_id,
+                    overrides=deepcopy(entry.parameters),
+                ),
+                reset_mask=reset_mask,
+            )
+            if entry.level is not None:
+                options["level"] = entry.level
+        else:
+            options = build_scenario_config_options(
+                ScenarioConfigReset(
+                    scenario_id=entry.scene or "rdm",
+                    level=entry.level or 1,
+                    parameters=deepcopy(entry.parameters),
+                ),
+                reset_mask=reset_mask,
+            )
         options["protocol_id"] = protocol.protocol_id
         options["protocol_mode"] = protocol.mode
         return options

@@ -3,8 +3,9 @@ from dataclasses import asdict
 
 import tyro
 import yaml
+from CarlaBEV.config import validate_run_config
 
-from src.config.base_config import ArgsCarlaBEV
+from src.config.base_config import ArgsCarlaBEV, to_carlabev_run_config
 from src.config.studies.models import ExperimentSpec, StudyConfig
 from src.config.studies.registry import (
     get_eval_protocol,
@@ -97,6 +98,7 @@ def save_run_config(args: ArgsCarlaBEV):
             protocol.model_dump(mode="json") for protocol in eval_protocols
         ],
         "args": asdict(args),
+        "carlabev_run_config": to_carlabev_run_config(args).model_dump(mode="json"),
     }
     with open(os.path.join(out_dir, "config.yaml"), "w", encoding="utf-8") as handle:
         yaml.safe_dump(payload, handle, sort_keys=False)
@@ -111,6 +113,7 @@ def load_experiment():
     print(f"⚙ Selecting experiment ID = {args.exp_id}")
 
     args = apply_experiment_config(args, args.exp_id, study_id=args.study_id)
+    validate_run_config(to_carlabev_run_config(args))
     save_run_config(args)
     return args
 
@@ -186,7 +189,8 @@ def run_experiment(args: ArgsCarlaBEV, trial=None, seed_idx: int = None) -> floa
 
     device = torch.device("cuda" if args.cuda and torch.cuda.is_available() else "cpu")
 
-    envs = make_env(args)
+    validate_run_config(to_carlabev_run_config(args))
+    envs = make_env(to_carlabev_run_config(args))
     logger = DRLogger(config=args, stats_interval=100)
     logger.msg(f"Environments - {args.env.env_id}:{args.num_envs} built.")
 
