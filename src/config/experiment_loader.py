@@ -1,4 +1,6 @@
 import os
+import random
+import time
 import traceback
 
 import tyro
@@ -56,6 +58,7 @@ def apply_experiment_config(
         if experiment.semantic_mask_ch is not None
         else env.semantic_mask_ch
     )
+    env.temporal_fusion_mode = experiment.temporal_fusion_mode
     env.reward_mode = experiment.reward_mode
 
     if experiment.curriculum == "off":
@@ -75,6 +78,7 @@ def apply_experiment_config(
         f"_traffic-{experiment.traffic}"
         f"_input-{experiment.input_type}"
         f"_sem-{args.env.semantic_mask_ch if experiment.input_type == 'masks' else 'rgb'}"
+        f"_tfuse-{args.env.temporal_fusion_mode}"
         f"_rwd-{experiment.reward_mode}"
         f"_curr-{experiment.curriculum}"
         f"_fovmask-{experiment.fov_mask}"
@@ -156,13 +160,29 @@ def run_experiment(args: ArgsCarlaBEV, trial=None, seed_idx: int = None) -> floa
         )
         db_path = get_study_db_path(args.study_id)
         storage_name = f"sqlite:///{db_path}"
+        optuna_study = None
 
-        optuna_study = optuna.create_study(
-            storage=storage_name,
-            load_if_exists=True,
-            direction="maximize",
-            study_name=get_study_name(args.study_id),
-        )
+        for _ in range(20):
+            try:
+                optuna_study = optuna.create_study(
+                    storage=storage_name,
+                    load_if_exists=True,
+                    direction="maximize",
+                    study_name=get_study_name(args.study_id),
+                )
+                break
+            except Exception as exc:
+                print(
+                    f"Study creation collision or lock detected: {exc}. "
+                    f"Retrying in a few seconds..."
+                )
+                time.sleep(random.uniform(2, 6))
+
+        if optuna_study is None:
+            raise RuntimeError(
+                "Failed to create or load the Optuna study after multiple attempts "
+                "due to database locking."
+            )
 
         enqueued_params = {
             "learning_rate": args.ppo.learning_rate,
@@ -200,6 +220,7 @@ def run_experiment(args: ArgsCarlaBEV, trial=None, seed_idx: int = None) -> floa
     trial.set_user_attr("traffic_enabled", args.env.traffic_enabled)
     trial.set_user_attr("input_type", args.env.input_type)
     trial.set_user_attr("semantic_mask_ch", args.env.semantic_mask_ch)
+    trial.set_user_attr("temporal_fusion_mode", args.env.temporal_fusion_mode)
     trial.set_user_attr("fov_masked", args.env.fov_masked)
     trial.set_user_attr("ego_anchor_x_frac", args.env.ego_anchor_x_frac)
     trial.set_user_attr("ego_anchor_y_frac", args.env.ego_anchor_y_frac)

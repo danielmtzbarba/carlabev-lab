@@ -10,6 +10,7 @@ ActionMode = Literal["discrete", "continuous"]
 TrafficMode = Literal["on", "off"]
 InputType = Literal["rgb", "masks"]
 SemanticMaskMode = Literal["binary", "2-class", "4-class", "5-class", "6-class", "7-class"]
+TemporalFusionMode = Literal["stack", "vehicle_temporal", "vehicle_weighted"]
 RewardMode = Literal["shaping", "carl"]
 CurriculumMode = Literal["off", "vehicles_only", "route_only", "both"]
 Toggle = Literal["on", "off"]
@@ -33,6 +34,7 @@ class ExperimentSpec(BaseModel):
     traffic: TrafficMode
     input_type: InputType
     semantic_mask_ch: SemanticMaskMode | None = None
+    temporal_fusion_mode: TemporalFusionMode = "stack"
     reward_mode: RewardMode = Field(
         validation_alias=AliasChoices("reward_mode", "reward_type")
     )
@@ -66,6 +68,20 @@ class ExperimentSpec(BaseModel):
             raise ValueError(
                 "`semantic_mask_ch` must be omitted when `input_type='rgb'`."
             )
+        if self.input_type == "rgb" and self.temporal_fusion_mode != "stack":
+            raise ValueError(
+                "`temporal_fusion_mode` must be 'stack' when `input_type='rgb'`."
+            )
+        if self.temporal_fusion_mode != "stack":
+            if self.input_type != "masks":
+                raise ValueError(
+                    "`temporal_fusion_mode` requires `input_type='masks'`."
+                )
+            if self.semantic_mask_ch not in {"4-class", "5-class", "6-class", "7-class"}:
+                raise ValueError(
+                    "`temporal_fusion_mode` requires a semantic mask layout with a vehicle channel "
+                    "('4-class', '5-class', '6-class', or '7-class')."
+                )
         return self
 
     @computed_field(return_type=str)

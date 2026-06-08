@@ -4,11 +4,15 @@ from src.config.studies.ppo_navigation import PPO_NAVIGATION
 from src.config.studies.ppo_navigation_semantic_lookahead import (
     PPO_NAVIGATION_SEMANTIC_LOOKAHEAD,
 )
+from src.config.studies.ppo_navigation_vehicle_temporal_fusion import (
+    PPO_NAVIGATION_VEHICLE_TEMPORAL_FUSION,
+)
 
 
 STUDY_REGISTRY: dict[str, StudyConfig] = {
     PPO_NAVIGATION.study_id: PPO_NAVIGATION,
     PPO_NAVIGATION_SEMANTIC_LOOKAHEAD.study_id: PPO_NAVIGATION_SEMANTIC_LOOKAHEAD,
+    PPO_NAVIGATION_VEHICLE_TEMPORAL_FUSION.study_id: PPO_NAVIGATION_VEHICLE_TEMPORAL_FUSION,
     EDGE_CASE_SCENARIOS.study_id: EDGE_CASE_SCENARIOS,
 }
 

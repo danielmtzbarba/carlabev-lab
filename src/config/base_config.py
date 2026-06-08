@@ -7,7 +7,7 @@ import warnings
 from CarlaBEV.config import EnvConfig as CarlaBEVEnvConfig
 from CarlaBEV.config import RunConfig as CarlaBEVRunConfig
 
-from src.config.studies.models import SemanticMaskMode
+from src.config.studies.models import SemanticMaskMode, TemporalFusionMode
 
 
 def _warn_legacy_name(legacy: str, canonical: str):
@@ -35,6 +35,7 @@ class EnvConfig:
     map_name: str
     obs_mode: str
     semantic_mask_ch: SemanticMaskMode
+    temporal_fusion_mode: TemporalFusionMode
     obs_size: tuple[int, int]
     fov_masked: bool
     ego_anchor_x_frac: float
@@ -65,6 +66,7 @@ class EnvConfig:
         map_name: str = "Town01",
         obs_mode: str | None = None,
         semantic_mask_ch: SemanticMaskMode = "6-class",
+        temporal_fusion_mode: TemporalFusionMode = "stack",
         obs_size: tuple[int, int] = (96, 96),
         fov_masked: bool = True,
         ego_anchor_x_frac: float = 0.5,
@@ -117,6 +119,7 @@ class EnvConfig:
         self.map_name = map_name
         self.obs_mode = obs_mode
         self.semantic_mask_ch = semantic_mask_ch
+        self.temporal_fusion_mode = temporal_fusion_mode
         self.obs_size = obs_size
         self.fov_masked = fov_masked
         self.ego_anchor_x_frac = ego_anchor_x_frac
@@ -197,6 +200,7 @@ class EnvConfig:
             "map_name": self.map_name,
             "obs_mode": self.obs_mode,
             "semantic_mask_ch": self.semantic_mask_ch,
+            "temporal_fusion_mode": self.temporal_fusion_mode,
             "obs_size": self.obs_size,
             "fov_masked": self.fov_masked,
             "ego_anchor_x_frac": self.ego_anchor_x_frac,
@@ -334,6 +338,7 @@ def to_carlabev_env_config(env_cfg: EnvConfig) -> CarlaBEVEnvConfig:
         obs_size=env_cfg.obs_size,
         obs_mode=env_cfg.obs_mode,
         semantic_mask_ch=env_cfg.semantic_mask_ch,
+        temporal_fusion_mode=env_cfg.temporal_fusion_mode,
         fov_masked=env_cfg.fov_masked,
         ego_anchor_x_frac=env_cfg.ego_anchor_x_frac,
         ego_anchor_y_frac=env_cfg.ego_anchor_y_frac,
