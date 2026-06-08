@@ -9,9 +9,11 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field, computed_field,
 ActionMode = Literal["discrete", "continuous"]
 TrafficMode = Literal["on", "off"]
 InputType = Literal["rgb", "masks"]
+SemanticMaskMode = Literal["binary", "2-class", "4-class", "5-class", "6-class", "7-class"]
 RewardMode = Literal["shaping", "carl"]
 CurriculumMode = Literal["off", "vehicles_only", "route_only", "both"]
 Toggle = Literal["on", "off"]
+FovAnchorMode = Literal["center", "lookahead_75"]
 
 
 def _warn_legacy_alias(legacy: str, canonical: str):
@@ -30,11 +32,13 @@ class ExperimentSpec(BaseModel):
     )
     traffic: TrafficMode
     input_type: InputType
+    semantic_mask_ch: SemanticMaskMode | None = None
     reward_mode: RewardMode = Field(
         validation_alias=AliasChoices("reward_mode", "reward_type")
     )
     curriculum: CurriculumMode
     fov_mask: Toggle
+    fov_anchor: FovAnchorMode = "center"
     train_protocol_id: str
     eval_protocol_ids: list[str]
     notes: str | None = None
@@ -51,6 +55,18 @@ class ExperimentSpec(BaseModel):
         if "reward_type" in data and "reward_mode" not in data:
             _warn_legacy_alias("reward_type", "reward_mode")
         return data
+
+    @model_validator(mode="after")
+    def _validate_semantic_mask_mode(self):
+        if self.input_type == "masks" and self.semantic_mask_ch is None:
+            raise ValueError(
+                "`semantic_mask_ch` is required when `input_type='masks'`."
+            )
+        if self.input_type == "rgb" and self.semantic_mask_ch is not None:
+            raise ValueError(
+                "`semantic_mask_ch` must be omitted when `input_type='rgb'`."
+            )
+        return self
 
     @computed_field(return_type=str)
     @property

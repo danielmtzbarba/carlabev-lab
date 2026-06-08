@@ -40,8 +40,21 @@ def apply_experiment_config(
 
     env.action_mode = experiment.action_mode
     env.fov_masked = experiment.fov_mask == "on"
+    if experiment.fov_anchor == "center":
+        env.ego_anchor_x_frac = 0.5
+        env.ego_anchor_y_frac = 0.5
+    elif experiment.fov_anchor == "lookahead_75":
+        env.ego_anchor_x_frac = 0.5
+        env.ego_anchor_y_frac = 0.75
+    else:
+        raise ValueError(f"Unsupported fov_anchor={experiment.fov_anchor!r}")
     env.traffic_enabled = experiment.traffic == "on"
     env.input_type = experiment.input_type
+    env.semantic_mask_ch = (
+        experiment.semantic_mask_ch
+        if experiment.semantic_mask_ch is not None
+        else env.semantic_mask_ch
+    )
     env.reward_mode = experiment.reward_mode
 
     if experiment.curriculum == "off":
@@ -60,9 +73,11 @@ def apply_experiment_config(
         f"_act-{experiment.action_mode}"
         f"_traffic-{experiment.traffic}"
         f"_input-{experiment.input_type}"
+        f"_sem-{args.env.semantic_mask_ch if experiment.input_type == 'masks' else 'rgb'}"
         f"_rwd-{experiment.reward_mode}"
         f"_curr-{experiment.curriculum}"
         f"_fovmask-{experiment.fov_mask}"
+        f"_fovanchor-{experiment.fov_anchor}"
     )
 
     return args
@@ -131,6 +146,7 @@ def run_experiment(args: ArgsCarlaBEV, trial=None, seed_idx: int = None) -> floa
     from src.utils.logger import DRLogger
 
     study = get_study_config(args.study_id)
+    experiment = get_experiment_spec(args.study_id, args.exp_id)
 
     if trial is None:
         print(
@@ -182,7 +198,11 @@ def run_experiment(args: ArgsCarlaBEV, trial=None, seed_idx: int = None) -> floa
     trial.set_user_attr("action_mode", args.env.action_mode)
     trial.set_user_attr("traffic_enabled", args.env.traffic_enabled)
     trial.set_user_attr("input_type", args.env.input_type)
+    trial.set_user_attr("semantic_mask_ch", args.env.semantic_mask_ch)
     trial.set_user_attr("fov_masked", args.env.fov_masked)
+    trial.set_user_attr("ego_anchor_x_frac", args.env.ego_anchor_x_frac)
+    trial.set_user_attr("ego_anchor_y_frac", args.env.ego_anchor_y_frac)
+    trial.set_user_attr("fov_anchor", experiment.fov_anchor if 'experiment' in locals() else None)
     trial.set_user_attr("reward_mode", args.env.reward_mode)
     trial.set_user_attr(
         "curriculum",

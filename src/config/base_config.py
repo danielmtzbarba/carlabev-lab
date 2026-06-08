@@ -6,6 +6,8 @@ import warnings
 from CarlaBEV.config import EnvConfig as CarlaBEVEnvConfig
 from CarlaBEV.config import RunConfig as CarlaBEVRunConfig
 
+from src.config.studies.models import SemanticMaskMode
+
 
 def _warn_legacy_name(legacy: str, canonical: str):
     warnings.warn(
@@ -31,8 +33,11 @@ class EnvConfig:
     env_id: str
     map_name: str
     obs_mode: str
+    semantic_mask_ch: SemanticMaskMode
     obs_size: tuple[int, int]
     fov_masked: bool
+    ego_anchor_x_frac: float
+    ego_anchor_y_frac: float
     frame_stack: int
 
     action_mode: str
@@ -58,8 +63,11 @@ class EnvConfig:
         env_id: str = "CarlaBEV-v0",
         map_name: str = "Town01",
         obs_mode: str | None = None,
+        semantic_mask_ch: SemanticMaskMode = "6-class",
         obs_size: tuple[int, int] = (96, 96),
         fov_masked: bool = True,
+        ego_anchor_x_frac: float = 0.5,
+        ego_anchor_y_frac: float = 0.5,
         frame_stack: int = 4,
         action_mode: str | None = None,
         render_mode: str = "rgb_array",
@@ -107,8 +115,11 @@ class EnvConfig:
         self.env_id = env_id
         self.map_name = map_name
         self.obs_mode = obs_mode
+        self.semantic_mask_ch = semantic_mask_ch
         self.obs_size = obs_size
         self.fov_masked = fov_masked
+        self.ego_anchor_x_frac = ego_anchor_x_frac
+        self.ego_anchor_y_frac = ego_anchor_y_frac
         self.frame_stack = frame_stack
         self.action_mode = action_mode
         self.render_mode = render_mode
@@ -184,8 +195,11 @@ class EnvConfig:
             "env_id": self.env_id,
             "map_name": self.map_name,
             "obs_mode": self.obs_mode,
+            "semantic_mask_ch": self.semantic_mask_ch,
             "obs_size": self.obs_size,
             "fov_masked": self.fov_masked,
+            "ego_anchor_x_frac": self.ego_anchor_x_frac,
+            "ego_anchor_y_frac": self.ego_anchor_y_frac,
             "frame_stack": self.frame_stack,
             "action_mode": self.action_mode,
             "render_mode": self.render_mode,
@@ -316,7 +330,10 @@ def to_carlabev_env_config(env_cfg: EnvConfig) -> CarlaBEVEnvConfig:
         map_name=env_cfg.map_name,
         obs_size=env_cfg.obs_size,
         obs_mode=env_cfg.obs_mode,
+        semantic_mask_ch=env_cfg.semantic_mask_ch,
         fov_masked=env_cfg.fov_masked,
+        ego_anchor_x_frac=env_cfg.ego_anchor_x_frac,
+        ego_anchor_y_frac=env_cfg.ego_anchor_y_frac,
         frame_stack=env_cfg.frame_stack,
         action_mode=env_cfg.action_mode,
         render_mode=env_cfg.render_mode,
