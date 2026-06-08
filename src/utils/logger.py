@@ -1,90 +1,167 @@
-import os
-import sys
+import csv
+import json
 import logging
-from torch.utils.tensorboard import SummaryWriter
+import os
+import sqlite3
+import sys
+from datetime import datetime, timezone
+
+import numpy as np
 from rich.console import Console
 from rich.table import Table
-import numpy as np
+from torch.utils.tensorboard import SummaryWriter
 
-# --- Logging setup ---
-file_handler = logging.FileHandler(filename="drlog.log")
-stdout_handler = logging.StreamHandler(stream=sys.stdout)
-handlers = [file_handler, stdout_handler]
 
-logging.basicConfig(
-    handlers=handlers,
-    format="[%(asctime)s] %(levelname)s ==> %(message)s",
-    datefmt="%m/%d/%Y %I:%M:%S %p",
-    encoding="utf-8",
-    level=logging.INFO,
-)
-logger = logging.getLogger("drlab")
+def _utcnow_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
 
 def abbreviate_number(n):
-    """
-    Convert an integer into an abbreviated string:
-    1234 -> '1.2K'
-    1234567 -> '1.2M'
-    9876543210 -> '9.9B'
-    """
     if n < 1_000:
         return str(n)
-    elif n < 1_000_000:
+    if n < 1_000_000:
         return f"{n / 1_000:.1f}K"
-    elif n < 1_000_000_000:
+    if n < 1_000_000_000:
         return f"{n / 1_000_000:.1f}M"
-    else:
-        return f"{n / 1_000_000_000:.1f}B"
+    return f"{n / 1_000_000_000:.1f}B"
 
-class DRLogger(object):
-    """
-    Logger for RL training.
-    Only logs finished episodes passed from the trainer.
-    Tracks global episode counter, handles success/collision/unfinished based on cause.
-    Supports TensorBoard, Rich console, and arbitrary learning variable logging.
-    """
 
+class DRLogger:
     def __init__(self, config, stats_interval=100):
-        self.writer = SummaryWriter(f"runs/{config.exp_name}")
+        self.run_dir = os.path.join("runs", config.exp_name)
+        os.makedirs(self.run_dir, exist_ok=True)
+
+        self.writer = SummaryWriter(self.run_dir)
         self._console = Console()
-        self._logger = logger
+        self._interactive = getattr(config, "run_mode", "interactive") == "interactive"
         self._stats_interval = stats_interval
+        self._log_path = os.path.join(self.run_dir, "train.log")
+        self._status_path = os.path.join(self.run_dir, "status.json")
+        self._completed_path = os.path.join(self.run_dir, "COMPLETED")
+        self._failed_path = os.path.join(self.run_dir, "FAILED")
+        self._traceback_path = os.path.join(self.run_dir, "failure_traceback.log")
+        self._logger = self._build_logger(config.exp_name)
 
-        # Global episode counter
         self.global_episode = 0
-
-        # History for aggregate stats
         self.episode_returns = []
         self.episode_lengths = []
         self.episode_successes = []
         self.episode_collisions = []
         self.episode_unfinished = []
 
-        # Log hyperparameters
         self.writer.add_text(
             "hyperparameters",
             "|param|value|\n|-|-|\n%s"
             % ("\n".join([f"|{k}|{v}|" for k, v in vars(config).items()])),
         )
 
-        # Benchmark Logging
         self.success_thresholds = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99]
         self.reached_thresholds = set()
         self.threshold_stats = {}
 
-        # SQL Auxiliary Logging
         self.db_conn = None
         self.trial_number = getattr(config.logging, "trial_number", None)
         self.db_path = getattr(config.logging, "db_path", None)
         self.seed = getattr(config, "seed", None)
-        
+
+        self._status = {
+            "study_id": getattr(config, "study_id", None),
+            "exp_id": getattr(config, "exp_id", None),
+            "exp_name": getattr(config, "exp_name", None),
+            "algorithm": getattr(config, "algorithm", None),
+            "run_mode": getattr(config, "run_mode", "interactive"),
+            "seed": self.seed,
+            "hostname": os.environ.get("HOSTNAME") or os.uname().nodename,
+            "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
+            "slurm_array_job_id": os.environ.get("SLURM_ARRAY_JOB_ID"),
+            "slurm_array_task_id": os.environ.get("SLURM_ARRAY_TASK_ID"),
+            "state": "initialized",
+            "started_at": _utcnow_iso(),
+            "last_updated_at": _utcnow_iso(),
+            "last_eval_step": None,
+            "last_eval_metrics": None,
+            "finished_at": None,
+            "error": None,
+        }
+        self._write_status()
+
         if self.db_path is not None and self.trial_number is not None:
-            import sqlite3
             real_path = self.db_path.replace("sqlite:///", "")
-            # Enable high-concurrency mode with extended timeout and WAL journal
             self.db_conn = sqlite3.connect(real_path, timeout=60)
             self.db_conn.execute("PRAGMA journal_mode=WAL;")
             self._init_db_tables()
+
+    def _build_logger(self, exp_name: str) -> logging.Logger:
+        logger_name = f"drlab.{exp_name}"
+        run_logger = logging.getLogger(logger_name)
+        run_logger.setLevel(logging.INFO)
+        run_logger.propagate = False
+        run_logger.handlers.clear()
+
+        formatter = logging.Formatter(
+            "[%(asctime)s] %(levelname)s ==> %(message)s",
+            datefmt="%m/%d/%Y %I:%M:%S %p",
+        )
+
+        file_handler = logging.FileHandler(self._log_path, encoding="utf-8")
+        file_handler.setFormatter(formatter)
+        run_logger.addHandler(file_handler)
+
+        stdout_handler = logging.StreamHandler(stream=sys.stdout)
+        stdout_handler.setFormatter(formatter)
+        run_logger.addHandler(stdout_handler)
+        return run_logger
+
+    def _write_status(self):
+        self._status["last_updated_at"] = _utcnow_iso()
+        with open(self._status_path, "w", encoding="utf-8") as handle:
+            json.dump(self._status, handle, indent=2, sort_keys=True)
+
+    def set_running(self):
+        self._status["state"] = "running"
+        self._write_status()
+
+    def update_status(
+        self,
+        *,
+        state: str | None = None,
+        last_eval_step: int | None = None,
+        last_eval_metrics: dict | None = None,
+        error: str | None = None,
+        finished: bool = False,
+    ):
+        if state is not None:
+            self._status["state"] = state
+        if last_eval_step is not None:
+            self._status["last_eval_step"] = int(last_eval_step)
+        if last_eval_metrics is not None:
+            self._status["last_eval_metrics"] = last_eval_metrics
+        if error is not None:
+            self._status["error"] = error
+        if finished:
+            self._status["finished_at"] = _utcnow_iso()
+        self._write_status()
+
+    def mark_completed(self, final_metrics: dict | None = None):
+        if os.path.exists(self._failed_path):
+            os.remove(self._failed_path)
+        self.update_status(state="completed", last_eval_metrics=final_metrics, finished=True)
+        with open(self._completed_path, "w", encoding="utf-8") as handle:
+            handle.write(f"completed_at={self._status['finished_at']}\n")
+
+    def mark_failed(self, exc: BaseException, traceback_text: str):
+        if os.path.exists(self._completed_path):
+            os.remove(self._completed_path)
+        self.update_status(
+            state="failed",
+            error=f"{type(exc).__name__}: {exc}",
+            finished=True,
+        )
+        with open(self._failed_path, "w", encoding="utf-8") as handle:
+            handle.write(f"failed_at={self._status['finished_at']}\n")
+            handle.write(f"error={type(exc).__name__}: {exc}\n")
+        with open(self._traceback_path, "w", encoding="utf-8") as handle:
+            handle.write(traceback_text)
 
     def _init_db_tables(self):
         query_train = """
@@ -135,53 +212,42 @@ class DRLogger(object):
         cursor = self.db_conn.cursor()
         cursor.execute(query_train)
         cursor.execute(query_eval)
-        
-        # Backwards compatibility: inject seed column if DB exists prior to this change
         try:
             cursor.execute("ALTER TABLE trial_train_logs ADD COLUMN seed INTEGER;")
         except Exception:
             pass
-            
         try:
             cursor.execute("ALTER TABLE trial_eval_logs ADD COLUMN seed INTEGER;")
         except Exception:
             pass
-
         self.db_conn.commit()
 
     def log_episode(self, infos, mean_return, idx, global_step=0):
-        """
-        infos: dict containing 'termination' with keys:
-               'cause', 'return', 'length', 'mean_reward', 'success_rate', 'collision_rate', 'unfinished_rate'
-        """
         self.global_episode += 1
-        
+
         data = infos
-        # Console output
-        self._console.print(
-            f"Step {abbreviate_number(global_step)} | Ep {self.global_episode} | Ret: [green]{data["return"][idx]:.2f}[/green] | "
-            f"len_route: {int(data["len_ego_route"][idx])} | veh: {data["num_vehicles"][idx]} | "
-            f"len_ep: {data["length"][idx]} | cause: {data["termination"][idx]} | MA50: {mean_return:.2f} | "
-        )
+        if self._interactive:
+            self._console.print(
+                f"Step {abbreviate_number(global_step)} | Ep {self.global_episode} | Ret: [green]{data['return'][idx]:.2f}[/green] | "
+                f"len_route: {int(data['len_ego_route'][idx])} | veh: {data['num_vehicles'][idx]} | "
+                f"len_ep: {data['length'][idx]} | cause: {data['termination'][idx]} | MA50: {mean_return:.2f} | "
+            )
 
         cause = data["termination"][idx]
         ep_return = data["return"][idx]
-        ep_length= data["length"][idx]
+        ep_length = data["length"][idx]
         mean_reward = float(data["mean_reward"][idx])
 
-        # Determine success / collision / unfinished
         success = 1.0 if cause == "success" else 0.0
         collision = 1.0 if cause == "collision" else 0.0
         unfinished = 1.0 if cause in ["out_of_bounds", "off_road", "max_actions"] else 0.0
 
-        # Store history for aggregate stats
         self.episode_returns.append(ep_return)
         self.episode_lengths.append(ep_length)
         self.episode_successes.append(success)
         self.episode_collisions.append(collision)
         self.episode_unfinished.append(unfinished)
 
-        # TensorBoard logging
         self.writer.add_scalar("stats/episodic_return", ep_return, self.global_episode)
         self.writer.add_scalar("stats/episodic_length", ep_length, self.global_episode)
         self.writer.add_scalar("stats/mean_reward", mean_reward, self.global_episode)
@@ -189,8 +255,6 @@ class DRLogger(object):
         self.writer.add_scalar("stats/collision_rate", collision, self.global_episode)
         self.writer.add_scalar("stats/unfinished_rate", unfinished, self.global_episode)
 
-
-        # Aggregate table every stats_interval episodes
         if self.global_episode % self._stats_interval == 0:
             mean_ret = np.mean(self.episode_returns[-self._stats_interval :])
             mean_len = np.mean(self.episode_lengths[-self._stats_interval :])
@@ -215,7 +279,18 @@ class DRLogger(object):
                 f"{mean_col:.2%}",
                 f"{mean_unfin:.2%}",
             )
-            self._console.print(table)
+            if self._interactive:
+                self._console.print(table)
+            self._logger.info(
+                "[EP_STATS] step=%s episodes=%s mean_return=%.2f mean_length=%.1f success_rate=%.3f collision_rate=%.3f unfinished_rate=%.3f",
+                abbreviate_number(global_step),
+                self.global_episode,
+                mean_ret,
+                mean_len,
+                mean_succ,
+                mean_col,
+                mean_unfin,
+            )
 
         return self.global_episode
 
@@ -229,7 +304,6 @@ class DRLogger(object):
         clip_frac=None,
         ent_coef=None,
     ):
-        """Log learning-related variables to TensorBoard."""
         if pg_loss is not None:
             self.writer.add_scalar("losses/policy_loss", pg_loss, global_step)
         if v_loss is not None:
@@ -243,29 +317,38 @@ class DRLogger(object):
 
         if self.db_conn is not None:
             import time
-            mean_ret = np.mean(self.episode_returns[-self._stats_interval :]) if len(self.episode_returns) > 0 else 0.0
-            mean_succ = np.mean(self.episode_successes[-self._stats_interval :]) if len(self.episode_successes) > 0 else 0.0
-            mean_col = np.mean(self.episode_collisions[-self._stats_interval :]) if len(self.episode_collisions) > 0 else 0.0
-            mean_unfin = np.mean(self.episode_unfinished[-self._stats_interval :]) if len(self.episode_unfinished) > 0 else 0.0
-            
+
+            mean_ret = np.mean(self.episode_returns[-self._stats_interval :]) if self.episode_returns else 0.0
+            mean_succ = np.mean(self.episode_successes[-self._stats_interval :]) if self.episode_successes else 0.0
+            mean_col = np.mean(self.episode_collisions[-self._stats_interval :]) if self.episode_collisions else 0.0
+            mean_unfin = np.mean(self.episode_unfinished[-self._stats_interval :]) if self.episode_unfinished else 0.0
+
             cursor = self.db_conn.cursor()
-            cursor.execute('''
-                INSERT INTO trial_train_logs 
+            cursor.execute(
+                """
+                INSERT INTO trial_train_logs
                 (trial_number, seed, global_step, walltime, mean_return, pg_loss, v_loss, entropy, approx_kl, clip_frac, ent_coef, train_success_rate, train_collision_rate, train_unfinished_rate)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                self.trial_number, self.seed, global_step, time.time(), mean_ret, 
-                pg_loss if pg_loss is not None else 0.0, 
-                v_loss if v_loss is not None else 0.0, 
-                entropy if entropy is not None else 0.0, 
-                approx_kl if approx_kl is not None else 0.0, 
-                clip_frac if clip_frac is not None else 0.0, 
-                ent_coef if ent_coef is not None else 0.0, 
-                mean_succ, mean_col, mean_unfin
-            ))
+                """,
+                (
+                    self.trial_number,
+                    self.seed,
+                    global_step,
+                    time.time(),
+                    mean_ret,
+                    pg_loss if pg_loss is not None else 0.0,
+                    v_loss if v_loss is not None else 0.0,
+                    entropy if entropy is not None else 0.0,
+                    approx_kl if approx_kl is not None else 0.0,
+                    clip_frac if clip_frac is not None else 0.0,
+                    ent_coef if ent_coef is not None else 0.0,
+                    mean_succ,
+                    mean_col,
+                    mean_unfin,
+                ),
+            )
             self.db_conn.commit()
 
-    # === Add this method inside DRLogger ===
     def log_evaluation(
         self,
         results_dict: dict,
@@ -273,28 +356,6 @@ class DRLogger(object):
         iteration: int = None,
         elapsed_time: float = None,
     ):
-        """
-        Logs evaluation results from evaluate_ppo() to TensorBoard and console.
-
-        Parameters
-        ----------
-        results_dict : dict
-            Dictionary containing evaluation statistics.
-            Example: {
-                "mean_return": 150.2,
-                "success_rate": 0.82,
-                "collision_rate": 0.05,
-                "avg_length": 423,
-                "avg_speed": 2.8,
-            }
-        global_step : int, optional
-            Global training step to align logs in TensorBoard.
-        iteration : int, optional
-            Current training iteration.
-        elapsed_time : float, optional
-            Elapsed wall-clock time in seconds.
-        """
-        # --- Benchmark Logging ---
         if "success_rate" in results_dict:
             success_rate = results_dict["success_rate"]
             collision_rate = results_dict.get("collision_rate", 0.0)
@@ -302,43 +363,37 @@ class DRLogger(object):
             for threshold in self.success_thresholds:
                 if success_rate >= threshold and threshold not in self.reached_thresholds:
                     self.reached_thresholds.add(threshold)
-                    
-                    # Add to results_dict for TB/Console
                     key = f"time_to_reach_{threshold}"
                     results_dict[key] = elapsed_time
                     self.threshold_stats[key] = elapsed_time
                     self.threshold_stats[f"step_to_reach_{threshold}"] = global_step
-                    
-                    # Save to CSV
-                    import csv
+
                     log_path = os.path.join(self.writer.log_dir, "benchmark_results.csv")
                     file_exists = os.path.isfile(log_path)
-                    
-                    with open(log_path, "a", newline="") as f:
-                        writer = csv.writer(f)
+                    with open(log_path, "a", newline="", encoding="utf-8") as handle:
+                        writer = csv.writer(handle)
                         if not file_exists:
                             writer.writerow(["threshold", "success_rate", "collision_rate", "global_step", "iteration", "elapsed_time"])
-                        
                         writer.writerow([
                             threshold,
                             success_rate,
                             collision_rate,
                             global_step,
                             iteration,
-                            elapsed_time
+                            elapsed_time,
                         ])
-                    
+
                     self._logger.info(
-                        f"🏆 Reached success threshold {threshold} at step {global_step} "
-                        f"(Iter: {iteration}, Time: {elapsed_time:.2f}s)"
+                        "Reached success threshold %s at step %s (iter=%s time=%.2fs)",
+                        threshold,
+                        global_step,
+                        iteration,
+                        elapsed_time if elapsed_time is not None else -1.0,
                     )
-        # Log to TensorBoard
+
         for key, value in results_dict.items():
             if isinstance(value, (int, float, np.floating, np.integer)):
                 self.writer.add_scalar(f"eval/{key}", value, global_step)
-
-        # Rich console table
-        from rich.table import Table
 
         table = Table(
             title=f"Evaluation Results @ step {global_step or '-'}",
@@ -349,15 +404,12 @@ class DRLogger(object):
         table.add_column("Value", justify="center")
 
         for key, value in results_dict.items():
-            if isinstance(value, float):
-                value_str = f"{value:.3f}"
-            else:
-                value_str = str(value)
+            value_str = f"{value:.3f}" if isinstance(value, float) else str(value)
             table.add_row(key, value_str)
 
-        self._console.print(table)
+        if self._interactive:
+            self._console.print(table)
 
-        # Also log a simple summary line to file
         msg = " | ".join(
             [
                 f"{k}: {v:.3f}" if isinstance(v, float) else f"{k}: {v}"
@@ -365,40 +417,65 @@ class DRLogger(object):
             ]
         )
         self._logger.info(f"[EVAL] {msg}")
+        self.update_status(
+            state="running",
+            last_eval_step=global_step,
+            last_eval_metrics={
+                key: float(value) if isinstance(value, (float, np.floating, int, np.integer)) else value
+                for key, value in results_dict.items()
+                if key in {"mean_return", "std_return", "mean_length", "success_rate", "collision_rate", "unfinished_rate"}
+            },
+        )
 
         if self.db_conn is not None:
             import time
+
             cursor = self.db_conn.cursor()
-            
-            cursor.execute('''
-                INSERT INTO trial_eval_logs 
-                (trial_number, seed, global_step, walltime, 
-                 mean_return, std_return, mean_length, 
+            cursor.execute(
+                """
+                INSERT INTO trial_eval_logs
+                (trial_number, seed, global_step, walltime,
+                 mean_return, std_return, mean_length,
                  success_rate, collision_rate, unfinished_rate,
-                 time_to_reach_0_1, time_to_reach_0_2, time_to_reach_0_3, time_to_reach_0_4, time_to_reach_0_5, 
+                 time_to_reach_0_1, time_to_reach_0_2, time_to_reach_0_3, time_to_reach_0_4, time_to_reach_0_5,
                  time_to_reach_0_6, time_to_reach_0_7, time_to_reach_0_8, time_to_reach_0_9, time_to_reach_0_95, time_to_reach_0_99)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                self.trial_number, self.seed, global_step if global_step is not None else 0, time.time(),
-                float(results_dict.get("mean_return", 0.0)),
-                float(results_dict.get("std_return", 0.0)),
-                float(results_dict.get("mean_length", 0.0)),
-                float(results_dict.get("success_rate", 0.0)),
-                float(results_dict.get("collision_rate", 0.0)),
-                float(results_dict.get("unfinished_rate", 0.0)),
-                results_dict.get("time_to_reach_0.1", None),
-                results_dict.get("time_to_reach_0.2", None),
-                results_dict.get("time_to_reach_0.3", None),
-                results_dict.get("time_to_reach_0.4", None),
-                results_dict.get("time_to_reach_0.5", None),
-                results_dict.get("time_to_reach_0.6", None),
-                results_dict.get("time_to_reach_0.7", None),
-                results_dict.get("time_to_reach_0.8", None),
-                results_dict.get("time_to_reach_0.9", None),
-                results_dict.get("time_to_reach_0.95", None),
-                results_dict.get("time_to_reach_0.99", None)
-            ))
+                """,
+                (
+                    self.trial_number,
+                    self.seed,
+                    global_step if global_step is not None else 0,
+                    time.time(),
+                    float(results_dict.get("mean_return", 0.0)),
+                    float(results_dict.get("std_return", 0.0)),
+                    float(results_dict.get("mean_length", 0.0)),
+                    float(results_dict.get("success_rate", 0.0)),
+                    float(results_dict.get("collision_rate", 0.0)),
+                    float(results_dict.get("unfinished_rate", 0.0)),
+                    results_dict.get("time_to_reach_0.1", None),
+                    results_dict.get("time_to_reach_0.2", None),
+                    results_dict.get("time_to_reach_0.3", None),
+                    results_dict.get("time_to_reach_0.4", None),
+                    results_dict.get("time_to_reach_0.5", None),
+                    results_dict.get("time_to_reach_0.6", None),
+                    results_dict.get("time_to_reach_0.7", None),
+                    results_dict.get("time_to_reach_0.8", None),
+                    results_dict.get("time_to_reach_0.9", None),
+                    results_dict.get("time_to_reach_0.95", None),
+                    results_dict.get("time_to_reach_0.99", None),
+                ),
+            )
             self.db_conn.commit()
 
     def msg(self, text):
         self._logger.info(text)
+
+    def close(self):
+        if self.db_conn is not None:
+            self.db_conn.close()
+            self.db_conn = None
+        self.writer.close()
+        for handler in list(self._logger.handlers):
+            handler.flush()
+            handler.close()
+            self._logger.removeHandler(handler)

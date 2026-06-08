@@ -1,4 +1,5 @@
 import os
+import traceback
 
 import tyro
 import yaml
@@ -214,13 +215,26 @@ def run_experiment(args: ArgsCarlaBEV, trial=None, seed_idx: int = None) -> floa
     validate_run_config(to_carlabev_run_config(args))
     envs = make_env(to_carlabev_run_config(args))
     logger = DRLogger(config=args, stats_interval=100)
+    logger.set_running()
     logger.msg(f"Environments - {args.env.env_id}:{args.num_envs} built.")
 
-    trainer = build_trainer(args.algorithm)
-    logger.msg(f"Trainer built for algorithm: {args.algorithm}")
+    try:
+        trainer = build_trainer(args.algorithm)
+        logger.msg(f"Trainer built for algorithm: {args.algorithm}")
 
-    final_score = trainer(args, envs, logger, device, trial=trial)
-    return final_score
+        final_score = trainer(args, envs, logger, device, trial=trial)
+        logger.mark_completed()
+        return final_score
+    except optuna.TrialPruned:
+        logger.update_status(state="pruned", finished=True)
+        raise
+    except Exception as exc:
+        tb = traceback.format_exc()
+        logger.msg(f"Run failed: {type(exc).__name__}: {exc}")
+        logger.mark_failed(exc, tb)
+        raise
+    finally:
+        logger.close()
 
 
 if __name__ == "__main__":

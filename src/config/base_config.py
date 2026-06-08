@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Literal
 import warnings
 
 from CarlaBEV.config import EnvConfig as CarlaBEVEnvConfig
@@ -271,6 +272,7 @@ class ArgsCarlaBEV:
     exp_id: int = 1
     exp_name: str = "default"
     algorithm: str = "cnn-ppo"
+    run_mode: Literal["interactive", "headless"] = "interactive"
     train_protocol_id: str | None = None
     eval_protocol_ids: list[str] = field(default_factory=list)
     num_envs: int = 14
@@ -299,6 +301,7 @@ class ArgsCarlaBEV:
             "exp_id": self.exp_id,
             "exp_name": self.exp_name,
             "algorithm": self.algorithm,
+            "run_mode": self.run_mode,
             "train_protocol_id": self.train_protocol_id,
             "eval_protocol_ids": list(self.eval_protocol_ids),
             "num_envs": self.num_envs,

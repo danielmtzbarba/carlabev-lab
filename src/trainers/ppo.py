@@ -383,7 +383,6 @@ def train_ppo(cfg, envs, logger, device, trial=None):
                 trial.report(score, eval_idx)
                 if trial.should_prune():
                     envs.close()
-                    logger.writer.close()
                     raise optuna.TrialPruned()
             
             next_eval_step += eval_interval_steps
@@ -415,7 +414,6 @@ def train_ppo(cfg, envs, logger, device, trial=None):
     logger.msg(f"🌟 Training finished at {iteration} iteration!")
 
     envs.close()
-    logger.writer.close()
 
     if trial is not None:
         for k, v in logger.threshold_stats.items():

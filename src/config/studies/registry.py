@@ -1,10 +1,14 @@
 from src.config.studies.edge_case_scenarios import EDGE_CASE_SCENARIOS
 from src.config.studies.models import ExperimentSpec, ProtocolSpec, StudyConfig
 from src.config.studies.ppo_navigation import PPO_NAVIGATION
+from src.config.studies.ppo_navigation_semantic_lookahead import (
+    PPO_NAVIGATION_SEMANTIC_LOOKAHEAD,
+)
 
 
 STUDY_REGISTRY: dict[str, StudyConfig] = {
     PPO_NAVIGATION.study_id: PPO_NAVIGATION,
+    PPO_NAVIGATION_SEMANTIC_LOOKAHEAD.study_id: PPO_NAVIGATION_SEMANTIC_LOOKAHEAD,
     EDGE_CASE_SCENARIOS.study_id: EDGE_CASE_SCENARIOS,
 }
 
