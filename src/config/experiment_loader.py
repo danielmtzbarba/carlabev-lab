@@ -193,6 +193,7 @@ def run_experiment(args: ArgsCarlaBEV, trial=None, seed_idx: int = None) -> floa
                     load_if_exists=True,
                     direction="maximize",
                     study_name=get_study_name(args.study_id),
+                    pruner=optuna.pruners.NopPruner(),
                 )
                 break
             except Exception as exc:
@@ -207,16 +208,6 @@ def run_experiment(args: ArgsCarlaBEV, trial=None, seed_idx: int = None) -> floa
                 "Failed to create or load the Optuna study after multiple attempts "
                 "due to database locking."
             )
-
-        enqueued_params = {
-            "learning_rate": args.ppo.learning_rate,
-            "gae_lambda": args.ppo.gae_lambda,
-            "gamma": args.ppo.gamma,
-            "num_steps": args.ppo.num_steps,
-            "update_epochs": args.ppo.update_epochs,
-            "num_minibatches": args.ppo.num_minibatches,
-        }
-        optuna_study.enqueue_trial(enqueued_params)
 
         def _manual_objective(t):
             return run_experiment(args, trial=t, seed_idx=seed_idx)
