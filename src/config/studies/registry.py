@@ -1,5 +1,8 @@
 from src.config.studies.edge_case_scenarios import EDGE_CASE_SCENARIOS
 from src.config.studies.models import ExperimentSpec, ProtocolSpec, StudyConfig
+from src.config.studies.ppo_navigation_difficulty_temporal_fusion import (
+    PPO_NAVIGATION_DIFFICULTY_TEMPORAL_FUSION,
+)
 from src.config.studies.ppo_navigation import PPO_NAVIGATION
 from src.config.studies.ppo_navigation_semantic_lookahead import (
     PPO_NAVIGATION_SEMANTIC_LOOKAHEAD,
@@ -11,6 +14,7 @@ from src.config.studies.ppo_navigation_vehicle_temporal_fusion import (
 
 STUDY_REGISTRY: dict[str, StudyConfig] = {
     PPO_NAVIGATION.study_id: PPO_NAVIGATION,
+    PPO_NAVIGATION_DIFFICULTY_TEMPORAL_FUSION.study_id: PPO_NAVIGATION_DIFFICULTY_TEMPORAL_FUSION,
     PPO_NAVIGATION_SEMANTIC_LOOKAHEAD.study_id: PPO_NAVIGATION_SEMANTIC_LOOKAHEAD,
     PPO_NAVIGATION_VEHICLE_TEMPORAL_FUSION.study_id: PPO_NAVIGATION_VEHICLE_TEMPORAL_FUSION,
     EDGE_CASE_SCENARIOS.study_id: EDGE_CASE_SCENARIOS,

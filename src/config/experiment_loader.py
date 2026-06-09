@@ -5,9 +5,14 @@ import traceback
 
 import tyro
 import yaml
-from CarlaBEV.config import validate_run_config
+from CarlaBEV.config import resolve_env_profiles, validate_run_config
 
-from src.config.base_config import ArgsCarlaBEV, to_carlabev_run_config
+from src.config.base_config import (
+    ArgsCarlaBEV,
+    LEGACY_ACTION_PROFILE_IDS,
+    LEGACY_REWARD_PROFILE_IDS,
+    to_carlabev_run_config,
+)
 from src.config.studies.models import ExperimentSpec, StudyConfig
 from src.config.studies.registry import (
     get_eval_protocol,
@@ -42,6 +47,9 @@ def apply_experiment_config(
     env = args.env
 
     env.action_mode = experiment.action_mode
+    env.action_profile_id = experiment.action_profile_id or LEGACY_ACTION_PROFILE_IDS[
+        experiment.action_mode
+    ]
     env.fov_masked = experiment.fov_mask == "on"
     if experiment.fov_anchor == "center":
         env.ego_anchor_x_frac = 0.5
@@ -60,6 +68,10 @@ def apply_experiment_config(
     )
     env.temporal_fusion_mode = experiment.temporal_fusion_mode
     env.reward_mode = experiment.reward_mode
+    env.reward_profile_id = experiment.reward_profile_id or LEGACY_REWARD_PROFILE_IDS[
+        experiment.reward_mode
+    ]
+    env.difficulty_id = experiment.difficulty_id
 
     if experiment.curriculum == "off":
         env.curriculum_enabled = False
@@ -84,6 +96,12 @@ def apply_experiment_config(
         f"_fovmask-{experiment.fov_mask}"
         f"_fovanchor-{experiment.fov_anchor}"
     )
+    if experiment.action_profile_id is not None:
+        args.exp_name += f"_actprof-{env.action_profile_id}"
+    if experiment.reward_profile_id is not None:
+        args.exp_name += f"_rwdprof-{env.reward_profile_id}"
+    if experiment.difficulty_id is not None:
+        args.exp_name += f"_diff-{env.difficulty_id}"
 
     return args
 
@@ -114,6 +132,12 @@ def save_run_config(args: ArgsCarlaBEV):
         ],
         "args": args.to_dict(),
         "carlabev_run_config": to_carlabev_run_config(args).model_dump(mode="json"),
+        "carlabev_env_profiles": resolve_env_profiles(to_carlabev_run_config(args).env),
+        "selected_profiles": {
+            "difficulty_id": args.env.difficulty_id,
+            "action_profile_id": args.env.action_profile_id,
+            "reward_profile_id": args.env.reward_profile_id,
+        },
         "compatibility": {
             "legacy_env_aliases": args.legacy_aliases(),
             "legacy_experiment_aliases": {
@@ -217,7 +241,9 @@ def run_experiment(args: ArgsCarlaBEV, trial=None, seed_idx: int = None) -> floa
     trial.set_user_attr("train_protocol_id", args.train_protocol_id)
     trial.set_user_attr("eval_protocol_ids", list(args.eval_protocol_ids))
     trial.set_user_attr("action_mode", args.env.action_mode)
+    trial.set_user_attr("action_profile_id", args.env.action_profile_id)
     trial.set_user_attr("traffic_enabled", args.env.traffic_enabled)
+    trial.set_user_attr("difficulty_id", args.env.difficulty_id)
     trial.set_user_attr("input_type", args.env.input_type)
     trial.set_user_attr("semantic_mask_ch", args.env.semantic_mask_ch)
     trial.set_user_attr("temporal_fusion_mode", args.env.temporal_fusion_mode)
@@ -226,6 +252,7 @@ def run_experiment(args: ArgsCarlaBEV, trial=None, seed_idx: int = None) -> floa
     trial.set_user_attr("ego_anchor_y_frac", args.env.ego_anchor_y_frac)
     trial.set_user_attr("fov_anchor", experiment.fov_anchor if 'experiment' in locals() else None)
     trial.set_user_attr("reward_mode", args.env.reward_mode)
+    trial.set_user_attr("reward_profile_id", args.env.reward_profile_id)
     trial.set_user_attr(
         "curriculum",
         args.env.curriculum_mode if args.env.curriculum_enabled else "off",

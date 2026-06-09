@@ -10,6 +10,16 @@ from CarlaBEV.config import RunConfig as CarlaBEVRunConfig
 from src.config.studies.models import SemanticMaskMode, TemporalFusionMode
 
 
+LEGACY_ACTION_PROFILE_IDS: dict[str, str] = {
+    "discrete": "discrete9_v1",
+    "continuous": "continuous_gsb_v1",
+}
+LEGACY_REWARD_PROFILE_IDS: dict[str, str] = {
+    "carl": "carl_base_v1",
+    "shaping": "shaping_base_v1",
+}
+
+
 def _warn_legacy_name(legacy: str, canonical: str):
     warnings.warn(
         f"`{legacy}` is deprecated in carlabev-lab; use `{canonical}` instead.",
@@ -43,6 +53,7 @@ class EnvConfig:
     frame_stack: int
 
     action_mode: str
+    action_profile_id: str
     render_mode: str
     max_actions: int
     scenes_path: str
@@ -50,11 +61,13 @@ class EnvConfig:
     curriculum_enabled: bool
     curriculum_mode: str
     route_dist_range: tuple[int, int]
+    difficulty_id: str | None
 
     traffic_enabled: bool
     max_vehicles: int
 
     reward_mode: str
+    reward_profile_id: str
 
     def __init__(
         self,
@@ -73,15 +86,18 @@ class EnvConfig:
         ego_anchor_y_frac: float = 0.5,
         frame_stack: int = 4,
         action_mode: str | None = None,
+        action_profile_id: str | None = None,
         render_mode: str = "rgb_array",
         max_actions: int = 5000,
         scenes_path: str = "assets/scenes",
         curriculum_enabled: bool = False,
         curriculum_mode: str = "vehicles",
         route_dist_range: tuple[int, int] = (30, 100),
+        difficulty_id: str | None = None,
         traffic_enabled: bool = False,
         max_vehicles: int = 25,
         reward_mode: str | None = None,
+        reward_profile_id: str | None = None,
         obs_space: str | None = None,
         masked: bool | None = None,
         action_space: str | None = None,
@@ -106,11 +122,15 @@ class EnvConfig:
 
         if action_mode is None:
             action_mode = action_space or "discrete"
+        if action_profile_id is None:
+            action_profile_id = LEGACY_ACTION_PROFILE_IDS.get(action_mode, "discrete9_v1")
 
         if reward_mode is None:
             reward_mode = "carl" if reward_type == "carl" else "shaping"
         elif reward_mode not in {"shaping", "carl"}:
             reward_mode = "carl" if reward_mode == "carl" else "shaping"
+        if reward_profile_id is None:
+            reward_profile_id = LEGACY_REWARD_PROFILE_IDS.get(reward_mode, "shaping_base_v1")
 
         self.seed = seed
         self.fps = fps
@@ -126,15 +146,18 @@ class EnvConfig:
         self.ego_anchor_y_frac = ego_anchor_y_frac
         self.frame_stack = frame_stack
         self.action_mode = action_mode
+        self.action_profile_id = action_profile_id
         self.render_mode = render_mode
         self.max_actions = max_actions
         self.scenes_path = scenes_path
         self.curriculum_enabled = curriculum_enabled
         self.curriculum_mode = curriculum_mode
         self.route_dist_range = route_dist_range
+        self.difficulty_id = difficulty_id
         self.traffic_enabled = traffic_enabled
         self.max_vehicles = max_vehicles
         self.reward_mode = reward_mode
+        self.reward_profile_id = reward_profile_id
 
     @property
     def obs_space(self) -> str:
@@ -207,15 +230,18 @@ class EnvConfig:
             "ego_anchor_y_frac": self.ego_anchor_y_frac,
             "frame_stack": self.frame_stack,
             "action_mode": self.action_mode,
+            "action_profile_id": self.action_profile_id,
             "render_mode": self.render_mode,
             "max_actions": self.max_actions,
             "scenes_path": self.scenes_path,
             "curriculum_enabled": self.curriculum_enabled,
             "curriculum_mode": self.curriculum_mode,
             "route_dist_range": self.route_dist_range,
+            "difficulty_id": self.difficulty_id,
             "traffic_enabled": self.traffic_enabled,
             "max_vehicles": self.max_vehicles,
             "reward_mode": self.reward_mode,
+            "reward_profile_id": self.reward_profile_id,
         }
 
     def legacy_aliases(self) -> dict:
@@ -344,10 +370,12 @@ def to_carlabev_env_config(env_cfg: EnvConfig) -> CarlaBEVEnvConfig:
         ego_anchor_y_frac=env_cfg.ego_anchor_y_frac,
         frame_stack=env_cfg.frame_stack,
         action_mode=env_cfg.action_mode,
+        action_profile_id=env_cfg.action_profile_id,
         render_mode=env_cfg.render_mode,
         max_actions=env_cfg.max_actions,
         scenes_path=env_cfg.scenes_path,
         reward_mode=env_cfg.reward_mode,
+        reward_profile_id=env_cfg.reward_profile_id,
         traffic_enabled=env_cfg.traffic_enabled,
         max_vehicles=env_cfg.max_vehicles,
     )

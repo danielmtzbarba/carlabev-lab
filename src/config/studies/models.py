@@ -31,6 +31,7 @@ class ExperimentSpec(BaseModel):
     action_mode: ActionMode = Field(
         validation_alias=AliasChoices("action_mode", "action_space")
     )
+    action_profile_id: str | None = None
     traffic: TrafficMode
     input_type: InputType
     semantic_mask_ch: SemanticMaskMode | None = None
@@ -38,7 +39,9 @@ class ExperimentSpec(BaseModel):
     reward_mode: RewardMode = Field(
         validation_alias=AliasChoices("reward_mode", "reward_type")
     )
+    reward_profile_id: str | None = None
     curriculum: CurriculumMode
+    difficulty_id: str | None = None
     fov_mask: Toggle
     fov_anchor: FovAnchorMode = "center"
     train_protocol_id: str
