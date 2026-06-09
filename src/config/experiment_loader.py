@@ -22,6 +22,87 @@ from src.config.studies.registry import (
 )
 
 
+def _abbrev_study_id(study_id: str) -> str:
+    replacements = {
+        "PPO_NAVIGATION": "PPO_NAV",
+        "DIFFICULTY": "DIFF",
+        "TEMPORAL": "TF",
+        "FUSION": "FUSE",
+        "SEMANTIC": "SEM",
+        "LOOKAHEAD": "LOOK",
+        "VEHICLE": "VEH",
+        "EDGE_CASE_SCENARIOS": "EDGE_CASES",
+    }
+    compact = study_id
+    for source, target in replacements.items():
+        compact = compact.replace(source, target)
+    return compact
+
+
+def _abbrev_action_mode(value: str) -> str:
+    return {"discrete": "d", "continuous": "c"}.get(value, value)
+
+
+def _abbrev_input_type(value: str) -> str:
+    return {"masks": "m", "rgb": "rgb"}.get(value, value)
+
+
+def _abbrev_semantic(value: str | None) -> str:
+    if value is None:
+        return "rgb"
+    return value.replace("-class", "c")
+
+
+def _abbrev_temporal_fusion(value: str) -> str:
+    return {
+        "stack": "stk",
+        "vehicle_temporal": "vt",
+        "vehicle_weighted": "vw",
+    }.get(value, value)
+
+
+def _abbrev_reward(value: str) -> str:
+    return {"carl": "c", "shaping": "s"}.get(value, value)
+
+
+def _abbrev_curriculum(value: str) -> str:
+    return {
+        "off": "off",
+        "vehicles_only": "veh",
+        "route_only": "rte",
+        "both": "both",
+    }.get(value, value)
+
+
+def _abbrev_fov_anchor(value: str) -> str:
+    return {"center": "ctr", "lookahead_75": "la75"}.get(value, value)
+
+
+def _abbrev_profile_id(value: str) -> str:
+    replacements = {
+        "discrete": "d",
+        "continuous": "c",
+        "vehicle": "veh",
+        "weighted": "w",
+        "temporal": "t",
+        "lookahead": "la",
+        "center": "ctr",
+        "traffic": "tr",
+        "medium": "med",
+        "easy": "easy",
+        "hard": "hard",
+        "no_traffic": "nt",
+        "base": "base",
+        "safety": "safe",
+        "_v1": "1",
+    }
+    compact = value
+    for source, target in replacements.items():
+        compact = compact.replace(source, target)
+    compact = compact.replace("_", "").replace("-", "")
+    return compact
+
+
 def get_study_name(study_id: str) -> str:
     return get_study_config(study_id).optuna_study_name
 
@@ -85,23 +166,25 @@ def apply_experiment_config(
             env.curriculum_mode = "both"
 
     args.exp_name = (
-        f"{study.study_id}_exp-{exp_id}_{args.algorithm}"
-        f"_act-{experiment.action_mode}"
-        f"_traffic-{experiment.traffic}"
-        f"_input-{experiment.input_type}"
-        f"_sem-{args.env.semantic_mask_ch if experiment.input_type == 'masks' else 'rgb'}"
-        f"_tfuse-{args.env.temporal_fusion_mode}"
-        f"_rwd-{experiment.reward_mode}"
-        f"_curr-{experiment.curriculum}"
-        f"_fovmask-{experiment.fov_mask}"
-        f"_fovanchor-{experiment.fov_anchor}"
+        f"{_abbrev_study_id(study.study_id)}"
+        f"_e{exp_id}"
+        f"_{args.algorithm}"
+        f"_a{_abbrev_action_mode(experiment.action_mode)}"
+        f"_tr{experiment.traffic}"
+        f"_in{_abbrev_input_type(experiment.input_type)}"
+        f"_sem{_abbrev_semantic(args.env.semantic_mask_ch if experiment.input_type == 'masks' else None)}"
+        f"_tf{_abbrev_temporal_fusion(args.env.temporal_fusion_mode)}"
+        f"_rw{_abbrev_reward(experiment.reward_mode)}"
+        f"_cu{_abbrev_curriculum(experiment.curriculum)}"
+        f"_fm{experiment.fov_mask}"
+        f"_fa{_abbrev_fov_anchor(experiment.fov_anchor)}"
     )
     if experiment.action_profile_id is not None:
-        args.exp_name += f"_actprof-{env.action_profile_id}"
+        args.exp_name += f"_ap{_abbrev_profile_id(env.action_profile_id)}"
     if experiment.reward_profile_id is not None:
-        args.exp_name += f"_rwdprof-{env.reward_profile_id}"
+        args.exp_name += f"_rp{_abbrev_profile_id(env.reward_profile_id)}"
     if experiment.difficulty_id is not None:
-        args.exp_name += f"_diff-{env.difficulty_id}"
+        args.exp_name += f"_df{_abbrev_profile_id(env.difficulty_id)}"
 
     return args
 

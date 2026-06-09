@@ -7,14 +7,13 @@
 #SBATCH --cpus-per-task=14
 #SBATCH --gres=gpu:1
 #SBATCH --time=02:00:00
-#SBATCH --array=1-14
+#SBATCH --array=1-4
 
 # Rerun only the missing first-pass experiments for:
 #   PPO_NAVIGATION_DIFFICULTY_TEMPORAL_FUSION
 #
-# These are the exp_ids that were previously PRUNED / FAIL / WAITING
-# before standalone study pruning was disabled:
-#   4, 6, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24
+# These are the remaining unresolved exp_ids after the hard-clean rerun:
+#   4, 6, 16, 18
 #
 # Budget matches the original first pass:
 #   1_000_000 timesteps
@@ -31,11 +30,7 @@ EVAL_EPISODES=30
 FINAL_EVAL_EPISODES=100
 SEED=0
 
-EXP_IDS=(
-    4 6
-    13 14 15 16 17 18
-    19 20 21 22 23 24
-)
+EXP_IDS=(4 6 16 18)
 
 module purge
 
