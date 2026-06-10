@@ -1,30 +1,24 @@
 from src.config.studies.edge_case_scenarios import EDGE_CASE_SCENARIOS
 from src.config.studies.models import ExperimentSpec, ProtocolSpec, StudyConfig
-from src.config.studies.ppo_navigation_difficulty_temporal_fusion import (
-    PPO_NAVIGATION_DIFFICULTY_TEMPORAL_FUSION,
-)
+from src.config.studies.ppo_navigation_difficulty import PPO_NAVIGATION_DIFFICULTY
 from src.config.studies.ppo_navigation_medium_fov_anchor import (
     PPO_NAVIGATION_MEDIUM_FOV_ANCHOR,
+)
+from src.config.studies.ppo_navigation_medium_semantic_classes import (
+    PPO_NAVIGATION_MEDIUM_SEMANTIC_CLASSES,
 )
 from src.config.studies.ppo_navigation_medium_temporal_fusion import (
     PPO_NAVIGATION_MEDIUM_TEMPORAL_FUSION,
 )
 from src.config.studies.ppo_navigation import PPO_NAVIGATION
-from src.config.studies.ppo_navigation_semantic_lookahead import (
-    PPO_NAVIGATION_SEMANTIC_LOOKAHEAD,
-)
-from src.config.studies.ppo_navigation_vehicle_temporal_fusion import (
-    PPO_NAVIGATION_VEHICLE_TEMPORAL_FUSION,
-)
 
 
 STUDY_REGISTRY: dict[str, StudyConfig] = {
     PPO_NAVIGATION.study_id: PPO_NAVIGATION,
-    PPO_NAVIGATION_DIFFICULTY_TEMPORAL_FUSION.study_id: PPO_NAVIGATION_DIFFICULTY_TEMPORAL_FUSION,
+    PPO_NAVIGATION_DIFFICULTY.study_id: PPO_NAVIGATION_DIFFICULTY,
     PPO_NAVIGATION_MEDIUM_FOV_ANCHOR.study_id: PPO_NAVIGATION_MEDIUM_FOV_ANCHOR,
+    PPO_NAVIGATION_MEDIUM_SEMANTIC_CLASSES.study_id: PPO_NAVIGATION_MEDIUM_SEMANTIC_CLASSES,
     PPO_NAVIGATION_MEDIUM_TEMPORAL_FUSION.study_id: PPO_NAVIGATION_MEDIUM_TEMPORAL_FUSION,
-    PPO_NAVIGATION_SEMANTIC_LOOKAHEAD.study_id: PPO_NAVIGATION_SEMANTIC_LOOKAHEAD,
-    PPO_NAVIGATION_VEHICLE_TEMPORAL_FUSION.study_id: PPO_NAVIGATION_VEHICLE_TEMPORAL_FUSION,
     EDGE_CASE_SCENARIOS.study_id: EDGE_CASE_SCENARIOS,
 }
 

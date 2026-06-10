@@ -16,8 +16,6 @@ PPO_NAVIGATION_MEDIUM_FOV_ANCHOR = StudyConfig(
     metadata={
         "owner": "carlabev-lab",
         "kind": "navigation",
-        "parent_study_id": "PPO_NAVIGATION_DIFFICULTY_TEMPORAL_FUSION",
-        "parent_exp_id": 13,
         "design": "fov_anchor pairwise ablation at fixed medium difficulty",
         "notes": (
             "All runs hold the backbone fixed: rt_medium_v1 difficulty, discrete9 "
@@ -61,7 +59,7 @@ PPO_NAVIGATION_MEDIUM_FOV_ANCHOR = StudyConfig(
             fov_anchor="center",
             train_protocol_id="random_nav_train",
             eval_protocol_ids=["random_nav_eval"],
-            tags=["medium", "stack", "center"],
+            tags=["medium", "fov_anchor", "stack", "center"],
             notes="Fixed medium-difficulty backbone with centered ego anchor.",
         ),
         2: ExperimentSpec(
@@ -79,7 +77,7 @@ PPO_NAVIGATION_MEDIUM_FOV_ANCHOR = StudyConfig(
             fov_anchor="lookahead_75",
             train_protocol_id="random_nav_train",
             eval_protocol_ids=["random_nav_eval"],
-            tags=["medium", "stack", "lookahead_75"],
+            tags=["medium", "fov_anchor", "stack", "lookahead_75"],
             notes="Fixed medium-difficulty backbone with lookahead_75 ego anchor.",
         ),
     },

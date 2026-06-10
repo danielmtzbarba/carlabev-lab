@@ -16,8 +16,6 @@ PPO_NAVIGATION_MEDIUM_TEMPORAL_FUSION = StudyConfig(
     metadata={
         "owner": "carlabev-lab",
         "kind": "navigation",
-        "parent_study_id": "PPO_NAVIGATION_DIFFICULTY_TEMPORAL_FUSION",
-        "parent_exp_id": 13,
         "design": "temporal_fusion_mode ablation at fixed medium difficulty",
         "notes": (
             "All runs hold the backbone fixed: rt_medium_v1 difficulty, discrete9 "
@@ -61,7 +59,7 @@ PPO_NAVIGATION_MEDIUM_TEMPORAL_FUSION = StudyConfig(
             fov_anchor="center",
             train_protocol_id="random_nav_train",
             eval_protocol_ids=["random_nav_eval"],
-            tags=["medium", "stack", "center"],
+            tags=["medium", "temporal_fusion", "stack", "center"],
             notes="Fixed medium-difficulty backbone with stacked semantic masks only.",
         ),
         2: ExperimentSpec(
@@ -79,7 +77,7 @@ PPO_NAVIGATION_MEDIUM_TEMPORAL_FUSION = StudyConfig(
             fov_anchor="center",
             train_protocol_id="random_nav_train",
             eval_protocol_ids=["random_nav_eval"],
-            tags=["medium", "vehicle_temporal", "center"],
+            tags=["medium", "temporal_fusion", "vehicle_temporal", "center"],
             notes="Fixed medium-difficulty backbone with separate recent vehicle-history channels.",
         ),
         3: ExperimentSpec(
@@ -97,7 +95,7 @@ PPO_NAVIGATION_MEDIUM_TEMPORAL_FUSION = StudyConfig(
             fov_anchor="center",
             train_protocol_id="random_nav_train",
             eval_protocol_ids=["random_nav_eval"],
-            tags=["medium", "vehicle_weighted", "center"],
+            tags=["medium", "temporal_fusion", "vehicle_weighted", "center"],
             notes="Fixed medium-difficulty backbone with weighted vehicle-history fusion.",
         ),
     },
