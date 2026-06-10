@@ -41,6 +41,15 @@ def _compact_params(params: dict[str, object], max_items: int = 4) -> str:
     return ", ".join(rendered) if rendered else "-"
 
 
+def _trial_sort_score(trial: optuna.trial.FrozenTrial) -> float:
+    attrs = trial.user_attrs
+    if "final_normalized_score" in attrs:
+        return float(attrs["final_normalized_score"])
+    if trial.value is not None:
+        return float(trial.value)
+    return float("-inf")
+
+
 def _scoped_completed_trials(study: optuna.Study, exp_id: int | None) -> list[optuna.trial.FrozenTrial]:
     trials = []
     for trial in study.trials:
@@ -49,7 +58,7 @@ def _scoped_completed_trials(study: optuna.Study, exp_id: int | None) -> list[op
         if exp_id is not None and trial.user_attrs.get("base_exp_id") != exp_id:
             continue
         trials.append(trial)
-    return sorted(trials, key=lambda trial: trial.value if trial.value is not None else float("-inf"), reverse=True)
+    return sorted(trials, key=_trial_sort_score, reverse=True)
 
 
 def main() -> None:
@@ -72,6 +81,7 @@ def main() -> None:
     table = Table(title=title, show_header=True, header_style="bold cyan")
     table.add_column("Rank", justify="right")
     table.add_column("Trial", justify="right")
+    table.add_column("Norm Score", justify="right")
     table.add_column("Score", justify="right")
     table.add_column("Exp", justify="right")
     table.add_column("Seed", justify="right")
@@ -79,6 +89,9 @@ def main() -> None:
     table.add_column("Success", justify="right")
     table.add_column("Collision", justify="right")
     table.add_column("Unfinished", justify="right")
+    table.add_column("Comfort", justify="right")
+    table.add_column("Comfort Viol", justify="right")
+    table.add_column("Harsh Brake", justify="right")
     table.add_column("Mean Return", justify="right")
     table.add_column("Params", justify="left")
 
@@ -91,6 +104,7 @@ def main() -> None:
         table.add_row(
             str(rank),
             str(trial.number),
+            _fmt_float(attrs.get("final_normalized_score"), 3),
             _fmt_float(trial.value, 4),
             str(attrs.get("base_exp_id", "-")),
             str(attrs.get("seed", "-")),
@@ -98,6 +112,9 @@ def main() -> None:
             _fmt_float(attrs.get("final_success_rate")),
             _fmt_float(attrs.get("final_collision_rate")),
             _fmt_float(attrs.get("final_unfinished_rate")),
+            _fmt_float(attrs.get("final_comfort_score")),
+            _fmt_float(attrs.get("final_comfort_violation_rate")),
+            _fmt_float(attrs.get("final_harsh_brake_rate")),
             _fmt_float(attrs.get("final_mean_return")),
             _compact_params(trial.params),
         )

@@ -84,6 +84,12 @@ CarlaBEV-Lab now uses CarlaBEV's public config contract internally. The canonica
 - `action_mode` (`discrete`, `continuous`)
 - `reward_mode` (`shaping`, `carl`)
 
+For the current study path, the preferred declarative selectors are the profile IDs exported by `carlabev-env`:
+
+- `difficulty_id`
+- `action_profile_id`
+- `reward_profile_id`
+
 Legacy aliases such as `obs_space`, `action_space`, and `reward_type` are still accepted for compatibility, but they emit deprecation warnings and are only retained at the boundary of older configs or experiments.
 
 ### Study Registry
@@ -151,6 +157,59 @@ uv run python train.py exp --study-id PPO_NAVIGATION --exp-id 26
 uv run python eval.py exp --study-id PPO_NAVIGATION --exp-id 26
 uv run python train.py exp --study-id EDGE_CASE_SCENARIOS --exp-id 1
 uv run python train.py exp --study-id EDGE_CASE_SCENARIOS --exp-id 4
+```
+
+### Evaluation Metrics And Study Scoring
+
+Evaluation payloads now include comfort-aware metrics in addition to task success:
+
+- `success_rate`
+- `collision_rate`
+- `unfinished_rate`
+- `mean_abs_accel_long`
+- `mean_abs_accel_lat`
+- `mean_abs_jerk_long`
+- `mean_abs_jerk_lat`
+- `mean_abs_yaw_rate`
+- `mean_abs_yaw_acc`
+- `comfort_violation_rate`
+- `harsh_brake_rate`
+- `comfort_score`
+- `normalized_score`
+
+`normalized_score` is the main bounded study-ranking score. It is designed to stay interpretable across reward changes by combining:
+
+- task completion
+- collision avoidance
+- unfinished episodes
+- comfort
+
+Raw `mean_return` is still logged and saved, but it is no longer the preferred leaderboard metric for study comparisons.
+
+### Result Inspection
+
+Print raw completed trials for a study:
+
+```bash
+uv run python scripts/print_top_study_results.py \
+  --study-id PPO_NAVIGATION_DIFFICULTY \
+  --top-k 10
+```
+
+Print seed-averaged experiment summaries:
+
+```bash
+uv run python scripts/print_top_experiments_by_seed_average.py \
+  --study-id PPO_NAVIGATION_MEDIUM_TEMPORAL_FUSION \
+  --top-k 3
+```
+
+Print the normalized-score leaderboard:
+
+```bash
+uv run python scripts/print_normalized_study_leaderboard.py \
+  --study-id PPO_NAVIGATION_MEDIUM_SEMANTIC_CLASSES \
+  --top-k 6
 ```
 
 ---

@@ -20,7 +20,8 @@ These assets were generated from a representative `rt_medium_v1` simulator scene
 - [semantic_modes](/home/danielmtz/Projects/carlabev-lab/docs/semantic_modes)
   - raw RGB and each semantic mask mode exported channel-by-channel
 - [anchor_modes](/home/danielmtz/Projects/carlabev-lab/docs/anchor_modes)
-  - `center` and `lookahead_75` frames on the same world state
+  - `center` and `lookahead_75` frames on the same seeded world state
+  - after the env render-padding fix, anchor changes affect framing only, not spawn
 - [temporal_fusion](/home/danielmtz/Projects/carlabev-lab/docs/temporal_fusion)
   - `rgb_history`
   - `current_stack`

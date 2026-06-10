@@ -11,6 +11,7 @@ from CarlaBEV.envs import make_env
 from src.agents import build_agent
 from src.config.reset_protocol import build_eval_protocol_samplers
 from src.config.base_config import to_carlabev_run_config
+from src.eval.scoring import compute_comfort_score, compute_eval_score
 
 
 def _run_eval_protocol(eval_env, agent, cfg_eval, protocol_id, sampler, num_episodes, render, device):
@@ -18,6 +19,16 @@ def _run_eval_protocol(eval_env, agent, cfg_eval, protocol_id, sampler, num_epis
     success_count = 0
     collision_count = 0
     unfinished_count = 0
+    comfort_metrics = {
+        "mean_abs_accel_long": [],
+        "mean_abs_accel_lat": [],
+        "mean_abs_jerk_long": [],
+        "mean_abs_jerk_lat": [],
+        "mean_abs_yaw_rate": [],
+        "mean_abs_yaw_acc": [],
+        "comfort_violation_rate": [],
+        "harsh_brake_rate": [],
+    }
 
     num_envs = cfg_eval.num_envs
     ep_returns = np.zeros(num_envs, dtype=np.float32)
@@ -75,6 +86,9 @@ def _run_eval_protocol(eval_env, agent, cfg_eval, protocol_id, sampler, num_epis
 
                 all_returns.append(float(ep_returns[i]))
                 all_lengths.append(int(ep_lengths[i]))
+                if ep_info is not None:
+                    for key in comfort_metrics:
+                        comfort_metrics[key].append(float(ep_info.get(key, [0.0] * num_envs)[i]))
                 episodes_finished += 1
                 progress.update(task, advance=1)
 
@@ -103,6 +117,8 @@ def _run_eval_protocol(eval_env, agent, cfg_eval, protocol_id, sampler, num_epis
         "collision_rate": collision_count / num_episodes,
         "unfinished_rate": unfinished_count / num_episodes,
     }
+    for key, values in comfort_metrics.items():
+        results[key] = float(np.mean(values)) if values else 0.0
     return results
 
 
@@ -116,10 +132,32 @@ def _aggregate_protocol_results(protocol_results):
             "success_rate": 0.0,
             "collision_rate": 0.0,
             "unfinished_rate": 0.0,
+            "mean_abs_accel_long": 0.0,
+            "mean_abs_accel_lat": 0.0,
+            "mean_abs_jerk_long": 0.0,
+            "mean_abs_jerk_lat": 0.0,
+            "mean_abs_yaw_rate": 0.0,
+            "mean_abs_yaw_acc": 0.0,
+            "comfort_violation_rate": 0.0,
+            "harsh_brake_rate": 0.0,
         }
 
     weighted = {}
-    for key in ("mean_return", "mean_length", "success_rate", "collision_rate", "unfinished_rate"):
+    for key in (
+        "mean_return",
+        "mean_length",
+        "success_rate",
+        "collision_rate",
+        "unfinished_rate",
+        "mean_abs_accel_long",
+        "mean_abs_accel_lat",
+        "mean_abs_jerk_long",
+        "mean_abs_jerk_lat",
+        "mean_abs_yaw_rate",
+        "mean_abs_yaw_acc",
+        "comfort_violation_rate",
+        "harsh_brake_rate",
+    ):
         weighted[key] = sum(
             result[key] * result["episodes"] for result in protocol_results.values()
         ) / total_episodes
@@ -174,6 +212,8 @@ def evaluate_ppo(
     eval_env.close()
 
     aggregate = _aggregate_protocol_results(protocol_results)
+    aggregate["comfort_score"] = compute_comfort_score(aggregate)
+    aggregate["normalized_score"] = compute_eval_score(aggregate)
 
     table = Table(
         title=f"Evaluation Results ({num_episodes} episodes per protocol)",
@@ -187,6 +227,13 @@ def evaluate_ppo(
     table.add_row("Success Rate", f"{aggregate['success_rate']*100:.1f}%")
     table.add_row("Collision Rate", f"{aggregate['collision_rate']*100:.1f}%")
     table.add_row("Unfinished Rate", f"{aggregate['unfinished_rate']*100:.1f}%")
+    table.add_row("Comfort Violation Rate", f"{aggregate['comfort_violation_rate']*100:.1f}%")
+    table.add_row("Harsh Brake Rate", f"{aggregate['harsh_brake_rate']*100:.1f}%")
+    table.add_row("Mean |Jerk Long|", f"{aggregate['mean_abs_jerk_long']:.3f}")
+    table.add_row("Mean |Jerk Lat|", f"{aggregate['mean_abs_jerk_lat']:.3f}")
+    table.add_row("Mean |Yaw Rate|", f"{aggregate['mean_abs_yaw_rate']:.3f}")
+    table.add_row("Comfort Score", f"{aggregate['comfort_score']:.3f}")
+    table.add_row("Normalized Score", f"{aggregate['normalized_score']:.3f}")
     table.add_row("Protocols", ", ".join(aggregate.get("evaluated_protocol_ids", [])))
     console.print(table)
 

@@ -8,6 +8,7 @@ from src.agents import build_agent
 from src.config.reset_protocol import build_train_protocol_sampler
 from src.trainers.utils import CurriculumState
 from src.eval.eval_ppo import evaluate_ppo
+from src.eval.scoring import compute_eval_score
 
 from collections import deque
 
@@ -42,10 +43,6 @@ def decay_schedule(start, end, progress, mode="linear"):
         return end + (start - end) * np.exp(-5 * progress)
     else:
         return start
-
-def compute_safety_score(eval_results, w_success=1.0, w_collision=0.8, w_unfinished=0.3):
-    score = w_success * eval_results.get("success_rate", 0.0) - w_collision * eval_results.get("collision_rate", 0.0) - w_unfinished * eval_results.get("unfinished_rate", 0.0) + 0.1 * eval_results.get("mean_return", 0.0)
-    return score
 
 def train_ppo(cfg, envs, logger, device, trial=None):
     num_envs = cfg.num_envs
@@ -379,7 +376,7 @@ def train_ppo(cfg, envs, logger, device, trial=None):
             if trial is not None:
                 import optuna
                 eval_idx += 1
-                score = compute_safety_score(eval_results)
+                score = compute_eval_score(eval_results)
                 trial.report(score, eval_idx)
                 if trial.should_prune():
                     envs.close()
@@ -420,4 +417,4 @@ def train_ppo(cfg, envs, logger, device, trial=None):
             trial.set_user_attr(k, v)
         for k, v in eval_results.items():
             trial.set_user_attr(f"final_{k}", v)
-        return compute_safety_score(eval_results)
+        return compute_eval_score(eval_results)
