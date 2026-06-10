@@ -2,6 +2,7 @@ import os
 import random
 import time
 import traceback
+import json
 
 import tyro
 import yaml
@@ -20,87 +21,7 @@ from src.config.studies.registry import (
     get_study_config,
     get_train_protocol,
 )
-
-
-def _abbrev_study_id(study_id: str) -> str:
-    replacements = {
-        "PPO_NAVIGATION": "PPO_NAV",
-        "DIFFICULTY": "DIFF",
-        "TEMPORAL": "TF",
-        "FUSION": "FUSE",
-        "SEMANTIC": "SEM",
-        "LOOKAHEAD": "LOOK",
-        "VEHICLE": "VEH",
-        "EDGE_CASE_SCENARIOS": "EDGE_CASES",
-    }
-    compact = study_id
-    for source, target in replacements.items():
-        compact = compact.replace(source, target)
-    return compact
-
-
-def _abbrev_action_mode(value: str) -> str:
-    return {"discrete": "d", "continuous": "c"}.get(value, value)
-
-
-def _abbrev_input_type(value: str) -> str:
-    return {"masks": "m", "rgb": "rgb"}.get(value, value)
-
-
-def _abbrev_semantic(value: str | None) -> str:
-    if value is None:
-        return "rgb"
-    return value.replace("-class", "c")
-
-
-def _abbrev_temporal_fusion(value: str) -> str:
-    return {
-        "stack": "stk",
-        "vehicle_temporal": "vt",
-        "vehicle_weighted": "vw",
-    }.get(value, value)
-
-
-def _abbrev_reward(value: str) -> str:
-    return {"carl": "c", "shaping": "s"}.get(value, value)
-
-
-def _abbrev_curriculum(value: str) -> str:
-    return {
-        "off": "off",
-        "vehicles_only": "veh",
-        "route_only": "rte",
-        "both": "both",
-    }.get(value, value)
-
-
-def _abbrev_fov_anchor(value: str) -> str:
-    return {"center": "ctr", "lookahead_75": "la75"}.get(value, value)
-
-
-def _abbrev_profile_id(value: str) -> str:
-    replacements = {
-        "discrete": "d",
-        "continuous": "c",
-        "vehicle": "veh",
-        "weighted": "w",
-        "temporal": "t",
-        "lookahead": "la",
-        "center": "ctr",
-        "traffic": "tr",
-        "medium": "med",
-        "easy": "easy",
-        "hard": "hard",
-        "no_traffic": "nt",
-        "base": "base",
-        "safety": "safe",
-        "_v1": "1",
-    }
-    compact = value
-    for source, target in replacements.items():
-        compact = compact.replace(source, target)
-    compact = compact.replace("_", "").replace("-", "")
-    return compact
+from src.utils.run_paths import RunPaths, build_run_id, build_run_label
 
 
 def get_study_name(study_id: str) -> str:
@@ -165,26 +86,11 @@ def apply_experiment_config(
         else:
             env.curriculum_mode = "both"
 
-    args.exp_name = (
-        f"{_abbrev_study_id(study.study_id)}"
-        f"_e{exp_id}"
-        f"_{args.algorithm}"
-        f"_a{_abbrev_action_mode(experiment.action_mode)}"
-        f"_tr{experiment.traffic}"
-        f"_in{_abbrev_input_type(experiment.input_type)}"
-        f"_sem{_abbrev_semantic(args.env.semantic_mask_ch if experiment.input_type == 'masks' else None)}"
-        f"_tf{_abbrev_temporal_fusion(args.env.temporal_fusion_mode)}"
-        f"_rw{_abbrev_reward(experiment.reward_mode)}"
-        f"_cu{_abbrev_curriculum(experiment.curriculum)}"
-        f"_fm{experiment.fov_mask}"
-        f"_fa{_abbrev_fov_anchor(experiment.fov_anchor)}"
-    )
-    if experiment.action_profile_id is not None:
-        args.exp_name += f"_ap{_abbrev_profile_id(env.action_profile_id)}"
-    if experiment.reward_profile_id is not None:
-        args.exp_name += f"_rp{_abbrev_profile_id(env.reward_profile_id)}"
-    if experiment.difficulty_id is not None:
-        args.exp_name += f"_df{_abbrev_profile_id(env.difficulty_id)}"
+    run_paths = RunPaths(study_id=study.study_id, exp_id=exp_id, trial_number=None, seed=args.seed)
+    args.run_label = run_paths.run_label
+    args.run_id = build_run_id(study.study_id, exp_id, seed=args.seed)
+    args.exp_name = args.run_id
+    args.run_dir = str(run_paths.run_dir)
 
     return args
 
@@ -198,7 +104,7 @@ def save_run_config(args: ArgsCarlaBEV):
         for protocol_id in args.eval_protocol_ids
     ]
 
-    out_dir = os.path.join("runs", args.exp_name)
+    out_dir = args.run_dir
     os.makedirs(out_dir, exist_ok=True)
     payload = {
         "study": study.model_dump(mode="json", exclude={"experiments"}),
@@ -231,7 +137,25 @@ def save_run_config(args: ArgsCarlaBEV):
     }
     with open(os.path.join(out_dir, "config.yaml"), "w", encoding="utf-8") as handle:
         yaml.safe_dump(payload, handle, sort_keys=False)
-    print(f"Saved: runs/{args.exp_name}/config.yaml")
+    latest_payload = {
+        "study_id": args.study_id,
+        "exp_id": args.exp_id,
+        "run_label": args.run_label,
+        "run_id": args.run_id,
+        "run_dir": args.run_dir,
+        "seed": args.seed,
+        "trial_number": args.logging.trial_number,
+    }
+    latest_path = RunPaths(
+        study_id=args.study_id,
+        exp_id=args.exp_id,
+        trial_number=args.logging.trial_number,
+        seed=args.seed,
+    ).latest_pointer_path
+    latest_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(latest_path, "w", encoding="utf-8") as handle:
+        json.dump(latest_payload, handle, indent=2, sort_keys=True)
+    print(f"Saved: {os.path.join(out_dir, 'config.yaml')}")
 
 
 def load_experiment():
@@ -243,7 +167,6 @@ def load_experiment():
 
     args = apply_experiment_config(args, args.exp_id, study_id=args.study_id)
     validate_run_config(to_carlabev_run_config(args))
-    save_run_config(args)
     return args
 
 
@@ -298,15 +221,22 @@ def run_experiment(args: ArgsCarlaBEV, trial=None, seed_idx: int = None) -> floa
         optuna_study.optimize(_manual_objective, n_trials=1)
         return
 
-    if seed_idx is not None:
-        args.exp_name = f"{args.exp_name}_optuna_trial_{trial.number}_seed_{args.seed}"
-    else:
-        args.exp_name = f"{args.exp_name}_optuna_trial_{trial.number}"
-
-    save_run_config(args)
+    run_paths = RunPaths(
+        study_id=study.study_id,
+        exp_id=args.exp_id,
+        trial_number=trial.number,
+        seed=args.seed,
+    )
+    run_paths.ensure_dirs()
+    args.run_label = run_paths.run_label
+    args.run_id = run_paths.run_id
+    args.exp_name = args.run_id
+    args.run_dir = str(run_paths.run_dir)
 
     args.logging.db_path = get_study_db_path(args.study_id)
     args.logging.trial_number = trial.number
+
+    save_run_config(args)
 
     trial.set_user_attr("study_id", study.study_id)
     trial.set_user_attr("study_name", study.optuna_study_name)

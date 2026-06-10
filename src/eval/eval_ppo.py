@@ -14,6 +14,60 @@ from src.config.base_config import to_carlabev_run_config
 from src.eval.scoring import compute_comfort_score, compute_eval_score
 
 
+def _evenly_spaced_indices(total: int, count: int) -> list[int]:
+    if count <= 0 or total <= 0:
+        return []
+    if count >= total:
+        return list(range(total))
+    if count == 1:
+        return [0]
+    positions = np.linspace(0, total - 1, num=count)
+    return sorted({int(round(value)) for value in positions})
+
+
+def _capture_protocol_videos(cfg, agent, protocol_id, num_episodes, output_dir, video_count, video_name_prefix, device):
+    if video_count <= 0:
+        return
+
+    cfg_capture = deepcopy(cfg)
+    cfg_capture.num_envs = 1
+    cfg_capture.capture_video = True
+    cfg_capture.video_output_dir = str(output_dir)
+    cfg_capture.video_episode_indices = _evenly_spaced_indices(num_episodes, video_count)
+    cfg_capture.video_name_prefix = video_name_prefix
+
+    capture_env = make_env(to_carlabev_run_config(cfg_capture), eval=True)
+    sampler = build_eval_protocol_samplers(cfg_capture, [protocol_id])[protocol_id]
+
+    options = sampler.initial_options(1)
+    obs, _ = capture_env.reset(seed=cfg_capture.seed, options=options)
+    obs_t = torch.tensor(obs, dtype=torch.float32, device=device)
+    episodes_finished = 0
+
+    while episodes_finished < num_episodes:
+        with torch.no_grad():
+            out = agent.get_action_and_value(obs_t)
+            if agent.is_continuous:
+                _, action, _, _, _ = out
+            else:
+                action, _, _, _ = out
+
+        next_obs, _, terminated, truncated, _ = capture_env.step(action.cpu().numpy())
+        done = bool(np.logical_or(np.array(terminated, dtype=bool), np.array(truncated, dtype=bool))[0])
+
+        if done:
+            episodes_finished += 1
+            if episodes_finished < num_episodes:
+                next_obs, _ = capture_env.reset(
+                    seed=cfg_capture.seed,
+                    options=sampler.next_options(reset_mask=np.array([True], dtype=bool)),
+                )
+
+        obs_t = torch.tensor(next_obs, dtype=torch.float32, device=device)
+
+    capture_env.close()
+
+
 def _run_eval_protocol(eval_env, agent, cfg_eval, protocol_id, sampler, num_episodes, render, device):
     all_returns, all_lengths = [], []
     success_count = 0
@@ -178,6 +232,10 @@ def evaluate_ppo(
     device="cuda",
     file_name="ppo-eval.npy",
     eval_protocol_ids=None,
+    capture_video_count: int = 0,
+    video_output_dir: str | None = None,
+    video_name_prefix: str = "eval",
+    save_payload: bool = True,
 ):
     """
     Evaluate a trained PPO model against the experiment's configured eval protocols.
@@ -185,7 +243,7 @@ def evaluate_ppo(
     console = Console()
 
     cfg_eval = deepcopy(cfg)
-    exp_name = cfg_eval.exp_name
+    run_dir = getattr(cfg_eval, "run_dir", os.path.join("runs", cfg_eval.exp_name))
     cfg_eval.num_envs = num_envs
     eval_env = make_env(to_carlabev_run_config(cfg_eval), eval=True)
 
@@ -215,6 +273,19 @@ def evaluate_ppo(
     aggregate["comfort_score"] = compute_comfort_score(aggregate)
     aggregate["normalized_score"] = compute_eval_score(aggregate)
 
+    if capture_video_count > 0 and video_output_dir is not None and protocol_results:
+        first_protocol_id = next(iter(protocol_results.keys()))
+        _capture_protocol_videos(
+            cfg=cfg,
+            agent=agent,
+            protocol_id=first_protocol_id,
+            num_episodes=num_episodes,
+            output_dir=video_output_dir,
+            video_count=capture_video_count,
+            video_name_prefix=video_name_prefix,
+            device=device,
+        )
+
     table = Table(
         title=f"Evaluation Results ({num_episodes} episodes per protocol)",
         show_header=True,
@@ -242,9 +313,10 @@ def evaluate_ppo(
         "protocols": protocol_results,
     }
 
-    save_path = os.path.join("runs", exp_name, file_name)
-    os.makedirs(os.path.dirname(save_path), exist_ok=True)
-    np.save(save_path, payload, allow_pickle=True)
-    console.print(f"[green]✅ Saved evaluation results to:[/green] {save_path}")
+    if save_payload:
+        save_path = os.path.join(run_dir, "eval", file_name)
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        np.save(save_path, payload, allow_pickle=True)
+        console.print(f"[green]✅ Saved evaluation results to:[/green] {save_path}")
 
     return payload

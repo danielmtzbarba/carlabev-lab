@@ -9,6 +9,15 @@
 #SBATCH --time=02:00:00
 #SBATCH --array=1-12
 
+# Run artifacts now land under:
+#   runs/PPO_NAVIGATION_DIFFICULTY/exp_<exp_id>/trial_<trial>/seed_<seed>/
+# with checkpoints/, eval/, and videos/ subdirectories per run.
+#
+# Video plan for 1M runs:
+#   - 20 training probe videos
+#   - 5 intermediate-eval videos per scheduled eval
+#   - 10 final-eval videos across the 1000 final episodes
+
 set -euo pipefail
 
 STUDY_ID="PPO_NAVIGATION_DIFFICULTY"
@@ -52,6 +61,7 @@ echo "Array Task ID: ${SLURM_ARRAY_TASK_ID}"
 echo "Resolved study_id: ${STUDY_ID}"
 echo "Resolved exp_id: ${EXP_ID}"
 echo "Resolved seed: ${SEED}"
+echo "Artifacts will be recorded under runs/${STUDY_ID}/exp_${EXP_ID}/..."
 
 sleep_time=$((SLURM_ARRAY_TASK_ID * 5))
 echo "Sleeping ${sleep_time}s before launch..."
@@ -64,5 +74,4 @@ srun uv run python train.py exp \
     --run-mode headless \
     --ppo.total-timesteps "${TOTAL_TIMESTEPS}" \
     --eval-episodes "${EVAL_EPISODES}" \
-    --eval-final-episodes "${FINAL_EVAL_EPISODES}" \
-    --no-capture-video
+    --eval-final-episodes "${FINAL_EVAL_EPISODES}"

@@ -9,6 +9,7 @@ from src.config.reset_protocol import build_train_protocol_sampler
 from src.trainers.utils import CurriculumState
 from src.eval.eval_ppo import evaluate_ppo
 from src.eval.scoring import compute_eval_score
+from src.utils.run_paths import RunPaths
 
 from collections import deque
 
@@ -43,6 +44,15 @@ def decay_schedule(start, end, progress, mode="linear"):
         return end + (start - end) * np.exp(-5 * progress)
     else:
         return start
+
+
+def _evenly_spaced_steps(total_timesteps: int, count: int) -> list[int]:
+    if count <= 0 or total_timesteps <= 0:
+        return []
+    if count == 1:
+        return [total_timesteps]
+    raw = np.linspace(total_timesteps / count, total_timesteps, num=count)
+    return sorted({int(round(value)) for value in raw if value > 0})
 
 def train_ppo(cfg, envs, logger, device, trial=None):
     num_envs = cfg.num_envs
@@ -98,6 +108,13 @@ def train_ppo(cfg, envs, logger, device, trial=None):
 
     global_step = 0
     start_time = time.time()
+    run_paths = RunPaths(
+        study_id=cfg.study_id,
+        exp_id=cfg.exp_id,
+        trial_number=cfg.logging.trial_number,
+        seed=cfg.seed,
+    )
+    run_paths.ensure_dirs()
 
     train_sampler = build_train_protocol_sampler(cfg)
     options = train_sampler.initial_options(num_envs)
@@ -111,6 +128,8 @@ def train_ppo(cfg, envs, logger, device, trial=None):
     eval_interval_steps = max(1, ppo_cfg.total_timesteps // getattr(cfg, 'num_evals', 5))
     next_eval_step = eval_interval_steps
     eval_idx = 0
+    train_video_steps = _evenly_spaced_steps(ppo_cfg.total_timesteps, getattr(cfg, "train_video_count", 20))
+    next_train_video_idx = 0
 
     for iteration in range(1, ppo_cfg.num_iterations + 1):
         # LR annealing
@@ -339,21 +358,45 @@ def train_ppo(cfg, envs, logger, device, trial=None):
                 "schedules/lr", optimizer.param_groups[0]["lr"], global_step
             )
 
+        while next_train_video_idx < len(train_video_steps) and global_step >= train_video_steps[next_train_video_idx]:
+            video_step = train_video_steps[next_train_video_idx]
+            probe_model_path = run_paths.checkpoints_dir / f"ppo-train-probe-{video_step:09d}.pt"
+            torch.save(agent.state_dict(), probe_model_path)
+            evaluate_ppo(
+                cfg,
+                model_path=str(probe_model_path),
+                num_episodes=1,
+                num_envs=1,
+                render=False,
+                device="cuda",
+                file_name=f"intermediate/step_{video_step:09d}_probe.npy",
+                capture_video_count=1,
+                video_output_dir=str(run_paths.train_videos_dir / f"step_{video_step:09d}"),
+                video_name_prefix=f"train-step-{video_step:09d}",
+                save_payload=False,
+            )
+            if not cfg.save_model:
+                os.remove(probe_model_path)
+            next_train_video_idx += 1
+
         # Evaluate model based on equidistant intervals (num_evals steps)
         if global_step >= next_eval_step:
             logger.msg(f"📊 Evaluating model at iteration {iteration} ({global_step} env steps)")
 
             # Save temp model and eval
-            eval_model_path = os.path.join(f"runs/{cfg.exp_name}", f"ppo-eval-{global_step}.pt")
+            eval_model_path = run_paths.checkpoints_dir / f"ppo-eval-{global_step:09d}.pt"
             torch.save(agent.state_dict(), eval_model_path)
 
             eval_payload = evaluate_ppo(
                 cfg,
-                model_path=eval_model_path,
+                model_path=str(eval_model_path),
                 num_episodes=cfg.eval_episodes,
                 render=False,  # turn True for visualization
                 device="cuda",
-                file_name=f"ppo-eval-{global_step}.npy"
+                file_name=f"intermediate/step_{global_step:09d}.npy",
+                capture_video_count=getattr(cfg, "eval_video_count", 5),
+                video_output_dir=str(run_paths.intermediate_eval_videos_dir / f"step_{global_step:09d}"),
+                video_name_prefix=f"eval-step-{global_step:09d}",
             )
             eval_results = eval_payload["aggregate"]
 
@@ -385,15 +428,18 @@ def train_ppo(cfg, envs, logger, device, trial=None):
             next_eval_step += eval_interval_steps
 
     # Final evaluation
-    model_path = os.path.join(f"runs/{cfg.exp_name}", "ppo_final.pt")
+    model_path = run_paths.checkpoints_dir / "ppo_final.pt"
     torch.save(agent.state_dict(), model_path)
     eval_payload = evaluate_ppo(
         cfg,
-        model_path=model_path,
+        model_path=str(model_path),
         num_episodes=cfg.eval_final_episodes,
         render=False,  # turn True for visualization
         device="cuda",
-        file_name="ppo-eval-final-last.npy"
+        file_name="final/summary.npy",
+        capture_video_count=getattr(cfg, "final_eval_video_count", 10),
+        video_output_dir=str(run_paths.final_eval_videos_dir),
+        video_name_prefix="eval-final",
     )
     eval_results = eval_payload["aggregate"]
 

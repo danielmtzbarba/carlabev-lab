@@ -301,6 +301,9 @@ class ArgsCarlaBEV:
     study_id: str = "PPO_NAVIGATION"
     exp_id: int = 1
     exp_name: str = "default"
+    run_label: str = "default"
+    run_id: str = "default"
+    run_dir: str = "runs/default"
     algorithm: str = "cnn-ppo"
     run_mode: Literal["interactive", "headless"] = "interactive"
     train_protocol_id: str | None = None
@@ -317,6 +320,12 @@ class ArgsCarlaBEV:
 
     capture_video: bool = True
     capture_every: int = 250
+    video_output_dir: str | None = None
+    video_episode_indices: list[int] | None = None
+    video_name_prefix: str = "rl-video"
+    train_video_count: int = 20
+    eval_video_count: int = 5
+    final_eval_video_count: int = 10
 
     save_model: bool = True
     save_every: int = 200
@@ -330,6 +339,9 @@ class ArgsCarlaBEV:
             "study_id": self.study_id,
             "exp_id": self.exp_id,
             "exp_name": self.exp_name,
+            "run_label": self.run_label,
+            "run_id": self.run_id,
+            "run_dir": self.run_dir,
             "algorithm": self.algorithm,
             "run_mode": self.run_mode,
             "train_protocol_id": self.train_protocol_id,
@@ -343,6 +355,12 @@ class ArgsCarlaBEV:
             "logging": self.logging.__dict__.copy(),
             "capture_video": self.capture_video,
             "capture_every": self.capture_every,
+            "video_output_dir": self.video_output_dir,
+            "video_episode_indices": self.video_episode_indices,
+            "video_name_prefix": self.video_name_prefix,
+            "train_video_count": self.train_video_count,
+            "eval_video_count": self.eval_video_count,
+            "final_eval_video_count": self.final_eval_video_count,
             "save_model": self.save_model,
             "save_every": self.save_every,
             "num_evals": self.num_evals,
@@ -389,6 +407,9 @@ def to_carlabev_run_config(args: ArgsCarlaBEV) -> CarlaBEVRunConfig:
         seed=args.seed,
         capture_video=args.capture_video,
         capture_every=args.capture_every,
+        video_output_dir=args.video_output_dir,
+        video_episode_indices=args.video_episode_indices,
+        video_name_prefix=args.video_name_prefix,
         cuda=args.cuda,
         torch_deterministic=args.torch_deterministic,
     )

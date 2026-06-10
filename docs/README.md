@@ -35,3 +35,19 @@ Regenerate all assets with:
 ```bash
 uv run python scripts/generate_medium_report_figures.py
 ```
+
+## Study Artifact Layout
+
+Study runs referenced by the reports now resolve through the short scaffold:
+
+```text
+runs/<study_id>/exp_<exp_id>/trial_<trial_id>/seed_<seed>/
+```
+
+with study-local outputs under:
+
+- `checkpoints/`
+- `eval/`
+- `videos/train/`
+- `videos/eval/intermediate/`
+- `videos/eval/final/`

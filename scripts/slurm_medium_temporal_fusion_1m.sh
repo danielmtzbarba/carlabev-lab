@@ -19,6 +19,10 @@
 #
 # Seeds:
 #   0, 555, 9999
+#
+# Run artifacts now land under:
+#   runs/PPO_NAVIGATION_MEDIUM_TEMPORAL_FUSION/exp_<exp_id>/trial_<trial>/seed_<seed>/
+# with checkpoints/, eval/, and videos/ subdirectories per run.
 
 set -euo pipefail
 
@@ -67,6 +71,7 @@ echo "Resolved seed: ${SEED}"
 echo "Resolved total_timesteps: ${TOTAL_TIMESTEPS}"
 echo "Resolved eval_episodes: ${EVAL_EPISODES}"
 echo "Resolved eval_final_episodes: ${FINAL_EVAL_EPISODES}"
+echo "Artifacts will be recorded under runs/${STUDY_ID}/exp_${EXP_ID}/..."
 
 sleep_time=$((SLURM_ARRAY_TASK_ID * 5))
 echo "Sleeping ${sleep_time}s before launch..."
@@ -79,5 +84,4 @@ srun uv run python train.py exp \
     --run-mode headless \
     --ppo.total-timesteps "${TOTAL_TIMESTEPS}" \
     --eval-episodes "${EVAL_EPISODES}" \
-    --eval-final-episodes "${FINAL_EVAL_EPISODES}" \
-    --no-capture-video
+    --eval-final-episodes "${FINAL_EVAL_EPISODES}"

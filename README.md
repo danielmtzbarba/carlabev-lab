@@ -212,6 +212,56 @@ uv run python scripts/print_normalized_study_leaderboard.py \
   --top-k 6
 ```
 
+### Run Artifact Layout
+
+Study runs now use a short, structured scaffold instead of long descriptive folder names:
+
+```text
+runs/
+  <study_id>/
+    exp_<exp_id>/
+      trial_<trial_id>|trial_manual/
+        seed_<seed>/
+          config.yaml
+          train.log
+          status.json
+          checkpoints/
+          eval/
+          videos/
+```
+
+Two identifiers are tracked in config and status files:
+
+- `run_label`: `{study_id}_e{exp_id}`
+- `run_id`: `{study_id}_e{exp_id}_t{trial_id}_s{seed}`
+
+The latest resolved run for each `(study_id, exp_id)` is also written to:
+
+```text
+runs/<study_id>/exp_<exp_id>/LATEST_RUN.json
+```
+
+### Video Capture Policy
+
+The study launchers now use explicit milestone-based capture:
+
+- training:
+  - `20` probe videos across a `1_000_000`-step run
+- intermediate evaluation:
+  - `5` videos sampled across the `100` eval episodes
+- final evaluation:
+  - `10` videos sampled across the `1000` final episodes
+
+All video outputs live under the run-local `videos/` tree:
+
+```text
+videos/
+  train/
+  eval/
+    intermediate/
+    final/
+```
+
 ---
 
 ## 🔬 Optuna Hyperparameter Tuning

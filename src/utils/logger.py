@@ -28,7 +28,7 @@ def abbreviate_number(n):
 
 class DRLogger:
     def __init__(self, config, stats_interval=100):
-        self.run_dir = os.path.join("runs", config.exp_name)
+        self.run_dir = getattr(config, "run_dir", os.path.join("runs", config.exp_name))
         os.makedirs(self.run_dir, exist_ok=True)
 
         self.writer = SummaryWriter(self.run_dir)
