@@ -6,7 +6,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=14
 #SBATCH --gres=gpu:1
-#SBATCH --time=02:00:00
+#SBATCH --time=04:00:00
 #SBATCH --array=1-9
 
 # 1M-step medium-difficulty temporal-fusion ablation:
@@ -47,6 +47,11 @@ SEEDS=(
 module purge
 
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK}"
+export PYTHONUNBUFFERED=1
+export OPTUNA_SQLITE_BUSY_TIMEOUT_SECONDS=120
+export OPTUNA_STUDY_ACQUIRE_MAX_WAIT_SECONDS=900
+export OPTUNA_STUDY_ACQUIRE_RETRY_MIN_SECONDS=5
+export OPTUNA_STUDY_ACQUIRE_RETRY_MAX_SECONDS=15
 
 cd "${SLURM_SUBMIT_DIR}"
 
@@ -73,11 +78,11 @@ echo "Resolved eval_episodes: ${EVAL_EPISODES}"
 echo "Resolved eval_final_episodes: ${FINAL_EVAL_EPISODES}"
 echo "Artifacts will be recorded under runs/${STUDY_ID}/exp_${EXP_ID}/..."
 
-sleep_time=$((SLURM_ARRAY_TASK_ID * 5))
+sleep_time=$(((SLURM_ARRAY_TASK_ID - 1) * 20))
 echo "Sleeping ${sleep_time}s before launch..."
 sleep "${sleep_time}"
 
-srun uv run python train.py exp \
+srun env PYTHONUNBUFFERED=1 uv run python train.py exp \
     --study-id "${STUDY_ID}" \
     --exp-id "${EXP_ID}" \
     --seed "${SEED}" \
