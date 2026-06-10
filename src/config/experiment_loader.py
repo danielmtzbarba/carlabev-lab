@@ -242,6 +242,7 @@ def run_experiment(args: ArgsCarlaBEV, trial=None, seed_idx: int = None) -> floa
     trial.set_user_attr("study_name", study.optuna_study_name)
     trial.set_user_attr("study_metadata", study.metadata)
     trial.set_user_attr("base_exp_id", args.exp_id)
+    trial.set_user_attr("seed", args.seed)
     trial.set_user_attr("train_protocol_id", args.train_protocol_id)
     trial.set_user_attr("eval_protocol_ids", list(args.eval_protocol_ids))
     trial.set_user_attr("action_mode", args.env.action_mode)

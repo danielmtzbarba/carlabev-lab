@@ -30,16 +30,6 @@ def _fmt_float(value: object, digits: int = 3) -> str:
     return "-"
 
 
-def _compact_params(params: dict[str, object], max_items: int = 4) -> str:
-    items = list(params.items())[:max_items]
-    rendered = [
-        f"{key}={value:.4g}" if isinstance(value, float) else f"{key}={value}"
-        for key, value in items
-    ]
-    if len(params) > max_items:
-        rendered.append("...")
-    return ", ".join(rendered) if rendered else "-"
-
 
 def _trial_sort_score(trial: optuna.trial.FrozenTrial) -> float:
     attrs = trial.user_attrs
@@ -85,7 +75,6 @@ def main() -> None:
     table.add_column("Score", justify="right")
     table.add_column("Exp", justify="right")
     table.add_column("Seed", justify="right")
-    table.add_column("Phase", justify="center")
     table.add_column("Success", justify="right")
     table.add_column("Collision", justify="right")
     table.add_column("Unfinished", justify="right")
@@ -93,7 +82,6 @@ def main() -> None:
     table.add_column("Comfort Viol", justify="right")
     table.add_column("Harsh Brake", justify="right")
     table.add_column("Mean Return", justify="right")
-    table.add_column("Params", justify="left")
 
     if not selected_trials:
         console.print(f"[yellow]No completed trials found for study_id={args.study_id}.[/yellow]")
@@ -108,7 +96,6 @@ def main() -> None:
             _fmt_float(trial.value, 4),
             str(attrs.get("base_exp_id", "-")),
             str(attrs.get("seed", "-")),
-            str(attrs.get("phase", "-")).strip('"'),
             _fmt_float(attrs.get("final_success_rate")),
             _fmt_float(attrs.get("final_collision_rate")),
             _fmt_float(attrs.get("final_unfinished_rate")),
@@ -116,7 +103,6 @@ def main() -> None:
             _fmt_float(attrs.get("final_comfort_violation_rate")),
             _fmt_float(attrs.get("final_harsh_brake_rate")),
             _fmt_float(attrs.get("final_mean_return")),
-            _compact_params(trial.params),
         )
 
     console.print(table)
