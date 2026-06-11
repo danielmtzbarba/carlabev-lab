@@ -74,6 +74,19 @@ def scene_signature(env: CarlaBEV) -> str:
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:16]
 
 
+def route_signature(env: CarlaBEV) -> str:
+    route_x, route_y = env.map.route
+    payload = {
+        "route": tuple(
+            (round(float(route_x[i]), 3), round(float(route_y[i]), 3))
+            for i in range(min(len(route_x), len(route_y)))
+        ),
+        "route_length": round(float(env.len_ego_route), 4),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:16]
+
+
 def extract_sample(
     *,
     difficulty_id: str,
@@ -92,12 +105,16 @@ def extract_sample(
         sample_index=sample_index,
         applied_seed=applied_seed,
         scene_signature=scene_signature(env),
+        route_signature=route_signature(env),
         hero_x=round(float(hero.x), 6),
         hero_y=round(float(hero.y), 6),
         hero_yaw=round(float(hero.yaw), 6),
         hero_speed=round(float(hero.v), 6),
         route_length=round(float(env.len_ego_route), 6),
         num_vehicles=int(env.num_vehicles),
+        route_profile=str(scenario.get("route_profile", "unknown")),
+        route_turn_count=int(scenario.get("route_turn_count", 0)),
+        route_intersection_like=bool(scenario.get("route_intersection_like", False)),
         straight_fraction=float(scenario.get("straight_fraction", math.nan)),
         left_turn_fraction=float(scenario.get("left_turn_fraction", math.nan)),
         right_turn_fraction=float(scenario.get("right_turn_fraction", math.nan)),
@@ -138,25 +155,40 @@ def finite_mean(values: list[float]) -> float | None:
 
 
 def build_pair_summary(samples: list[SceneSample]) -> dict[str, Any]:
-    signatures = [sample.scene_signature for sample in samples]
-    unique_signatures = len(set(signatures))
+    scene_signatures = [sample.scene_signature for sample in samples]
+    route_signatures = [sample.route_signature for sample in samples]
+    unique_signatures = len(set(scene_signatures))
+    unique_route_signatures = len(set(route_signatures))
     unique_hero_poses = len({(round(sample.hero_x), round(sample.hero_y)) for sample in samples})
     counts = defaultdict(int)
-    for signature in signatures:
+    for signature in scene_signatures:
         counts[signature] += 1
+    route_counts = defaultdict(int)
+    for signature in route_signatures:
+        route_counts[signature] += 1
+    route_profile_counts = {
+        profile: sum(1 for sample in samples if sample.route_profile == profile)
+        for profile in sorted({sample.route_profile for sample in samples})
+    }
 
     return {
         "num_samples": len(samples),
         "num_unique_scenes": unique_signatures,
+        "num_unique_routes": unique_route_signatures,
         "num_unique_hero_poses": unique_hero_poses,
         "scene_repeat_ratio": 1.0 - (unique_signatures / len(samples) if samples else 0.0),
+        "route_repeat_ratio": 1.0 - (unique_route_signatures / len(samples) if samples else 0.0),
         "most_common_scene_count": max(counts.values()) if counts else 0,
+        "most_common_route_count": max(route_counts.values()) if route_counts else 0,
         "spawn_valid_rate": mean([1.0 if sample.spawn_valid else 0.0 for sample in samples]) if samples else None,
         "mean_route_length": finite_mean([sample.route_length for sample in samples]),
         "mean_num_vehicles": finite_mean([float(sample.num_vehicles) for sample in samples]),
+        "mean_turn_count": finite_mean([float(sample.route_turn_count) for sample in samples]),
+        "intersection_like_rate": mean([1.0 if sample.route_intersection_like else 0.0 for sample in samples]) if samples else None,
         "mean_straight_fraction": finite_mean([sample.straight_fraction for sample in samples]),
         "mean_left_turn_fraction": finite_mean([sample.left_turn_fraction for sample in samples]),
         "mean_right_turn_fraction": finite_mean([sample.right_turn_fraction for sample in samples]),
+        "route_profile_counts": route_profile_counts,
         "spawn_reason_counts": {
             reason: sum(1 for sample in samples if sample.spawn_reason == reason)
             for reason in sorted({sample.spawn_reason for sample in samples})
@@ -170,6 +202,12 @@ def generate_dataset(
     difficulty_ids: list[str],
     samples_per_seed: int,
     seed_mode: str,
+    route_profile: str | None = None,
+    route_profile_mix: dict[str, float] | None = None,
+    min_turns: int | None = None,
+    max_turns: int | None = None,
+    intersection_required: bool | None = None,
+    max_route_attempts: int | None = None,
     save_frames_per_pair: int,
     frame_size: int,
     output_dir: Path,
@@ -183,6 +221,12 @@ def generate_dataset(
         "samples_per_seed": samples_per_seed,
         "seeds": seeds,
         "difficulty_ids": difficulty_ids,
+        "route_profile": route_profile,
+        "route_profile_mix": route_profile_mix,
+        "min_turns": min_turns,
+        "max_turns": max_turns,
+        "intersection_required": intersection_required,
+        "max_route_attempts": max_route_attempts,
         "carlabev_repo": str(CARLABEV_REPO),
         "map_asset": str(town_map_asset_path("Town01", map_asset_size)),
         "pairs": {},
@@ -212,7 +256,17 @@ def generate_dataset(
                 try:
                     for sample_index in range(samples_per_seed):
                         applied_seed = seed if seed_mode == "fixed" else seed + sample_index
-                        options = build_random_navigation_options(RandomNavigationReset(difficulty_id=difficulty_id))
+                        options = build_random_navigation_options(
+                            RandomNavigationReset(
+                                difficulty_id=difficulty_id,
+                                route_profile=route_profile,
+                                route_profile_mix=route_profile_mix,
+                                min_turns=min_turns,
+                                max_turns=max_turns,
+                                intersection_required=intersection_required,
+                                max_route_attempts=max_route_attempts,
+                            )
+                        )
                         frame, info = env.reset(seed=applied_seed, options=options)
                         sample = extract_sample(
                             difficulty_id=difficulty_id,

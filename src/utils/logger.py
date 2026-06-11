@@ -196,6 +196,9 @@ class DRLogger:
             success_rate REAL,
             collision_rate REAL,
             unfinished_rate REAL,
+            straight_fraction REAL,
+            left_turn_fraction REAL,
+            right_turn_fraction REAL,
             comfort_score REAL,
             normalized_score REAL,
             mean_abs_accel_long REAL,
@@ -231,6 +234,9 @@ class DRLogger:
         except Exception:
             pass
         for column in (
+            "straight_fraction",
+            "left_turn_fraction",
+            "right_turn_fraction",
             "comfort_score",
             "normalized_score",
             "mean_abs_accel_long",
@@ -456,6 +462,9 @@ class DRLogger:
                     "success_rate",
                     "collision_rate",
                     "unfinished_rate",
+                    "straight_fraction",
+                    "left_turn_fraction",
+                    "right_turn_fraction",
                     "comfort_score",
                     "normalized_score",
                     "mean_abs_accel_long",
@@ -480,12 +489,13 @@ class DRLogger:
                 (trial_number, seed, global_step, walltime,
                  mean_return, std_return, mean_length,
                  success_rate, collision_rate, unfinished_rate,
+                 straight_fraction, left_turn_fraction, right_turn_fraction,
                  comfort_score, normalized_score,
                  mean_abs_accel_long, mean_abs_accel_lat, mean_abs_jerk_long, mean_abs_jerk_lat, mean_abs_yaw_rate, mean_abs_yaw_acc,
                  comfort_violation_rate, harsh_brake_rate,
                  time_to_reach_0_1, time_to_reach_0_2, time_to_reach_0_3, time_to_reach_0_4, time_to_reach_0_5,
                  time_to_reach_0_6, time_to_reach_0_7, time_to_reach_0_8, time_to_reach_0_9, time_to_reach_0_95, time_to_reach_0_99)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     self.trial_number,
@@ -498,6 +508,9 @@ class DRLogger:
                     float(results_dict.get("success_rate", 0.0)),
                     float(results_dict.get("collision_rate", 0.0)),
                     float(results_dict.get("unfinished_rate", 0.0)),
+                    float(results_dict.get("straight_fraction", 0.0)),
+                    float(results_dict.get("left_turn_fraction", 0.0)),
+                    float(results_dict.get("right_turn_fraction", 0.0)),
                     float(results_dict.get("comfort_score", 0.0)),
                     float(results_dict.get("normalized_score", 0.0)),
                     float(results_dict.get("mean_abs_accel_long", 0.0)),

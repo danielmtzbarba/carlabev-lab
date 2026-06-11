@@ -85,6 +85,21 @@ def main() -> None:
             for trial in trials
             if "final_unfinished_rate" in trial.user_attrs
         ]
+        straight = [
+            float(trial.user_attrs["final_straight_fraction"])
+            for trial in trials
+            if "final_straight_fraction" in trial.user_attrs
+        ]
+        left = [
+            float(trial.user_attrs["final_left_turn_fraction"])
+            for trial in trials
+            if "final_left_turn_fraction" in trial.user_attrs
+        ]
+        right = [
+            float(trial.user_attrs["final_right_turn_fraction"])
+            for trial in trials
+            if "final_right_turn_fraction" in trial.user_attrs
+        ]
         comfort_violations = [
             float(trial.user_attrs["final_comfort_violation_rate"])
             for trial in trials
@@ -111,6 +126,9 @@ def main() -> None:
                 "success_mean": _safe_mean(successes),
                 "collision_mean": _safe_mean(collisions),
                 "unfinished_mean": _safe_mean(unfinished),
+                "straight_mean": _safe_mean(straight),
+                "left_mean": _safe_mean(left),
+                "right_mean": _safe_mean(right),
                 "comfort_violation_mean": _safe_mean(comfort_violations),
                 "harsh_brake_mean": _safe_mean(harsh_brakes),
                 "return_mean": _safe_mean(returns),
@@ -141,6 +159,9 @@ def main() -> None:
     table.add_column("Success", justify="right")
     table.add_column("Collision", justify="right")
     table.add_column("Unfinished", justify="right")
+    table.add_column("Straight", justify="right")
+    table.add_column("Left", justify="right")
+    table.add_column("Right", justify="right")
     table.add_column("Comfort Viol", justify="right")
     table.add_column("Harsh Brake", justify="right")
     table.add_column("Return", justify="right")
@@ -161,6 +182,9 @@ def main() -> None:
             _fmt(row["success_mean"]),
             _fmt(row["collision_mean"]),
             _fmt(row["unfinished_mean"]),
+            _fmt(row["straight_mean"]),
+            _fmt(row["left_mean"]),
+            _fmt(row["right_mean"]),
             _fmt(row["comfort_violation_mean"]),
             _fmt(row["harsh_brake_mean"]),
             _fmt(row["return_mean"]),

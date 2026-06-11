@@ -62,6 +62,7 @@ class ExperimentConfigTests(unittest.TestCase):
             action_mode="continuous",
             action_profile_id="continuous_gsb_v1",
             obs_mode="bev_rgb",
+            route_direction_metrics_enabled=True,
             reward_mode="shaping",
             reward_profile_id="shaping_base_v1",
         )
@@ -74,6 +75,7 @@ class ExperimentConfigTests(unittest.TestCase):
         self.assertEqual(run_cfg.env.obs_mode, "bev_rgb")
         self.assertEqual(run_cfg.env.reward_mode, "shaping")
         self.assertEqual(run_cfg.env.map_name, "Town01")
+        self.assertTrue(run_cfg.env.route_direction_metrics_enabled)
         self.assertEqual(run_cfg.num_envs, 3)
 
     def test_save_run_config_persists_canonical_fields(self):

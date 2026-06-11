@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import os
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -10,10 +11,29 @@ from PIL import ImageFont
 
 
 def add_carlabev_repo_to_path() -> Path:
-    repo_root = Path("/Users/danielmtz/Data/projects/driverless/carlabev-env")
-    if str(repo_root) not in sys.path:
-        sys.path.insert(0, str(repo_root))
-    return repo_root
+    candidate_paths = []
+
+    env_repo = os.environ.get("CARLABEV_REPO")
+    if env_repo:
+        candidate_paths.append(Path(env_repo).expanduser())
+
+    lab_repo = Path(__file__).resolve().parents[2]
+    candidate_paths.extend(
+        [
+            lab_repo.with_name("carlabev-env"),
+            Path("/home/danielmtz/Projects/carlabev-env"),
+            Path("/Users/danielmtz/Data/projects/driverless/carlabev-env"),
+        ]
+    )
+
+    for repo_root in candidate_paths:
+        if (repo_root / "CarlaBEV").exists():
+            if str(repo_root) not in sys.path:
+                sys.path.insert(0, str(repo_root))
+            return repo_root
+
+    checked = ", ".join(str(path) for path in candidate_paths)
+    raise FileNotFoundError(f"Could not locate carlabev-env repo. Checked: {checked}")
 
 
 CARLABEV_REPO = add_carlabev_repo_to_path()
@@ -59,12 +79,16 @@ class SceneSample:
     sample_index: int
     applied_seed: int
     scene_signature: str
+    route_signature: str
     hero_x: float
     hero_y: float
     hero_yaw: float
     hero_speed: float
     route_length: float
     num_vehicles: int
+    route_profile: str
+    route_turn_count: int
+    route_intersection_like: bool
     straight_fraction: float
     left_turn_fraction: float
     right_turn_fraction: float
@@ -151,12 +175,16 @@ def load_scene_samples_csv(path: Path) -> list[SceneSample]:
                     sample_index=int(row["sample_index"]),
                     applied_seed=int(row["applied_seed"]),
                     scene_signature=row["scene_signature"],
+                    route_signature=row.get("route_signature", row["scene_signature"]),
                     hero_x=float(row["hero_x"]),
                     hero_y=float(row["hero_y"]),
                     hero_yaw=float(row["hero_yaw"]),
                     hero_speed=float(row["hero_speed"]),
                     route_length=float(row["route_length"]),
                     num_vehicles=int(row["num_vehicles"]),
+                    route_profile=row.get("route_profile", "unknown"),
+                    route_turn_count=int(row.get("route_turn_count", 0)),
+                    route_intersection_like=row.get("route_intersection_like", "False").lower() == "true",
                     straight_fraction=float(row["straight_fraction"]),
                     left_turn_fraction=float(row["left_turn_fraction"]),
                     right_turn_fraction=float(row["right_turn_fraction"]),

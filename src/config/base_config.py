@@ -65,6 +65,7 @@ class EnvConfig:
 
     traffic_enabled: bool
     max_vehicles: int
+    route_direction_metrics_enabled: bool
 
     reward_mode: str
     reward_profile_id: str
@@ -96,6 +97,7 @@ class EnvConfig:
         difficulty_id: str | None = None,
         traffic_enabled: bool = False,
         max_vehicles: int = 25,
+        route_direction_metrics_enabled: bool = True,
         reward_mode: str | None = None,
         reward_profile_id: str | None = None,
         obs_space: str | None = None,
@@ -156,6 +158,7 @@ class EnvConfig:
         self.difficulty_id = difficulty_id
         self.traffic_enabled = traffic_enabled
         self.max_vehicles = max_vehicles
+        self.route_direction_metrics_enabled = route_direction_metrics_enabled
         self.reward_mode = reward_mode
         self.reward_profile_id = reward_profile_id
 
@@ -240,6 +243,7 @@ class EnvConfig:
             "difficulty_id": self.difficulty_id,
             "traffic_enabled": self.traffic_enabled,
             "max_vehicles": self.max_vehicles,
+            "route_direction_metrics_enabled": self.route_direction_metrics_enabled,
             "reward_mode": self.reward_mode,
             "reward_profile_id": self.reward_profile_id,
         }
@@ -396,6 +400,7 @@ def to_carlabev_env_config(env_cfg: EnvConfig) -> CarlaBEVEnvConfig:
         reward_profile_id=env_cfg.reward_profile_id,
         traffic_enabled=env_cfg.traffic_enabled,
         max_vehicles=env_cfg.max_vehicles,
+        route_direction_metrics_enabled=env_cfg.route_direction_metrics_enabled,
     )
 
 

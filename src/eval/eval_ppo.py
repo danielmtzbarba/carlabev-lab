@@ -74,6 +74,11 @@ def _run_eval_protocol(eval_env, agent, cfg_eval, protocol_id, sampler, num_epis
     success_count = 0
     collision_count = 0
     unfinished_count = 0
+    route_direction_metrics = {
+        "straight_fraction": [],
+        "left_turn_fraction": [],
+        "right_turn_fraction": [],
+    }
     comfort_metrics = {
         "mean_abs_accel_long": [],
         "mean_abs_accel_lat": [],
@@ -143,6 +148,8 @@ def _run_eval_protocol(eval_env, agent, cfg_eval, protocol_id, sampler, num_epis
                 all_returns.append(float(ep_returns[i]))
                 all_lengths.append(int(ep_lengths[i]))
                 if ep_info is not None:
+                    for key in route_direction_metrics:
+                        route_direction_metrics[key].append(float(ep_info.get(key, [0.0] * num_envs)[i]))
                     for key in comfort_metrics:
                         comfort_metrics[key].append(float(ep_info.get(key, [0.0] * num_envs)[i]))
                 episodes_finished += 1
@@ -173,6 +180,8 @@ def _run_eval_protocol(eval_env, agent, cfg_eval, protocol_id, sampler, num_epis
         "collision_rate": collision_count / num_episodes,
         "unfinished_rate": unfinished_count / num_episodes,
     }
+    for key, values in route_direction_metrics.items():
+        results[key] = float(np.mean(values)) if values else 0.0
     for key, values in comfort_metrics.items():
         results[key] = float(np.mean(values)) if values else 0.0
     return results
@@ -188,6 +197,9 @@ def _aggregate_protocol_results(protocol_results):
             "success_rate": 0.0,
             "collision_rate": 0.0,
             "unfinished_rate": 0.0,
+            "straight_fraction": 0.0,
+            "left_turn_fraction": 0.0,
+            "right_turn_fraction": 0.0,
             "mean_abs_accel_long": 0.0,
             "mean_abs_accel_lat": 0.0,
             "mean_abs_jerk_long": 0.0,
@@ -205,6 +217,9 @@ def _aggregate_protocol_results(protocol_results):
         "success_rate",
         "collision_rate",
         "unfinished_rate",
+        "straight_fraction",
+        "left_turn_fraction",
+        "right_turn_fraction",
         "mean_abs_accel_long",
         "mean_abs_accel_lat",
         "mean_abs_jerk_long",
@@ -300,6 +315,9 @@ def evaluate_ppo(
     table.add_row("Success Rate", f"{aggregate['success_rate']*100:.1f}%")
     table.add_row("Collision Rate", f"{aggregate['collision_rate']*100:.1f}%")
     table.add_row("Unfinished Rate", f"{aggregate['unfinished_rate']*100:.1f}%")
+    table.add_row("Straight Fraction", f"{aggregate['straight_fraction']*100:.1f}%")
+    table.add_row("Left-Turn Fraction", f"{aggregate['left_turn_fraction']*100:.1f}%")
+    table.add_row("Right-Turn Fraction", f"{aggregate['right_turn_fraction']*100:.1f}%")
     table.add_row("Comfort Violation Rate", f"{aggregate['comfort_violation_rate']*100:.1f}%")
     table.add_row("Harsh Brake Rate", f"{aggregate['harsh_brake_rate']*100:.1f}%")
     table.add_row("Mean |Jerk Long|", f"{aggregate['mean_abs_jerk_long']:.3f}")
