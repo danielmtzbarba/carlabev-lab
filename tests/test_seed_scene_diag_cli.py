@@ -36,6 +36,10 @@ class SeedSceneDiagCliTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             _resolve_intersection_required(args)
 
+    def test_default_ego_route_graph_is_full_vehicle(self):
+        args = argparse.Namespace(ego_route_graph="full_vehicle")
+        self.assertEqual(args.ego_route_graph, "full_vehicle")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -208,6 +208,7 @@ def generate_dataset(
     max_turns: int | None = None,
     intersection_required: bool | None = None,
     max_route_attempts: int | None = None,
+    ego_route_graph: str = "full_vehicle",
     save_frames_per_pair: int,
     frame_size: int,
     output_dir: Path,
@@ -227,6 +228,7 @@ def generate_dataset(
         "max_turns": max_turns,
         "intersection_required": intersection_required,
         "max_route_attempts": max_route_attempts,
+        "ego_route_graph": ego_route_graph,
         "carlabev_repo": str(CARLABEV_REPO),
         "map_asset": str(town_map_asset_path("Town01", map_asset_size)),
         "pairs": {},
@@ -265,6 +267,7 @@ def generate_dataset(
                                 max_turns=max_turns,
                                 intersection_required=intersection_required,
                                 max_route_attempts=max_route_attempts,
+                                ego_route_graph=ego_route_graph,
                             )
                         )
                         frame, info = env.reset(seed=applied_seed, options=options)

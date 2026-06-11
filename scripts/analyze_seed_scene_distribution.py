@@ -43,6 +43,12 @@ def _add_shared_args(parser: argparse.ArgumentParser) -> None:
         help="'fixed' reuses the same seed on every reset. 'incremental' uses seed + sample_index.",
     )
     parser.add_argument(
+        "--ego-route-graph",
+        choices=["full_vehicle", "right_lane", "left_lane"],
+        default="full_vehicle",
+        help="Planner graph used for ego-route sampling.",
+    )
+    parser.add_argument(
         "--route-profile",
         choices=["any", "mostly_straight", "single_left", "single_right", "multi_turn", "mixed"],
         default=None,
@@ -284,6 +290,7 @@ def main(argv: list[str] | None = None) -> None:
             max_turns=args.max_turns,
             intersection_required=intersection_required,
             max_route_attempts=args.max_route_attempts,
+            ego_route_graph=args.ego_route_graph,
             save_frames_per_pair=args.save_frames_per_pair,
             frame_size=args.frame_size,
             output_dir=args.output_dir,
@@ -318,6 +325,7 @@ def main(argv: list[str] | None = None) -> None:
             max_turns=args.max_turns,
             intersection_required=intersection_required,
             max_route_attempts=args.max_route_attempts,
+            ego_route_graph=args.ego_route_graph,
             save_frames_per_pair=args.save_frames_per_pair,
             frame_size=args.frame_size,
             output_dir=args.output_dir,
