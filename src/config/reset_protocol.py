@@ -30,11 +30,51 @@ class ResetProtocolSampler:
         self.protocol = protocol
         self._cycle_index = 0
         self._rng = random.Random(self._protocol_seed())
+        self._per_env_reset_counts: list[int] = []
 
     def _protocol_seed(self) -> int:
         token = f"{self.cfg.seed}:{self.cfg.study_id}:{self.protocol.protocol_id}"
         digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
         return int(digest[:16], 16)
+
+    def _derive_seed(self, *parts: object) -> int:
+        token = ":".join(
+            [str(self.cfg.seed), self.cfg.study_id, self.protocol.protocol_id, *(str(part) for part in parts)]
+        )
+        digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        return int(digest[:16], 16) % (2**31 - 1)
+
+    def _ensure_env_state(self, num_envs: int) -> None:
+        if len(self._per_env_reset_counts) != num_envs:
+            self._per_env_reset_counts = [0 for _ in range(num_envs)]
+
+    def _seed_mode(self) -> str:
+        return getattr(self.protocol, "reset_seed_mode", "hashed_episode")
+
+    def _seed_for_env(self, env_index: int, reset_count: int) -> int:
+        seed_mode = self._seed_mode()
+        if seed_mode == "fixed":
+            return self._derive_seed("fixed", env_index)
+        if seed_mode == "incremental":
+            return self._derive_seed("incremental", env_index, 0) + reset_count
+        return self._derive_seed("hashed_episode", env_index, reset_count)
+
+    def initial_reset_seeds(self, num_envs: int) -> list[int]:
+        reset_mask = np.full((num_envs,), True, dtype=bool)
+        return self.next_reset_seeds(reset_mask)
+
+    def next_reset_seeds(self, reset_mask) -> list[int]:
+        reset_mask = np.asarray(reset_mask, dtype=bool)
+        num_envs = len(reset_mask)
+        self._ensure_env_state(num_envs)
+        seeds = [
+            self._seed_for_env(env_index, self._per_env_reset_counts[env_index])
+            for env_index in range(num_envs)
+        ]
+        for env_index, should_reset in enumerate(reset_mask):
+            if should_reset:
+                self._per_env_reset_counts[env_index] += 1
+        return seeds
 
     def initial_options(self, num_envs: int) -> dict:
         return self.next_options(np.full((num_envs,), True, dtype=bool))

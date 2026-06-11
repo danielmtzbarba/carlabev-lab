@@ -23,6 +23,7 @@ class ExperimentConfigTests(unittest.TestCase):
                 action_space="continuous",
                 traffic="on",
                 input_type="masks",
+                semantic_mask_ch="6-class",
                 reward_type="carl",
                 curriculum="route_only",
                 fov_mask="on",
@@ -54,14 +55,16 @@ class ExperimentConfigTests(unittest.TestCase):
         self.assertEqual(args.env.input_type, "rgb")
         self.assertEqual(args.env.reward_mode, "shaping")
         self.assertEqual(args.env.obs_mode, "bev_rgb")
-        self.assertIn("_act-discrete", args.exp_name)
-        self.assertIn("_rwd-shaping", args.exp_name)
+        self.assertEqual(args.exp_name, "PPO_NAVIGATION_e1_s1000")
 
     def test_to_carlabev_run_config_returns_public_run_config(self):
-        env = EnvConfig()
-        env.action_mode = "continuous"
-        env.input_type = "rgb"
-        env.reward_mode = "shaping"
+        env = EnvConfig(
+            action_mode="continuous",
+            action_profile_id="continuous_gsb_v1",
+            obs_mode="bev_rgb",
+            reward_mode="shaping",
+            reward_profile_id="shaping_base_v1",
+        )
         args = ArgsCarlaBEV(env=env, num_envs=3, capture_video=False)
 
         run_cfg = to_carlabev_run_config(args)
@@ -81,7 +84,7 @@ class ExperimentConfigTests(unittest.TestCase):
                 import os
                 os.chdir(tmpdir)
                 save_run_config(args)
-                config_path = Path("runs") / args.exp_name / "config.yaml"
+                config_path = Path(args.run_dir) / "config.yaml"
                 payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
             finally:
                 os.chdir(cwd)
@@ -106,6 +109,40 @@ class ResetProtocolTests(unittest.TestCase):
         self.assertEqual(options["protocol_id"], "random_nav_train")
         self.assertEqual(options["protocol_mode"], "random_navigation")
         self.assertTrue(np.array_equal(options["reset_mask"], np.array([True, True])))
+
+    def test_random_navigation_sampler_reset_seeds_are_reproducible_and_diverse(self):
+        args = ArgsCarlaBEV(train_protocol_id="random_nav_train", seed=1234)
+        sampler_a = build_train_protocol_sampler(args)
+        sampler_b = build_train_protocol_sampler(args)
+
+        initial_a = sampler_a.initial_reset_seeds(3)
+        initial_b = sampler_b.initial_reset_seeds(3)
+        next_a = sampler_a.next_reset_seeds(np.array([True, False, True], dtype=bool))
+        next_b = sampler_b.next_reset_seeds(np.array([True, False, True], dtype=bool))
+
+        self.assertEqual(initial_a, initial_b)
+        self.assertEqual(next_a, next_b)
+        self.assertEqual(len(set(initial_a)), 3)
+        self.assertNotEqual(initial_a[0], next_a[0])
+        self.assertNotEqual(initial_a[2], next_a[2])
+
+        third_a = sampler_a.next_reset_seeds(np.array([False, False, False], dtype=bool))
+        third_b = sampler_b.next_reset_seeds(np.array([False, False, False], dtype=bool))
+        self.assertEqual(third_a, third_b)
+        self.assertEqual(next_a[1], third_a[1])
+
+    def test_fixed_seed_mode_repeats_seed_per_env_slot(self):
+        args = ArgsCarlaBEV(train_protocol_id="random_nav_train", seed=77)
+        protocol = get_train_protocol(args.study_id, "random_nav_train").model_copy(
+            update={"reset_seed_mode": "fixed"}
+        )
+        sampler = ResetProtocolSampler(args, protocol)
+
+        initial = sampler.initial_reset_seeds(2)
+        next_reset = sampler.next_reset_seeds(np.array([True, True], dtype=bool))
+
+        self.assertEqual(initial, next_reset)
+        self.assertNotEqual(initial[0], initial[1])
 
     def test_scenario_catalog_sampler_uses_public_reset_builder(self):
         args = ArgsCarlaBEV(study_id="EDGE_CASE_SCENARIOS")

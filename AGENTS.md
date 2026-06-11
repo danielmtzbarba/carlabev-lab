@@ -129,6 +129,7 @@ Agents working in this repo should keep these in mind:
 5. `phase2b.py` does not set `args.logging.db_path` explicitly, although `run_experiment()` later fills it in for active trials.
 6. `src/utils/logger.py` writes benchmark keys like `time_to_reach_0.1`, but the SQLite insert reads `time_to_reach_0_1`; those names do not match.
 7. `optuna_analysis.py` labels its theme helpers as “dark” while using a light palette; that is cosmetic drift, not architectural drift.
+8. `random_navigation` reset seeding is now deterministic per env slot and episode through `ResetProtocolSampler`, but `scenario_catalog` still shares one authored-scene options payload across envs participating in the same vector reset call.
 
 Do not silently “normalize” these unless the task is explicitly to clean them up.
 

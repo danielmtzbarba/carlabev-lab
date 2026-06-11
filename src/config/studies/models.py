@@ -114,6 +114,7 @@ class RandomNavigationProtocol(BaseModel):
 
     protocol_id: str
     mode: Literal["random_navigation"]
+    reset_seed_mode: Literal["fixed", "incremental", "hashed_episode"] = "hashed_episode"
     initial_num_vehicles: int = 0
     initial_route_dist_range: tuple[int, int] = (50, 150)
     eval_num_vehicles: int = 25

@@ -132,6 +132,37 @@ For authored-scene studies, the reset protocol can also declare:
 
 This allows train/eval variation policy to remain fully declarative.
 
+### Reset Seed Scheduling
+
+The active PPO path now separates:
+
+- run seed: experiment identity and reproducibility anchor
+- reset seed schedule: episode-to-episode and env-slot diversity
+
+For `random_navigation` protocols, the reset sampler derives deterministic
+per-env, per-episode seeds from the top-level run seed and protocol id.
+
+Current modes:
+
+- `fixed`: each env slot reuses its own fixed reset seed across episodes
+- `incremental`: each env slot advances a deterministic counter-based seed
+- `hashed_episode`: each env slot gets a hashed `(run_seed, protocol_id, env_slot, reset_count)` seed
+
+The default navigation setting is `hashed_episode`.
+
+Practical consequences:
+
+- parallel env slots no longer collapse onto the same reset seed
+- episode diversity is maintained inside a run
+- rerunning with the same top-level run seed reproduces the same reset-seed schedule
+
+Current limitation:
+
+- `scenario_catalog` protocols still build one shared reset options payload per
+  vector reset call, so authored-scene entry choice is not yet independently
+  diversified per env slot in the same reset wave
+- this does not affect the random-navigation seed pathology fix
+
 ### Manual Runs vs Optuna
 
 A normal training command such as:
@@ -264,6 +295,11 @@ Behavior of the current plots:
 - default spawn clustering merges nearby starts within a `16`-pixel radius and shows the top `10` clusters
 
 If you still want the original one-command workflow, the script defaults to `full` mode when no subcommand is provided.
+
+Interpretation after the seed fix:
+
+- `fixed` is the old collapse mode and is useful as a control
+- `incremental` and the lab runtime `hashed_episode` mode are the diversity-preserving settings
 
 ### Run Artifact Layout
 

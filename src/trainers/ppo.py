@@ -118,8 +118,9 @@ def train_ppo(cfg, envs, logger, device, trial=None):
 
     train_sampler = build_train_protocol_sampler(cfg)
     options = train_sampler.initial_options(num_envs)
+    reset_seeds = train_sampler.initial_reset_seeds(num_envs)
 
-    next_obs, _ = envs.reset(seed=cfg.seed, options=options)
+    next_obs, _ = envs.reset(seed=reset_seeds, options=options)
     next_obs = torch.as_tensor(next_obs, dtype=torch.float32, device=device)
     next_done = torch.zeros(num_envs, dtype=torch.float32, device=device)
 
@@ -202,6 +203,7 @@ def train_ppo(cfg, envs, logger, device, trial=None):
             # Compute done flags
             dones_np = np.logical_or(terminations, truncations)
 
+            mean_return = None
             # Episode logging for every finished env
             for i, ended in enumerate(terminations):
                 if ended:
@@ -214,14 +216,14 @@ def train_ppo(cfg, envs, logger, device, trial=None):
                         infos["episode_info"], mean_return, i, global_step
                     )
 
-                    # === Reset the finished env ===
-                    options = train_sampler.next_options(
-                        reset_mask=dones_np,
-                        mean_return=mean_return,
-                        curriculum_state=curr_state,
-                    )
-                    # reset() returns FULL batch of obs for ALL envs
-                    next_obs_np, reset_info = envs.reset(seed=cfg.seed, options=options)
+            if np.any(dones_np):
+                options = train_sampler.next_options(
+                    reset_mask=dones_np,
+                    mean_return=mean_return,
+                    curriculum_state=curr_state,
+                )
+                reset_seeds = train_sampler.next_reset_seeds(dones_np)
+                next_obs_np, _ = envs.reset(seed=reset_seeds, options=options)
 
             # === Convert to tensors for buffer storage ===
             next_obs = torch.as_tensor(next_obs_np, dtype=torch.float32, device=device)

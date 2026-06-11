@@ -40,7 +40,8 @@ def _capture_protocol_videos(cfg, agent, protocol_id, num_episodes, output_dir, 
     sampler = build_eval_protocol_samplers(cfg_capture, [protocol_id])[protocol_id]
 
     options = sampler.initial_options(1)
-    obs, _ = capture_env.reset(seed=cfg_capture.seed, options=options)
+    reset_seeds = sampler.initial_reset_seeds(1)
+    obs, _ = capture_env.reset(seed=reset_seeds, options=options)
     obs_t = torch.tensor(obs, dtype=torch.float32, device=device)
     episodes_finished = 0
 
@@ -59,7 +60,7 @@ def _capture_protocol_videos(cfg, agent, protocol_id, num_episodes, output_dir, 
             episodes_finished += 1
             if episodes_finished < num_episodes:
                 next_obs, _ = capture_env.reset(
-                    seed=cfg_capture.seed,
+                    seed=sampler.next_reset_seeds(np.array([True], dtype=bool)),
                     options=sampler.next_options(reset_mask=np.array([True], dtype=bool)),
                 )
 
@@ -89,7 +90,8 @@ def _run_eval_protocol(eval_env, agent, cfg_eval, protocol_id, sampler, num_epis
     ep_lengths = np.zeros(num_envs, dtype=np.int32)
 
     options = sampler.initial_options(num_envs)
-    obs, _ = eval_env.reset(seed=cfg_eval.seed, options=options)
+    reset_seeds = sampler.initial_reset_seeds(num_envs)
+    obs, _ = eval_env.reset(seed=reset_seeds, options=options)
     obs_t = torch.tensor(obs, dtype=torch.float32, device=device)
 
     episodes_finished = 0
@@ -151,7 +153,7 @@ def _run_eval_protocol(eval_env, agent, cfg_eval, protocol_id, sampler, num_epis
 
             if np.any(done) and episodes_finished < num_episodes:
                 next_obs, _ = eval_env.reset(
-                    seed=cfg_eval.seed,
+                    seed=sampler.next_reset_seeds(done.copy()),
                     options=sampler.next_options(reset_mask=done.copy()),
                 )
 
