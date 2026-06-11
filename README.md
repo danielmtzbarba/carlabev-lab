@@ -212,6 +212,59 @@ uv run python scripts/print_normalized_study_leaderboard.py \
   --top-k 6
 ```
 
+### Seed Scene Diagnostics
+
+The seed-scene diagnostic tooling is now split into two stages so you do not need to rerun the simulator every time you tweak the figures.
+
+Run the expensive data-generation pass once:
+
+```bash
+uv run python scripts/analyze_seed_scene_distribution.py analyze \
+  --difficulty-ids rt_medium_v1 \
+  --samples-per-seed 1000 \
+  --seed-mode incremental \
+  --save-frames-per-pair 6 \
+  --output-dir results/seed_scene_diag_medium_incremental
+```
+
+This writes reusable artifacts for each `(difficulty, seed)` pair:
+
+```text
+results/seed_scene_diag_medium_incremental/
+  summary.json
+  all_samples.csv
+  <difficulty_id>/
+    seed_<seed>/
+      samples.csv
+      spawn_points.csv
+      route_points.csv
+      frames/
+```
+
+Re-render figures from those saved artifacts without touching the simulator:
+
+```bash
+uv run python scripts/analyze_seed_scene_distribution.py visualize \
+  --output-dir results/seed_scene_diag_medium_incremental
+```
+
+Spawn clustering is visualization-only and can be tuned without rerunning analysis:
+
+```bash
+uv run python scripts/analyze_seed_scene_distribution.py visualize \
+  --output-dir results/seed_scene_diag_medium_incremental \
+  --spawn-cluster-radius 20 \
+  --spawn-top-k 10
+```
+
+Behavior of the current plots:
+
+- `spawn_*`: top repeated spawn zones shown as numbered cluster centroids
+- `route_*`: route corridor density heatmaps
+- default spawn clustering merges nearby starts within a `16`-pixel radius and shows the top `10` clusters
+
+If you still want the original one-command workflow, the script defaults to `full` mode when no subcommand is provided.
+
 ### Run Artifact Layout
 
 Study runs now use a short, structured scaffold instead of long descriptive folder names:
