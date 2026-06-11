@@ -13,6 +13,7 @@ from src.config.experiment_loader import apply_experiment_config, save_run_confi
 from src.config.reset_protocol import ResetProtocolSampler, build_train_protocol_sampler
 from src.config.studies.models import ExperimentSpec
 from src.config.studies.registry import get_train_protocol
+from src.tuning.optuna_utils import resolve_study_prime_seeds
 
 
 class ExperimentConfigTests(unittest.TestCase):
@@ -100,6 +101,12 @@ class ExperimentConfigTests(unittest.TestCase):
 
 
 class ResetProtocolTests(unittest.TestCase):
+    def test_optuna_prime_seed_schedule_uses_shared_first_ten_primes(self):
+        self.assertEqual(
+            resolve_study_prime_seeds(10),
+            [2, 3, 5, 7, 11, 13, 17, 19, 23, 29],
+        )
+
     def test_random_navigation_sampler_uses_public_reset_builder(self):
         args = ArgsCarlaBEV(train_protocol_id="random_nav_train")
         sampler = build_train_protocol_sampler(args)

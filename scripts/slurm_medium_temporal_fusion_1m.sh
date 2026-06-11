@@ -7,7 +7,7 @@
 #SBATCH --cpus-per-task=14
 #SBATCH --gres=gpu:1
 #SBATCH --time=04:00:00
-#SBATCH --array=1-9
+#SBATCH --array=1-30
 
 # 1M-step medium-difficulty temporal-fusion ablation:
 #   PPO_NAVIGATION_MEDIUM_TEMPORAL_FUSION
@@ -18,7 +18,7 @@
 #   exp 3 = vehicle_weighted
 #
 # Seeds:
-#   0, 555, 9999
+#   2, 3, 5, 7, 11, 13, 17, 19, 23, 29
 #
 # Run artifacts now land under:
 #   runs/PPO_NAVIGATION_MEDIUM_TEMPORAL_FUSION/exp_<exp_id>/trial_<trial>/seed_<seed>/
@@ -32,17 +32,16 @@ TOTAL_TIMESTEPS=1000000
 EVAL_EPISODES=100
 FINAL_EVAL_EPISODES=1000
 
-EXP_IDS=(
-    1 1 1
-    2 2 2
-    3 3 3
-)
-
-SEEDS=(
-    0 555 9999
-    0 555 9999
-    0 555 9999
-)
+PRIME_SEEDS=(2 3 5 7 11 13 17 19 23 29)
+EXP_VARIANTS=(1 2 3)
+EXP_IDS=()
+SEEDS=()
+for exp_id in "${EXP_VARIANTS[@]}"; do
+    for seed in "${PRIME_SEEDS[@]}"; do
+        EXP_IDS+=("${exp_id}")
+        SEEDS+=("${seed}")
+    done
+done
 
 module purge
 

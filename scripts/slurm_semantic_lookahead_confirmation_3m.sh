@@ -7,7 +7,7 @@
 #SBATCH --cpus-per-task=14
 #SBATCH --gres=gpu:1
 #SBATCH --time=05:00:00
-#SBATCH --array=1-12
+#SBATCH --array=1-40
 
 # 3M-step confirmation pass for the top semantic/lookahead configurations:
 #   exp 3 = 2-class, center
@@ -15,7 +15,7 @@
 #   exp 5 = 4-class, center
 #   exp 6 = 4-class, lookahead_75
 #
-# Runs 3 seeds per experiment under the same study:
+# Runs 10 prime seeds per experiment under the same study:
 #   PPO_NAVIGATION_SEMANTIC_LOOKAHEAD
 
 set -euo pipefail
@@ -27,19 +27,16 @@ TOTAL_TIMESTEPS=3000000
 EVAL_EPISODES=30
 FINAL_EVAL_EPISODES=100
 
-EXP_IDS=(
-    3 3 3
-    4 4 4
-    5 5 5
-    6 6 6
-)
-
-SEEDS=(
-    0 1 2
-    0 1 2
-    0 1 2
-    0 1 2
-)
+PRIME_SEEDS=(2 3 5 7 11 13 17 19 23 29)
+EXP_VARIANTS=(3 4 5 6)
+EXP_IDS=()
+SEEDS=()
+for exp_id in "${EXP_VARIANTS[@]}"; do
+    for seed in "${PRIME_SEEDS[@]}"; do
+        EXP_IDS+=("${exp_id}")
+        SEEDS+=("${seed}")
+    done
+done
 
 module purge
 

@@ -7,7 +7,7 @@
 #SBATCH --cpus-per-task=14
 #SBATCH --gres=gpu:1
 #SBATCH --time=04:00:00
-#SBATCH --array=1-18
+#SBATCH --array=1-60
 
 # Run artifacts now land under:
 #   runs/PPO_NAVIGATION_MEDIUM_SEMANTIC_CLASSES/exp_<exp_id>/trial_<trial>/seed_<seed>/
@@ -21,23 +21,16 @@ TOTAL_TIMESTEPS=1000000
 EVAL_EPISODES=100
 FINAL_EVAL_EPISODES=1000
 
-EXP_IDS=(
-    1 1 1
-    2 2 2
-    3 3 3
-    4 4 4
-    5 5 5
-    6 6 6
-)
-
-SEEDS=(
-    0 555 9999
-    0 555 9999
-    0 555 9999
-    0 555 9999
-    0 555 9999
-    0 555 9999
-)
+PRIME_SEEDS=(2 3 5 7 11 13 17 19 23 29)
+EXP_VARIANTS=(1 2 3 4 5 6)
+EXP_IDS=()
+SEEDS=()
+for exp_id in "${EXP_VARIANTS[@]}"; do
+    for seed in "${PRIME_SEEDS[@]}"; do
+        EXP_IDS+=("${exp_id}")
+        SEEDS+=("${seed}")
+    done
+done
 
 module purge
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK}"

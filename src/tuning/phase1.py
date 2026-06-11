@@ -4,7 +4,7 @@ import optuna
 
 from src.config.base_config import ArgsCarlaBEV
 from src.config.experiment_loader import get_study_db_path, run_experiment
-from src.tuning.optuna_utils import OptunaArgs
+from src.tuning.optuna_utils import OptunaArgs, resolve_study_prime_seeds
 
 def phase_1_objective(trial: optuna.Trial, base_args: ArgsCarlaBEV, opt_args: OptunaArgs) -> float:
     """Tunes Continuous Learning Dynamics (LR, Lambda, Gamma)"""
@@ -14,14 +14,12 @@ def phase_1_objective(trial: optuna.Trial, base_args: ArgsCarlaBEV, opt_args: Op
     sampled_gamma = trial.suggest_float("gamma", 0.98, 0.9995)
 
     scores = []
-    base_seed = base_args.seed
-    
-    # Robust seeding: ensures independence across trials but strict reproducibility
-    trial_offset = trial.number * 10000
+    study_seeds = resolve_study_prime_seeds(opt_args.num_seeds)
+    trial.set_user_attr("seed_set", study_seeds)
 
-    for i in range(opt_args.num_seeds):
+    for i, study_seed in enumerate(study_seeds):
         args = copy.deepcopy(base_args)
-        args.seed = base_seed + trial_offset + i
+        args.seed = study_seed
         
         args.ppo.learning_rate = sampled_lr
         args.ppo.gae_lambda = sampled_gae_lambda

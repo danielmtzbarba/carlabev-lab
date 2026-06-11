@@ -4,7 +4,7 @@ import optuna
 
 from src.config.base_config import ArgsCarlaBEV
 from src.config.experiment_loader import run_experiment
-from src.tuning.optuna_utils import OptunaArgs
+from src.tuning.optuna_utils import OptunaArgs, resolve_study_prime_seeds
 
 def phase_2b_objective(trial: optuna.Trial, base_args: ArgsCarlaBEV, opt_args: OptunaArgs, top_params: dict) -> float:
     """Tunes PPO Coefficients and Regularizations using top categorical and continuous params"""
@@ -21,14 +21,12 @@ def phase_2b_objective(trial: optuna.Trial, base_args: ArgsCarlaBEV, opt_args: O
     sampled_clip_decay_factor = trial.suggest_float("clip_decay_factor", 0.4, 0.9)
 
     scores = []
-    base_seed = base_args.seed
-
-    # Robust seeding: ensures independence across trials but strict reproducibility
-    trial_offset = trial.number * 10000
+    study_seeds = resolve_study_prime_seeds(opt_args.num_seeds)
+    trial.set_user_attr("seed_set", study_seeds)
     
-    for i in range(opt_args.num_seeds):
+    for i, study_seed in enumerate(study_seeds):
         args = copy.deepcopy(base_args)
-        args.seed = base_seed + trial_offset + i
+        args.seed = study_seed
         
         # Apply the best fixed parameters from Phase 1 and 2a
         args.ppo.learning_rate = top_params["learning_rate"]

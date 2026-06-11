@@ -156,6 +156,12 @@ Practical consequences:
 - episode diversity is maintained inside a run
 - rerunning with the same top-level run seed reproduces the same reset-seed schedule
 
+Study-level seed policy:
+
+- Optuna phases and the main study launchers now use the shared 10-prime seed set
+- `2, 3, 5, 7, 11, 13, 17, 19, 23, 29`
+- this keeps study comparisons aligned across trials, studies, and manual sweeps
+
 Current limitation:
 
 - `scenario_catalog` protocols still build one shared reset options payload per
