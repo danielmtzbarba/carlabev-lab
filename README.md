@@ -28,7 +28,7 @@ By natively combining **Stable Baselines3** with high-performance hyperparameter
 
 ## ✨ Key Features
 
-- 🧠 **Ready-to-run RL Models:** Instantly train models using Stable Baselines3 (`PPO`, `SAC`, etc.) directly on the CarlaBEV simulations.
+- 🧠 **Study-driven PPO training:** Train and evaluate the maintained PPO navigation and scenario studies directly on CarlaBEV simulations.
 - 🎛️ **Massive Parallel Tuning:** Integrates robust Optuna searches with an SQLite backend, utilizing `constant_liar` sampling and connection timeouts for conflict-free concurrent parameter optimization.
 - 🖥️ **HPC Grid Search Ready:** Out-of-the-box support for generating Slurm Job Arrays to run immense GPU searches efficiently across massive computing clusters.
 - 📊 **Rich Analysis & Visualization:** Instantly generate HTML visualizations (Parameter Importance, Parallel Coordinates, Optimization History) of any search.
@@ -71,8 +71,8 @@ Hook behavior:
 
 ```bash
 uv run python train.py exp --study-id PPO_NAVIGATION --exp-id 26
-uv run python eval.py
-uv run python test.py
+uv run python eval.py exp --study-id PPO_NAVIGATION --exp-id 26
+uv run pytest
 ```
 
 ### Configuration Contract
@@ -90,7 +90,7 @@ For the current study path, the preferred declarative selectors are the profile 
 - `action_profile_id`
 - `reward_profile_id`
 
-Legacy aliases such as `obs_space`, `action_space`, and `reward_type` are still accepted for compatibility, but they emit deprecation warnings and are only retained at the boundary of older configs or experiments.
+Legacy aliases such as `obs_space`, `action_space`, and `reward_type` are still accepted for compatibility, but they emit deprecation warnings and are intended only as migration shims at older config boundaries.
 
 ### Study Registry
 
@@ -99,7 +99,7 @@ Experiments are now organized under named studies instead of one global mutable 
 - A study contains metadata, its Optuna study name, its SQLite database path, train/eval protocol registries, and a dictionary of `exp_id -> ExperimentSpec`.
 - Study definitions live in separate modules under `src/config/studies/`.
 - Registry and lookup helpers live in `src/config/studies/registry.py`.
-- `PPO_NAVIGATION` is the default migrated navigation study containing the original 29 experiment variants.
+- `PPO_NAVIGATION` is the default migrated navigation study and currently contains 31 experiment variants.
 - `EDGE_CASE_SCENARIOS` is a second study for curated hazardous scenarios such as `jaywalk`, `lead_brake`, and `red_light_runner`.
 - Authored edge-case scenes are copied locally under `assets/scenes/` and grouped by family through `src/config/authored_scenarios.py`.
 - Authored-scene variation behavior is declared in the study protocol specs, not hardcoded in trainers:
@@ -411,13 +411,14 @@ This loads the Optuna study configured for `PPO_NAVIGATION`, filters to experime
 
 ## 🗺️ System Architecture
 
-The project splits the Deep RL process cleanly from tuning logic:
-- `src/agents/`: Definitions, policy constructors, and hyperparameter ingestion.
-- `src/config/`: Study registry, typed experiment definitions, and configuration loaders that bridge CLI arguments to the SB3 training loops.
+The project splits the PPO training flow cleanly from tuning logic:
+- `src/agents/`: PPO policy and backbone constructors used by the maintained study path.
+- `src/config/`: Study registry, typed experiment definitions, and configuration loaders that bridge CLI arguments to CarlaBEV run configs.
 - `src/config/reset_protocol.py`: Shared train/eval reset samplers built from study protocol definitions.
-- `src/trainers/`: Main logic for initializing `CarlaBEV` environments, applying Gym Wrappers, and training via model checkpoints.
-- `src/tuning/`: Contains the distributed Optuna optimizer logic (`optuna_tuner.py`), and visualization toolings (`optuna_analysis.py`).
-- `scripts/`: Collection of Bash scripts for HPC massive slurm-launch grid scaling.
+- `src/trainers/`: PPO training loop and checkpoint/evaluation orchestration.
+- `src/eval/`: PPO evaluation, protocol aggregation, and study scoring.
+- `src/tuning/`: Distributed Optuna orchestration (`optuna_tuner.py`) and analysis tooling (`optuna_analysis.py`).
+- `scripts/`: Slurm launchers and study/result inspection utilities.
 
 ---
 
