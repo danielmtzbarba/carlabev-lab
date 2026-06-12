@@ -1,13 +1,14 @@
-
+import sys
 import warnings
 
-from src.config.experiment_loader import load_experiment, run_experiment
+from src.drl_cli import run_train_command
 
 warnings.filterwarnings("ignore")
 
-def main():
-    cfg = load_experiment()
-    run_experiment(cfg)
+
+def main(argv=None):
+    return run_train_command(sys.argv[1:] if argv is None else argv)
+
 
 if __name__ == "__main__":
     main()
