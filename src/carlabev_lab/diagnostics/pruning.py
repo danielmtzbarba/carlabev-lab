@@ -4,7 +4,7 @@ import pandas as pd
 from src.tuning.engine import trial_stage_name
 
 
-def check_median():
+def check_median() -> None:
     study = optuna.load_study(
         study_name="carlabev",
         storage="sqlite:///results/carlabev_optuna.db",
@@ -61,4 +61,9 @@ def check_median():
         )
 
 
-check_median()
+def main() -> None:
+    check_median()
+
+
+if __name__ == "__main__":
+    main()

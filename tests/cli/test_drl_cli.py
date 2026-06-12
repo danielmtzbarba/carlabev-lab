@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-import src.drl_cli as drl_cli
+import src.carlabev_lab.cli.main as drl_cli
 
 
 @pytest.mark.unit
@@ -17,7 +17,7 @@ def test_main_dispatches_train_command(monkeypatch):
 
     monkeypatch.setattr(drl_cli, "run_train_command", fake_train)
 
-    result = drl_cli.main(["run", "train", "exp", "--exp-id", "26"])
+    result = drl_cli.main(["train", "exp", "--exp-id", "26"])
 
     assert result == "trained"
     assert captured["argv"] == ["exp", "--exp-id", "26"]
@@ -37,6 +37,22 @@ def test_main_dispatches_tune_run_command(monkeypatch):
 
     assert result == "tuned"
     assert captured["argv"] == ["--study-id", "PPO_NAVIGATION"]
+
+
+@pytest.mark.unit
+def test_main_accepts_legacy_run_train_alias(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_train(argv):
+        captured["argv"] = list(argv)
+        return "trained"
+
+    monkeypatch.setattr(drl_cli, "run_train_command", fake_train)
+
+    result = drl_cli.main(["run", "train", "exp", "--exp-id", "26"])
+
+    assert result == "trained"
+    assert captured["argv"] == ["exp", "--exp-id", "26"]
 
 
 @pytest.mark.unit

@@ -28,7 +28,8 @@ dependencies = [
 ]
 
 [project.scripts]
-drl = "src.drl_cli:main"
+carlabev-lab = "src.carlabev_lab.cli.main:main"
+drl = "src.carlabev_lab.cli.main:main"
 
 [dependency-groups]
 dev = [

@@ -4,15 +4,12 @@ import argparse
 import sys
 from pathlib import Path
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-if str(SCRIPT_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPT_DIR))
-
-from seed_scene_diag.analysis import generate_dataset
-from seed_scene_diag.common import DEFAULT_MAP_ASSET_SIZE
-from seed_scene_diag.visualization import render_from_artifacts
 from rich.console import Console
 from rich.table import Table
+
+from .seed_scene_diag.analysis import generate_dataset
+from .seed_scene_diag.common import DEFAULT_MAP_ASSET_SIZE
+from .seed_scene_diag.visualization import render_from_artifacts
 
 
 def _add_shared_args(parser: argparse.ArgumentParser) -> None:

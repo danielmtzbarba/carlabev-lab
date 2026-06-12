@@ -1,28 +1,33 @@
 #!/bin/bash
-#SBATCH --job-name=carlabev_med_sem_1m
-#SBATCH --output=results/logs/medium_semantic_classes_1m_%A_%a.out
-#SBATCH --error=results/logs/medium_semantic_classes_1m_%A_%a.err
+#SBATCH --job-name=carlabev_difficulty_1m
+#SBATCH --output=results/logs/difficulty_1m_%A_%a.out
+#SBATCH --error=results/logs/difficulty_1m_%A_%a.err
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=14
 #SBATCH --gres=gpu:1
 #SBATCH --time=04:00:00
-#SBATCH --array=1-60
+#SBATCH --array=1-40
 
 # Run artifacts now land under:
-#   runs/PPO_NAVIGATION_MEDIUM_SEMANTIC_CLASSES/exp_<exp_id>/trial_<trial>/seed_<seed>/
+#   runs/PPO_NAVIGATION_DIFFICULTY/exp_<exp_id>/trial_<trial>/seed_<seed>/
 # with checkpoints/, eval/, and videos/ subdirectories per run.
+#
+# Video plan for 1M runs:
+#   - 20 training probe videos
+#   - 5 intermediate-eval videos per scheduled eval
+#   - 10 final-eval videos across the 1000 final episodes
 
 set -euo pipefail
 
-STUDY_ID="PPO_NAVIGATION_MEDIUM_SEMANTIC_CLASSES"
+STUDY_ID="PPO_NAVIGATION_DIFFICULTY"
 
 TOTAL_TIMESTEPS=1000000
 EVAL_EPISODES=100
 FINAL_EVAL_EPISODES=1000
 
 PRIME_SEEDS=(2 3 5 7 11 13 17 19 23 29)
-EXP_VARIANTS=(1 2 3 4 5 6)
+EXP_VARIANTS=(1 2 3 4)
 EXP_IDS=()
 SEEDS=()
 for exp_id in "${EXP_VARIANTS[@]}"; do
@@ -53,7 +58,7 @@ fi
 EXP_ID="${EXP_IDS[$ARRAY_INDEX]}"
 SEED="${SEEDS[$ARRAY_INDEX]}"
 
-echo "Starting medium semantic-classes ablation on node: $(hostname)"
+echo "Starting difficulty ablation on node: $(hostname)"
 echo "Array Task ID: ${SLURM_ARRAY_TASK_ID}"
 echo "Resolved study_id: ${STUDY_ID}"
 echo "Resolved exp_id: ${EXP_ID}"
@@ -64,7 +69,7 @@ sleep_time=$(((SLURM_ARRAY_TASK_ID - 1) * 20))
 echo "Sleeping ${sleep_time}s before launch..."
 sleep "${sleep_time}"
 
-srun env PYTHONUNBUFFERED=1 uv run drl run train exp \
+srun env PYTHONUNBUFFERED=1 uv run carlabev-lab train exp \
     --study-id "${STUDY_ID}" \
     --exp-id "${EXP_ID}" \
     --seed "${SEED}" \

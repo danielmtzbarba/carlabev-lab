@@ -33,7 +33,7 @@ These assets were generated from a representative `rt_medium_v1` simulator scene
 Regenerate all assets with:
 
 ```bash
-uv run python scripts/generate_medium_report_figures.py
+uv run carlabev-lab results medium-report
 ```
 
 ## Study Artifact Layout

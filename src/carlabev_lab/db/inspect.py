@@ -4,15 +4,10 @@ from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 import sqlite3
-import sys
 
 from rich.console import Console
 from rich.table import Table
 import tyro
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.config.experiment_loader import get_study_db_path
 

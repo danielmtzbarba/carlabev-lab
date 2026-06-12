@@ -52,6 +52,25 @@ CarlaBEV-Lab depends directly on `CarlaBEV` being locally accessible. Use [`uv`]
 
 To verify everything is working, you can manually execute an evaluation, debugging loop, or train a base agent.
 
+### CLI Entry Point
+
+The packaged CLI is now the primary way to interact with the lab:
+
+```bash
+uv run carlabev-lab --help
+```
+
+The main command groups are:
+
+- `train`: run one configured study experiment
+- `eval`: evaluate the latest run for a configured study experiment
+- `tune`: launch or analyze Optuna tuning stages
+- `results`: inspect leaderboards, plots, and report assets
+- `db`: inspect or clean Optuna state
+- `diagnostics`: run seed-scene and pruning diagnostics
+
+The legacy `drl` command remains available as a compatibility alias, but new docs and scripts use `carlabev-lab`.
+
 ### Git Hooks
 
 This repo uses `pre-commit` to run local quality checks.
@@ -59,7 +78,7 @@ This repo uses `pre-commit` to run local quality checks.
 Install the hooks once per clone:
 
 ```bash
-./scripts/setup-hooks.sh
+./tools/setup-hooks.sh
 ```
 
 Hook behavior:
@@ -70,8 +89,8 @@ Hook behavior:
 
 
 ```bash
-uv run python train.py exp --study-id PPO_NAVIGATION --exp-id 26
-uv run python eval.py exp --study-id PPO_NAVIGATION --exp-id 26
+uv run carlabev-lab train exp --study-id PPO_NAVIGATION --exp-id 26
+uv run carlabev-lab eval exp --study-id PPO_NAVIGATION --exp-id 26
 uv run pytest
 ```
 
@@ -208,7 +227,7 @@ Current limitation:
 A normal training command such as:
 
 ```bash
-uv run python train.py exp --study-id EDGE_CASE_SCENARIOS --exp-id 1
+uv run carlabev-lab train exp --study-id EDGE_CASE_SCENARIOS --exp-id 1
 ```
 
 is still recorded through Optuna. It is treated as a single fixed trial using the current config values for that experiment.
@@ -219,15 +238,15 @@ Use this when you want:
 - one reproduced run with fixed parameters
 - one study/experiment run logged into the same Optuna database
 
-Use `src.tuning.optuna_tuner` when you want actual hyperparameter search across many trials.
+Use `uv run carlabev-lab tune run` when you want actual hyperparameter search across many trials.
 
 Typical workflow:
 
 ```bash
-uv run python train.py exp --study-id PPO_NAVIGATION --exp-id 26
-uv run python eval.py exp --study-id PPO_NAVIGATION --exp-id 26
-uv run python train.py exp --study-id EDGE_CASE_SCENARIOS --exp-id 1
-uv run python train.py exp --study-id EDGE_CASE_SCENARIOS --exp-id 4
+uv run carlabev-lab train exp --study-id PPO_NAVIGATION --exp-id 26
+uv run carlabev-lab eval exp --study-id PPO_NAVIGATION --exp-id 26
+uv run carlabev-lab train exp --study-id EDGE_CASE_SCENARIOS --exp-id 1
+uv run carlabev-lab train exp --study-id EDGE_CASE_SCENARIOS --exp-id 4
 ```
 
 ### Evaluation Metrics And Study Scoring
@@ -262,7 +281,7 @@ Raw `mean_return` is still logged and saved, but it is no longer the preferred l
 Print raw completed trials for a study:
 
 ```bash
-uv run python scripts/print_top_study_results.py \
+uv run carlabev-lab results top-trials \
   --study-id PPO_NAVIGATION_DIFFICULTY \
   --top-k 10
 ```
@@ -270,7 +289,7 @@ uv run python scripts/print_top_study_results.py \
 Print seed-averaged experiment summaries:
 
 ```bash
-uv run python scripts/print_top_experiments_by_seed_average.py \
+uv run carlabev-lab results top-experiments \
   --study-id PPO_NAVIGATION_MEDIUM_TEMPORAL_FUSION \
   --top-k 3
 ```
@@ -278,7 +297,7 @@ uv run python scripts/print_top_experiments_by_seed_average.py \
 Print the normalized-score leaderboard:
 
 ```bash
-uv run python scripts/print_normalized_study_leaderboard.py \
+uv run carlabev-lab results leaderboard \
   --study-id PPO_NAVIGATION_MEDIUM_SEMANTIC_CLASSES \
   --top-k 6
 ```
@@ -290,7 +309,7 @@ The seed-scene diagnostic tooling is now split into two stages so you do not nee
 Run the expensive data-generation pass once:
 
 ```bash
-uv run python scripts/analyze_seed_scene_distribution.py analyze \
+uv run carlabev-lab diagnostics seed-scenes analyze \
   --difficulty-ids rt_medium_v1 \
   --samples-per-seed 1000 \
   --seed-mode incremental \
@@ -315,14 +334,14 @@ results/seed_scene_diag_medium_incremental/
 Re-render figures from those saved artifacts without touching the simulator:
 
 ```bash
-uv run python scripts/analyze_seed_scene_distribution.py visualize \
+uv run carlabev-lab diagnostics seed-scenes visualize \
   --output-dir results/seed_scene_diag_medium_incremental
 ```
 
 Spawn clustering is visualization-only and can be tuned without rerunning analysis:
 
 ```bash
-uv run python scripts/analyze_seed_scene_distribution.py visualize \
+uv run carlabev-lab diagnostics seed-scenes visualize \
   --output-dir results/seed_scene_diag_medium_incremental \
   --spawn-cluster-radius 20 \
   --spawn-top-k 10
@@ -370,6 +389,16 @@ The latest resolved run for each `(study_id, exp_id)` is also written to:
 runs/<study_id>/exp_<exp_id>/LATEST_RUN.json
 ```
 
+### Repository Layout
+
+The repo root is intentionally kept narrow:
+
+- `src/`: maintained Python package code and CLI modules
+- `infra/slurm/`: cluster launchers for study sweeps
+- `tools/`: local repo helpers such as hook installation
+- `docs/`: generated figures and authored notes
+- `assets/`: curated static scene inputs and images
+
 ### Video Capture Policy
 
 The study launchers now use explicit milestone-based capture:
@@ -403,7 +432,7 @@ Execute tuning stages sequentially from your terminal:
 
 **Policy Dynamics: tune learning rate, GAE lambda, and discount factor**
 ```bash
-uv run python -m src.tuning.optuna_tuner \
+uv run carlabev-lab tune run \
     --study-id PPO_NAVIGATION \
     --exp-id 26 \
     --stage policy_dynamics \
@@ -416,7 +445,7 @@ uv run python -m src.tuning.optuna_tuner \
 
 **Rollout Geometry: tune rollout horizon and minibatch/update geometry**
 ```bash
-uv run python -m src.tuning.optuna_tuner \
+uv run carlabev-lab tune run \
     --study-id PPO_NAVIGATION \
     --exp-id 26 \
     --stage rollout_geometry \
@@ -435,7 +464,7 @@ The current `PPO_NAVIGATION` study declares these stages:
 
 Review tuning runs instantly:
 ```bash
-uv run python -m src.tuning.optuna_analysis --study-id PPO_NAVIGATION --exp-id 26 --top-k 5
+uv run carlabev-lab tune analyze --study-id PPO_NAVIGATION --exp-id 26 --top-k 5
 ```
 This loads the Optuna study configured for `PPO_NAVIGATION`, filters to experiment `26`, and generates parameter curves, importance breakdowns, and history charts under `results/`.
 
@@ -450,7 +479,9 @@ The project splits the PPO training flow cleanly from tuning logic:
 - `src/trainers/`: PPO training loop and checkpoint/evaluation orchestration.
 - `src/eval/`: PPO evaluation, protocol aggregation, and study scoring.
 - `src/tuning/`: Distributed Optuna orchestration (`optuna_tuner.py`) and analysis tooling (`optuna_analysis.py`).
-- `scripts/`: study/result inspection utilities and analysis helpers.
+- `src/carlabev_lab/`: package-backed CLI commands for reporting, diagnostics, and DB maintenance.
+- `infra/slurm/`: cluster launchers for study sweeps.
+- `tools/`: local repository helpers such as hook installation.
 
 ---
 
