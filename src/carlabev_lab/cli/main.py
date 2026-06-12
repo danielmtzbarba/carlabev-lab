@@ -6,18 +6,6 @@ import os
 import sys
 from collections.abc import Sequence
 
-import tyro
-from CarlaBEV.config import validate_run_config
-
-from src.config.base_config import ArgsCarlaBEV, to_carlabev_run_config
-from src.config.experiment_loader import apply_experiment_config, run_experiment
-from src.eval.eval_ppo import evaluate_ppo
-from src.utils.logger import DRLogger
-from src.utils.run_paths import RunPaths
-
-
-EXPERIMENT_PARSER = tyro.extras.subcommand_type_from_defaults({"exp": ArgsCarlaBEV()})
-
 USAGE = """Usage:
   carlabev-lab train exp [ARGS...]
   carlabev-lab eval exp [ARGS...]
@@ -42,6 +30,57 @@ Legacy aliases remain available:
 """
 
 
+validate_run_config = None
+evaluate_ppo = None
+DRLogger = None
+RunPaths = None
+_EXPERIMENT_PARSER = None
+
+
+def _import_attr(module_name: str, attr_name: str) -> object:
+    module = importlib.import_module(module_name)
+    return getattr(module, attr_name)
+
+
+def _get_experiment_parser() -> object:
+    global _EXPERIMENT_PARSER
+    if _EXPERIMENT_PARSER is None:
+        tyro = importlib.import_module("tyro")
+        args_cls = _import_attr("src.config.base_config", "ArgsCarlaBEV")
+        _EXPERIMENT_PARSER = tyro.extras.subcommand_type_from_defaults(
+            {"exp": args_cls()}
+        )
+    return _EXPERIMENT_PARSER
+
+
+def _get_validate_run_config():
+    return validate_run_config or _import_attr("CarlaBEV.config", "validate_run_config")
+
+
+def _get_to_carlabev_run_config():
+    return _import_attr("src.config.base_config", "to_carlabev_run_config")
+
+
+def _get_apply_experiment_config():
+    return _import_attr("src.config.experiment_loader", "apply_experiment_config")
+
+
+def _get_run_experiment():
+    return _import_attr("src.config.experiment_loader", "run_experiment")
+
+
+def _get_evaluate_ppo():
+    return evaluate_ppo or _import_attr("src.eval.eval_ppo", "evaluate_ppo")
+
+
+def _get_dr_logger():
+    return DRLogger or _import_attr("src.utils.logger", "DRLogger")
+
+
+def _get_run_paths():
+    return RunPaths or _import_attr("src.utils.run_paths", "RunPaths")
+
+
 def _invoke_module_main(module_name: str, argv: Sequence[str]) -> object:
     module = importlib.import_module(module_name)
     if not hasattr(module, "main"):
@@ -55,24 +94,33 @@ def _invoke_module_main(module_name: str, argv: Sequence[str]) -> object:
         sys.argv = old_argv
 
 
-def _parse_experiment_args(argv: Sequence[str]) -> ArgsCarlaBEV:
-    args = tyro.cli(EXPERIMENT_PARSER, args=list(argv))
+def _parse_experiment_args(argv: Sequence[str]):
+    tyro = importlib.import_module("tyro")
+    parser = _get_experiment_parser()
+    apply_experiment_config = _get_apply_experiment_config()
+    to_carlabev_run_config = _get_to_carlabev_run_config()
+    validate = _get_validate_run_config()
+
+    args = tyro.cli(parser, args=list(argv))
     print(f"⚙ Selecting study ID = {args.study_id}", flush=True)
     print(f"⚙ Selecting experiment ID = {args.exp_id}", flush=True)
 
     args = apply_experiment_config(args, args.exp_id, study_id=args.study_id)
-    validate_run_config(to_carlabev_run_config(args))
+    validate(to_carlabev_run_config(args))
     return args
 
 
 def run_train_command(argv: Sequence[str]) -> object:
     cfg = _parse_experiment_args(argv)
-    return run_experiment(cfg)
+    return _get_run_experiment()(cfg)
 
 
 def run_eval_command(argv: Sequence[str]) -> dict[str, object]:
+    evaluate = _get_evaluate_ppo()
+    logger_cls = _get_dr_logger()
+    run_paths_cls = _get_run_paths()
     cfg = _parse_experiment_args(argv)
-    latest_pointer = RunPaths(
+    latest_pointer = run_paths_cls(
         study_id=cfg.study_id,
         exp_id=cfg.exp_id,
         trial_number=None,
@@ -84,7 +132,7 @@ def run_eval_command(argv: Sequence[str]) -> dict[str, object]:
         cfg.run_dir = latest["run_dir"]
 
     model_path = os.path.join(cfg.run_dir, "checkpoints", "ppo_final.pt")
-    payload = evaluate_ppo(
+    payload = evaluate(
         cfg=cfg,
         model_path=model_path,
         num_episodes=1000,
@@ -93,7 +141,7 @@ def run_eval_command(argv: Sequence[str]) -> dict[str, object]:
         device="cuda",
         file_name="final/manual_eval.npy",
     )
-    logger = DRLogger(cfg)
+    logger = logger_cls(cfg)
     try:
         logger.log_evaluation(payload["aggregate"], 0)
     finally:
@@ -224,3 +272,7 @@ def main(argv: Sequence[str] | None = None) -> object:
             return run_diagnostics_pruning_command(args)
 
     raise SystemExit(f"Unknown command: {' '.join([group, *args])}\n\n{USAGE}")
+
+
+if __name__ == "__main__":
+    main()

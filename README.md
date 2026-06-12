@@ -38,15 +38,16 @@ By natively combining **Stable Baselines3** with high-performance hyperparameter
 ## 🚀 Getting Started
 
 ### Prerequisites
-CarlaBEV-Lab depends directly on `CarlaBEV` being locally accessible. Use [`uv`](https://github.com/astral-sh/uv) to securely resolve the `pyproject.toml` pointing to your local `carlabev-env` project directory.
+CarlaBEV-Lab installs `CarlaBEV` from the GitHub source pinned in `pyproject.toml`, so local machine paths are no longer part of setup.
 
 ### Installation
 
-1. Ensure the `carlabev-env` repository exists locally alongside this project.
-2. Initialize and sync the training environment:
+1. Initialize and sync the training environment:
     ```bash
     uv sync
     ```
+
+Right now the lab tracks the `main` branch of `carlabev-env`. Once you create a release tag such as `v0.1.0`, switch `[tool.uv.sources].CarlaBEV` from `branch = "main"` to `tag = "v0.1.0"` and run `uv sync` again for a reproducible pinned release.
 
 ### Base Training & Evaluation
 
