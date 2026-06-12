@@ -1,6 +1,8 @@
 import optuna
 import pandas as pd
 
+from src.tuning.engine import trial_stage_name
+
 
 def check_median():
     study = optuna.load_study(
@@ -15,7 +17,7 @@ def check_median():
         t
         for t in study.trials
         if t.state == optuna.trial.TrialState.COMPLETE
-        and str(t.user_attrs.get("phase")) == "1"
+        and trial_stage_name(t) == "policy_dynamics"
     ]
 
     step_0_vals = []
@@ -32,7 +34,7 @@ def check_median():
         if 3 in trial.intermediate_values:
             step_2_vals.append(trial.intermediate_values[3])
 
-    print("Phase 1 Medians (The cutoff hurdle Phase 2a faces):")
+    print("Policy Dynamics Medians (The cutoff hurdle Rollout Geometry faces):")
     print(
         f"Eval Step 0 (~100k steps): Median Score = {pd.Series(step_0_vals).median():.4f}"
     )
@@ -50,7 +52,7 @@ def check_median():
         t
         for t in study.trials
         if t.state == optuna.trial.TrialState.PRUNED
-        and str(t.user_attrs.get("phase")) == "2a"
+        and trial_stage_name(t) == "rollout_geometry"
     ]
     for trial in p2_trials[-5:]:
         print(

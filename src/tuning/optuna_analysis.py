@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from src.config.experiment_loader import get_study_db_path, get_study_name
+from src.tuning.engine import stage_sort_key, stage_title, trial_stage_name
 
 # ─── Global Theme ─────────────────────────────────────────────────────────────
 # A dark, scientific dark-mode theme for all plots
@@ -91,7 +92,7 @@ def print_compact_trial_info(trial, db_conn, rank=None):
     if db_conn is None:
         print(
             f"Rank {rank} | Trial {trial.number:<3} | "
-            f"Score: {trial.value:.4f} | Phase: {trial.user_attrs.get('phase', '?')}"
+            f"Score: {trial.value:.4f} | Stage: {trial_stage_name(trial)}"
         )
         return
 
@@ -123,7 +124,7 @@ def print_compact_trial_info(trial, db_conn, rank=None):
     print(
         f"Rank {rank} | Trial {trial.number:<3} | Score: {trial.value:7.4f} | "
         f"Succ: {succ:5.2f}  Coll: {coll:5.2f} | Ret: {ret:6.2f} "
-        f"({steps:<8} steps) | Phase: {trial.user_attrs.get('phase', '?'):<2} | {params_str}"
+        f"({steps:<8} steps) | Stage: {trial_stage_name(trial):<20} | {params_str}"
     )
 
 
@@ -160,7 +161,7 @@ def plot_optimization_history(phase_study: optuna.Study, phase: str, plot_dir: s
             trace.marker.size = 8
             scatter_idx += 1
 
-    fig = apply_dark_theme(fig, f"Phase {phase} — Optimization History")
+    fig = apply_dark_theme(fig, f"{stage_title(phase)} — Optimization History")
     fig.update_yaxes(title_text="Objective Value (Reward)")
     fig.update_xaxes(title_text="Trial Number")
     save(fig, os.path.join(plot_dir, "optimization_history.html"), show)
@@ -179,7 +180,7 @@ def plot_param_importances(phase_study: optuna.Study, phase: str, plot_dir: str,
             trace.marker.color = list(range(n))
             trace.marker.colorscale = "Blues"  # Professional monochromatic scale for importance
             trace.marker.showscale = False
-    fig = apply_dark_theme(fig, f"Phase {phase} — Hyperparameter Importance (FAnova)")
+    fig = apply_dark_theme(fig, f"{stage_title(phase)} — Hyperparameter Importance (FAnova)")
     fig.update_xaxes(title_text="Relative Importance")
     save(fig, os.path.join(plot_dir, "param_importances.html"), show)
 
@@ -191,7 +192,7 @@ def plot_parallel_coordinate(phase_study: optuna.Study, phase: str, plot_dir: st
     """
     fig = vis.plot_parallel_coordinate(phase_study)
     # Style the colour axis label
-    fig = apply_dark_theme(fig, f"Phase {phase} — Parallel Coordinates (Best Configurations)")
+    fig = apply_dark_theme(fig, f"{stage_title(phase)} — Parallel Coordinates (Best Configurations)")
     # Force colorscale on the parcoords trace
     for trace in fig.data:
         if trace.type == "parcoords":
@@ -276,7 +277,7 @@ def plot_contour(phase_study: optuna.Study, phase: str, plot_dir: str, show: boo
                 ),
             )
 
-    fig = apply_dark_theme(fig, f"Phase {phase} — Search Space Contour (Parameter Interactions)")
+    fig = apply_dark_theme(fig, f"{stage_title(phase)} — Search Space Contour (Parameter Interactions)")
     # Add legend annotation explaining markers
     fig.add_annotation(
         text="★ Top-ranked trial",
@@ -319,7 +320,7 @@ def plot_contour(phase_study: optuna.Study, phase: str, plot_dir: str, show: boo
                     showscale=False,  # Remove the trial/color bar
                 ),
             )
-    fig_slice = apply_dark_theme(fig_slice, f"Phase {phase} — Parameter Slice Analysis")
+    fig_slice = apply_dark_theme(fig_slice, f"{stage_title(phase)} — Parameter Slice Analysis")
     save(fig_slice, os.path.join(plot_dir, "slice_plot.html"), show)
 
 
@@ -336,7 +337,7 @@ def plot_edf(phase_study: optuna.Study, phase: str, plot_dir: str, show: bool) -
         if hasattr(trace, "fill"):
             trace.fill = "tozeroy"
             trace.fillcolor = "rgba(0,212,255,0.12)"
-    fig = apply_dark_theme(fig, f"Phase {phase} — EDF (Search Reliability)")
+    fig = apply_dark_theme(fig, f"{stage_title(phase)} — EDF (Search Reliability)")
     fig.update_xaxes(title_text="Objective Value (Reward)")
     fig.update_yaxes(title_text="Cumulative Probability")
     save(fig, os.path.join(plot_dir, "edf_plot.html"), show)
@@ -349,7 +350,7 @@ def plot_timeline(phase_study: optuna.Study, phase: str, plot_dir: str, show: bo
     """
     try:
         fig = vis.plot_timeline(phase_study)
-        fig = apply_dark_theme(fig, f"Phase {phase} — Trial Timeline (Wall-Clock)")
+        fig = apply_dark_theme(fig, f"{stage_title(phase)} — Trial Timeline (Wall-Clock)")
         fig.update_xaxes(title_text="Wall-Clock Time")
         fig.update_yaxes(title_text="Trial")
         save(fig, os.path.join(plot_dir, "timeline.html"), show)
@@ -385,7 +386,7 @@ def plot_learning_curves(top_trials, phase: str, plot_dir: str, db_conn, show: b
     if len(fig.data) == 0:
         return
 
-    fig = apply_dark_theme(fig, f"Phase {phase} — Learning Curves (Top Trials)")
+    fig = apply_dark_theme(fig, f"{stage_title(phase)} — Learning Curves (Top Trials)")
     fig.update_xaxes(title_text="Environment Steps")
     fig.update_yaxes(title_text="Mean Return")
     save(fig, os.path.join(plot_dir, "top_trials_learning_curves.html"), show)
@@ -430,7 +431,7 @@ def plot_time_to_reach(top_trials, phase: str, plot_dir: str, db_conn, show: boo
     if len(fig.data) == 0:
         return
 
-    fig = apply_dark_theme(fig, f"Phase {phase} — Wall-Time to Success Threshold")
+    fig = apply_dark_theme(fig, f"{stage_title(phase)} — Wall-Time to Success Threshold")
     fig.update_xaxes(title_text="Success-Rate Threshold")
     fig.update_yaxes(title_text="Training Elapsed Time (hours)")
     save(fig, os.path.join(plot_dir, "top_trials_time_to_reach.html"), show)
@@ -442,7 +443,7 @@ def plot_time_to_reach(top_trials, phase: str, plot_dir: str, db_conn, show: boo
 class AnalyzeArgs:
     study_id:   str           = "PPO_NAVIGATION"
     exp_id:     Optional[int] = None
-    phase:      Optional[str] = None   # filter to a single phase
+    stage:      Optional[str] = None
     top_k:      int           = 5
     show_plots: bool          = False
     save_dir:   str           = "results"
@@ -451,7 +452,7 @@ class AnalyzeArgs:
 def generate_dashboard(save_dir: str, db_name: str, phases: list[str]) -> None:
     """
     Generate a single consolidated HTML dashboard with a tabbed interface.
-    Each phase has a section, and each section has tabs for the 4 core plots.
+    Each tuning stage has a section, and each section has tabs for the core plots.
     """
     dashboard_path = os.path.join(save_dir, f"{db_name}_dashboard.html")
     report_path = os.path.join(save_dir, "optuna_study_report.md")
@@ -467,12 +468,14 @@ def generate_dashboard(save_dir: str, db_name: str, phases: list[str]) -> None:
         table_lines = []
         
         for line in lines:
-            if "## Phase 1:" in line:
-                current_phase = "1"
-            elif "## Phase 2a:" in line:
-                current_phase = "2a"
-            elif "## Phase 2b:" in line:
-                current_phase = "2b"
+            if "## Policy Dynamics:" in line:
+                current_phase = "policy_dynamics"
+            elif "## Rollout Geometry:" in line:
+                current_phase = "rollout_geometry"
+            elif "## Loss Regularization:" in line:
+                current_phase = "loss_regularization"
+            elif "## Network Capacity:" in line:
+                current_phase = "network_capacity"
 
             if current_phase:
                 if "| Parameter |" in line:
@@ -536,7 +539,7 @@ def generate_dashboard(save_dir: str, db_name: str, phases: list[str]) -> None:
         <h1>CarlaBEV: Optuna PPO hyperparameter optimization</h1>
     """
 
-    for p in sorted(phases):
+    for p in sorted(phases, key=stage_sort_key):
         plots = [
             ("History", "optimization_history.html"),
             ("Importance", "param_importances.html"),
@@ -548,7 +551,7 @@ def generate_dashboard(save_dir: str, db_name: str, phases: list[str]) -> None:
 
         html_content += f"""
         <div class="phase-container">
-            <div class="phase-title">Phase {p}</div>
+            <div class="phase-title">{stage_title(p)}</div>
             
             <div class="params-section">
                 <div class="params-title">Target Hyperparameters</div>
@@ -629,17 +632,17 @@ def main():
     ]
 
     # ── Summary Table ──────────────────────────────────────────────────────────
-    print("\n--- Study Statistics by Phase ---")
+    print("\n--- Study Statistics by Stage ---")
     print(f"Total Trials: {len(scoped_trials)}")
 
     summary_data = [
-        {"Phase": str(t.user_attrs.get("phase", "Unknown")), "State": t.state.name}
+        {"Stage": trial_stage_name(t), "State": t.state.name}
         for t in scoped_trials
     ]
 
     if summary_data:
         df_summary = pd.DataFrame(summary_data)
-        pivot_df = df_summary.pivot_table(index="Phase", columns="State", aggfunc=len, fill_value=0)
+        pivot_df = df_summary.pivot_table(index="Stage", columns="State", aggfunc=len, fill_value=0)
         for col in ["COMPLETE", "PRUNED", "RUNNING", "FAIL"]:
             if col not in pivot_df.columns:
                 pivot_df[col] = 0
@@ -657,47 +660,47 @@ def main():
     print("\n🏆 Best Trial Overall:")
     print_compact_trial_info(best_trial, db_conn=db_conn, rank="BEST")
 
-    # ── Phase Loop ─────────────────────────────────────────────────────────────
-    phases = set(str(t.user_attrs.get("phase", "Unknown")) for t in complete_trials)
-    if args.phase:
-        phases = {args.phase}
+    # ── Stage Loop ─────────────────────────────────────────────────────────────
+    phases = set(trial_stage_name(t) for t in complete_trials)
+    if args.stage:
+        phases = {args.stage}
 
     best_trials_by_phase: dict = {}
 
     # Print cross-phase overview
-    for phase in sorted(phases):
-        phase_trials = [t for t in complete_trials if str(t.user_attrs.get("phase", "Unknown")) == phase]
+    for phase in sorted(phases, key=stage_sort_key):
+        phase_trials = [t for t in complete_trials if trial_stage_name(t) == phase]
         if phase_trials:
             phase_trials.sort(key=lambda t: t.value, reverse=True)
             best_trials_by_phase[phase] = phase_trials[0]
 
     print("\n" + "=" * 80)
-    print("--- 🥇 Best Trial By Phase Overview ---")
+    print("--- 🥇 Best Trial By Stage Overview ---")
     for phase, best_trial in best_trials_by_phase.items():
-        print_compact_trial_info(best_trial, db_conn=db_conn, rank=f"🥇 BEST (Ph {phase})")
+        print_compact_trial_info(best_trial, db_conn=db_conn, rank=f"🥇 BEST ({stage_title(phase)})")
     print("=" * 80 + "\n")
 
-    for phase in sorted(phases):
-        phase_trials = [t for t in complete_trials if str(t.user_attrs.get("phase", "Unknown")) == phase]
+    for phase in sorted(phases, key=stage_sort_key):
+        phase_trials = [t for t in complete_trials if trial_stage_name(t) == phase]
         if not phase_trials:
             continue
 
         phase_trials.sort(key=lambda t: t.value, reverse=True)
         top_curr_phase = phase_trials[: args.top_k]
 
-        print(f"\n--- Top {min(args.top_k, len(phase_trials))} Trials (Phase {phase}) ---")
+        print(f"\n--- Top {min(args.top_k, len(phase_trials))} Trials ({stage_title(phase)}) ---")
         for i, trial in enumerate(top_curr_phase):
             print_compact_trial_info(trial, db_conn=db_conn, rank=i + 1)
 
         # Build an isolated in-memory study for this phase's visualisations
         phase_study = optuna.create_study(direction=study.direction)
         for t in scoped_trials:
-            if str(t.user_attrs.get("phase", "Unknown")) == phase:
+            if trial_stage_name(t) == phase:
                 phase_study.add_trial(t)
 
         plot_dir = os.path.join(args.save_dir, f"{db_name}_phase_{phase}_plots")
         os.makedirs(plot_dir, exist_ok=True)
-        print(f"\nGenerating Phase {phase} plots → {plot_dir}")
+        print(f"\nGenerating {stage_title(phase)} plots → {plot_dir}")
 
         try:
             # 1. Optimization History
@@ -732,10 +735,10 @@ def main():
             if db_conn is not None and len(top_curr_phase) > 0:
                 plot_time_to_reach(top_curr_phase, phase, plot_dir, db_conn, args.show_plots)
 
-            print(f"  ✅ Phase {phase} plots saved.")
+            print(f"  ✅ {stage_title(phase)} plots saved.")
 
         except Exception as e:
-            print(f"  ⚠ Phase {phase} plot error: {e}")
+            print(f"  ⚠ {stage_title(phase)} plot error: {e}")
 
     # ── Final Dashboard ────────────────────────────────────────────────────────
     if phases:

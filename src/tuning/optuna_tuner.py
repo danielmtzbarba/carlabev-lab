@@ -11,29 +11,40 @@ from src.config.experiment_loader import (
     get_study_db_path,
     get_study_name,
 )
+from src.config.studies.registry import get_study_config
 from src.tuning.optuna_utils import OptunaArgs
-from src.tuning.phase1 import phase_1_objective
-from src.tuning.phase2a import phase_2a_objective
-from src.tuning.phase2b import phase_2b_objective
-from src.tuning.phase3 import phase_3_objective
+from src.tuning.engine import (
+    completed_stage_trials,
+    inherited_stage_overrides,
+    normalize_stage_name,
+    resolved_stage_config,
+    run_stage_objective,
+    stage_title,
+    trial_stage_name,
+)
 
 
 def main():
     cli_args = tyro.cli(OptunaArgs)
-    
+    stage_name = normalize_stage_name(cli_args.stage)
+    study_config = get_study_config(cli_args.study_id)
+    if study_config.tuning is None:
+        raise ValueError(f"Study {cli_args.study_id!r} does not declare a tuning configuration.")
+    tuning_config, stage_cfg = resolved_stage_config(study_config.tuning, stage_name, cli_args)
+
     # Create base ArgsCarlaBEV to get environment configuration
     base_args = ArgsCarlaBEV(study_id=cli_args.study_id, exp_id=cli_args.exp_id)
     base_args = apply_experiment_config(base_args, cli_args.exp_id, study_id=cli_args.study_id)
     print(
         f"⚙️ Running Optuna Hyperparameter tuning for "
-        f"Study = {cli_args.study_id}, Base Experiment ID = {cli_args.exp_id}"
+        f"Study = {cli_args.study_id}, Base Experiment ID = {cli_args.exp_id}, "
+        f"Stage = {stage_name}"
     )
     
-    # Reverted to MedianPruner per user request
-    pruner = optuna.pruners.MedianPruner(
-        n_startup_trials=10,  # Number of initial trials before pruning starts
-        n_warmup_steps=5,    # Number of evaluations to wait before pruning a given trial
-        interval_steps=1
+    pruner = (
+        optuna.pruners.MedianPruner(n_startup_trials=10, n_warmup_steps=5, interval_steps=1)
+        if tuning_config.pruner == "median"
+        else optuna.pruners.NopPruner()
     )
     # Implement SQLite storage with concurrency support
     os.makedirs("results", exist_ok=True)
@@ -69,128 +80,35 @@ def main():
         raise RuntimeError("Failed to create or load the Optuna study after multiple attempts due to database locking.")
 
     try:
-        if str(cli_args.phase) == "1":
-            print(f"--- Starting Phase 1: Continuous Params (Budget: {cli_args.timesteps_phase_1}) ---")
-            while True:
-                completed_phase_trials = [t for t in study.get_trials(states=[optuna.trial.TrialState.COMPLETE]) if str(t.user_attrs.get("phase")) == "1"]
-                if len(completed_phase_trials) >= cli_args.n_trials_phase_1:
-                    print(f"Phase 1 reached target of {cli_args.n_trials_phase_1} completed trials.")
-                    break
-                study.optimize(lambda trial: phase_1_objective(trial, base_args, cli_args), n_trials=1)
-        
-        elif str(cli_args.phase) == "2a":
-            print(f"--- Starting Phase 2a: Categorical Params (Budget: {cli_args.timesteps_phase_2a}) ---")
-            
-            # Fetch completed Phase 1 trials
-            completed_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE and str(t.user_attrs.get("phase")) == "1"]
-            if len(completed_trials) == 0:
-                print("Error: Cannot run Phase 2a without completed Phase 1 trials in the database.")
-                return
+        print(
+            f"--- Starting {stage_title(stage_name)} "
+            f"({stage_name}, budget={stage_cfg.total_timesteps}, target_trials={stage_cfg.n_trials}) ---"
+        )
+        while True:
+            stage_trials = completed_stage_trials(study, stage_name)
+            if len(stage_trials) >= stage_cfg.n_trials:
+                print(
+                    f"{stage_title(stage_name)} reached target of {stage_cfg.n_trials} completed trials."
+                )
+                break
 
-            completed_trials.sort(key=lambda t: t.value, reverse=True)
-            top_trials = completed_trials[:cli_args.top_k_phase_1]
-            print(f"Found {len(completed_trials)} Phase 1 trials. Using parameters from top {len(top_trials)} trials.")
-            
-            # We will use the best trial from phase 1 for each phase 2a trial
-            best_phase_1_trial = top_trials[0]
-            top_params = {
-                "learning_rate": best_phase_1_trial.params["learning_rate"],
-                "gae_lambda": best_phase_1_trial.params["gae_lambda"],
-                "gamma": best_phase_1_trial.params["gamma"],
-            }
-            
-            print("Selected continuous params for Phase 2a:", top_params)
-            while True:
-                completed_phase_trials = [t for t in study.get_trials(states=[optuna.trial.TrialState.COMPLETE]) if str(t.user_attrs.get("phase")) == "2a"]
-                if len(completed_phase_trials) >= cli_args.n_trials_phase_2a:
-                    print(f"Phase 2a reached target of {cli_args.n_trials_phase_2a} completed trials.")
-                    break
-                study.optimize(lambda trial: phase_2a_objective(trial, base_args, cli_args, top_params), n_trials=1)
-            
-        elif str(cli_args.phase) == "2b":
-            print(f"--- Starting Phase 2b: PPO Coefficients (Budget: {cli_args.timesteps_phase_2b}) ---")
-            
-            # Fetch completed Phase 2a trials to get both fixed continuous and tuned categorical settings
-            completed_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE and str(t.user_attrs.get("phase")) == "2a"]
-            if len(completed_trials) == 0:
-                print("Error: Cannot run Phase 2b without completed Phase 2a trials in the database.")
-                return
+            inherited_overrides = inherited_stage_overrides(study, tuning_config, stage_cfg)
+            if inherited_overrides:
+                print(
+                    f"Using inherited overrides from: {', '.join(stage_cfg.inherits_from)}"
+                )
 
-            completed_trials.sort(key=lambda t: t.value, reverse=True)
-            top_trials = completed_trials[:cli_args.top_k_phase_2a]
-            print(f"Found {len(completed_trials)} Phase 2a trials. Using parameters from top {len(top_trials)} trials.")
-            
-            best_phase_2a_trial = top_trials[0]
-            
-            phase_1_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE and str(t.user_attrs.get("phase")) == "1"]
-            phase_1_trials.sort(key=lambda t: t.value, reverse=True)
-            best_p1_trial = phase_1_trials[0]
-
-            top_params = {
-                "learning_rate": best_p1_trial.params["learning_rate"],
-                "gae_lambda": best_p1_trial.params["gae_lambda"],
-                "gamma": best_p1_trial.params["gamma"],
-                "num_steps": best_phase_2a_trial.params["num_steps"],
-                "update_epochs": best_phase_2a_trial.params["update_epochs"],
-                "num_minibatches": best_phase_2a_trial.params["num_minibatches"],
-            }
-            
-            print("Selected fixed params for Phase 2b Tuning:", top_params)
-            while True:
-                completed_phase_trials = [t for t in study.get_trials(states=[optuna.trial.TrialState.COMPLETE]) if str(t.user_attrs.get("phase")) == "2b"]
-                if len(completed_phase_trials) >= cli_args.n_trials_phase_2b:
-                    print(f"Phase 2b reached target of {cli_args.n_trials_phase_2b} completed trials.")
-                    break
-                study.optimize(lambda trial: phase_2b_objective(trial, base_args, cli_args, top_params), n_trials=1)
-            
-        elif str(cli_args.phase) == "3":
-            print(f"--- Starting Phase 3: Architecture Params (Budget: {cli_args.timesteps_phase_3}) ---")
-            
-            # Fetch completed Phase 2b trials
-            completed_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE and str(t.user_attrs.get("phase")) == "2b"]
-            if len(completed_trials) == 0:
-                print("Error: Cannot run Phase 3 without completed Phase 2b trials in the database (or run with phase 2 baselines).")
-                # Fallback to phase 2 baselines if no 2b exist could be implemented, but strict is safer
-                return
-
-            completed_trials.sort(key=lambda t: t.value, reverse=True)
-            top_trials = completed_trials[:cli_args.top_k_phase_2b]
-            print(f"Found {len(completed_trials)} Phase 2b trials. Using parameters from top {len(top_trials)} trials.")
-            
-            best_phase_2b_trial = top_trials[0]
-            
-            phase_2a_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE and str(t.user_attrs.get("phase")) == "2a"]
-            phase_2a_trials.sort(key=lambda t: t.value, reverse=True)
-            best_p2a_trial = phase_2a_trials[0]
-            
-            phase_1_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE and str(t.user_attrs.get("phase")) == "1"]
-            phase_1_trials.sort(key=lambda t: t.value, reverse=True)
-            best_p1_trial = phase_1_trials[0]
-
-            top_params = {
-                "learning_rate": best_p1_trial.params["learning_rate"],
-                "gae_lambda": best_p1_trial.params["gae_lambda"],
-                "gamma": best_p1_trial.params["gamma"],
-                "num_steps": best_p2a_trial.params["num_steps"],
-                "update_epochs": best_p2a_trial.params["update_epochs"],
-                "num_minibatches": best_p2a_trial.params["num_minibatches"],
-                "clip_coef_start": best_phase_2b_trial.params["clip_coef_start"],
-                "ent_coef_start": best_phase_2b_trial.params["ent_coef_start"],
-                "vf_coef_start": best_phase_2b_trial.params["vf_coef_start"],
-                "max_grad_norm": best_phase_2b_trial.params["max_grad_norm"],
-                "ent_decay_factor": best_phase_2b_trial.params["ent_decay_factor"],
-                "vf_decay_factor": best_phase_2b_trial.params["vf_decay_factor"],
-                "clip_decay_factor": best_phase_2b_trial.params["clip_decay_factor"],
-            }
-            
-            print("Selected fixed params for Phase 3 Network Tuning:", top_params)
-            while True:
-                completed_phase_trials = [t for t in study.get_trials(states=[optuna.trial.TrialState.COMPLETE]) if str(t.user_attrs.get("phase")) == "3"]
-                if len(completed_phase_trials) >= cli_args.n_trials_phase_3:
-                    print(f"Phase 3 reached target of {cli_args.n_trials_phase_3} completed trials.")
-                    break
-                study.optimize(lambda trial: phase_3_objective(trial, base_args, cli_args, top_params), n_trials=1)
-            
+            study.optimize(
+                lambda trial: run_stage_objective(
+                    trial,
+                    base_args=base_args,
+                    study_id=cli_args.study_id,
+                    tuning_config=tuning_config,
+                    stage_cfg=stage_cfg,
+                    inherited_overrides=inherited_overrides,
+                ),
+                n_trials=1,
+            )
     except KeyboardInterrupt:
         print("\nInterrupted early! Saving study results so far...")
         
@@ -206,7 +124,7 @@ def main():
         for key, value in trial.params.items():
             print(f"    {key}: {value}")
             
-        print("  Phase: ", trial.user_attrs.get("phase", "Unknown"))
+        print("  Stage: ", trial_stage_name(trial))
     else:
         print("No trials completed. Skipping best trial extraction.")
         

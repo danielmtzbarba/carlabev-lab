@@ -15,6 +15,15 @@ RewardMode = Literal["shaping", "carl"]
 CurriculumMode = Literal["off", "vehicles_only", "route_only", "both"]
 Toggle = Literal["on", "off"]
 FovAnchorMode = Literal["center", "lookahead_75"]
+TuningStageName = Literal[
+    "policy_dynamics",
+    "rollout_geometry",
+    "loss_regularization",
+    "network_capacity",
+]
+TuningObjectiveMetric = Literal["normalized_score", "mean_return"]
+TuningSamplerKind = Literal["tpe"]
+TuningPrunerKind = Literal["median", "none"]
 
 
 def _warn_legacy_alias(legacy: str, canonical: str):
@@ -142,6 +151,32 @@ ProtocolSpec = Annotated[
 ]
 
 
+class TuningStageConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    stage_id: TuningStageName
+    description: str
+    n_trials: int
+    total_timesteps: int
+    inherits_from: list[TuningStageName] = Field(default_factory=list)
+    selection_top_k: int = 1
+    save_model: bool = False
+    capture_video: bool = False
+
+
+class TuningConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    algorithm: str = "cnn-ppo"
+    objective_metric: TuningObjectiveMetric = "normalized_score"
+    sampler: TuningSamplerKind = "tpe"
+    pruner: TuningPrunerKind = "median"
+    num_seeds: int = 3
+    eval_episodes: int = 30
+    eval_final_episodes: int = 100
+    stages: dict[TuningStageName, TuningStageConfig]
+
+
 class StudyConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -151,6 +186,7 @@ class StudyConfig(BaseModel):
     db_path: str
     default_algorithm: str = "cnn-ppo"
     metadata: dict[str, Any] = Field(default_factory=dict)
+    tuning: TuningConfig | None = None
     train_protocols: dict[str, ProtocolSpec]
     eval_protocols: dict[str, ProtocolSpec]
     experiments: dict[int, ExperimentSpec]

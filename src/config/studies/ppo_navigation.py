@@ -2,6 +2,8 @@ from src.config.studies.models import (
     ExperimentSpec,
     RandomNavigationProtocol,
     StudyConfig,
+    TuningConfig,
+    TuningStageConfig,
 )
 
 
@@ -15,6 +17,60 @@ PPO_NAVIGATION = StudyConfig(
         "kind": "navigation",
         "notes": "Migrated from the legacy global EXPERIMENT_TABLE navigation matrix.",
     },
+    tuning=TuningConfig(
+        algorithm="cnn-ppo",
+        objective_metric="normalized_score",
+        sampler="tpe",
+        pruner="median",
+        num_seeds=3,
+        eval_episodes=30,
+        eval_final_episodes=100,
+        stages={
+            "policy_dynamics": TuningStageConfig(
+                stage_id="policy_dynamics",
+                description="Tune learning rate, GAE lambda, and discount factor.",
+                n_trials=100,
+                total_timesteps=1_100_000,
+                selection_top_k=10,
+                save_model=False,
+                capture_video=False,
+            ),
+            "rollout_geometry": TuningStageConfig(
+                stage_id="rollout_geometry",
+                description="Tune PPO rollout horizon and minibatch/update geometry.",
+                n_trials=60,
+                total_timesteps=1_100_000,
+                inherits_from=["policy_dynamics"],
+                selection_top_k=10,
+                save_model=False,
+                capture_video=False,
+            ),
+            "loss_regularization": TuningStageConfig(
+                stage_id="loss_regularization",
+                description="Tune PPO clipping, entropy, value loss, and decay schedules.",
+                n_trials=100,
+                total_timesteps=1_100_000,
+                inherits_from=["policy_dynamics", "rollout_geometry"],
+                selection_top_k=5,
+                save_model=False,
+                capture_video=False,
+            ),
+            "network_capacity": TuningStageConfig(
+                stage_id="network_capacity",
+                description="Tune convolutional channel scale and fully connected size.",
+                n_trials=50,
+                total_timesteps=2_100_000,
+                inherits_from=[
+                    "policy_dynamics",
+                    "rollout_geometry",
+                    "loss_regularization",
+                ],
+                selection_top_k=5,
+                save_model=False,
+                capture_video=False,
+            ),
+        },
+    ),
     train_protocols={
         "random_nav_train": RandomNavigationProtocol(
             protocol_id="random_nav_train",

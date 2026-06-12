@@ -17,7 +17,7 @@
 
 **CarlaBEV-Lab** is the centralized experimental playground and training suite for the [CarlaBEV API](https://github.com/yourusername/carlabev-env). It is engineered for mass-scaling Deep Reinforcement Learning experiments for autonomous driving R&D. 
 
-By natively combining **Stable Baselines3** with high-performance hyperparameter tuning by **Optuna**, CarlaBEV-Lab simplifies launching everything from single-node local debugging to massively parallelized multi-node searches on HPC resources.
+By natively combining **Stable Baselines3** with high-performance hyperparameter tuning by **Optuna**, CarlaBEV-Lab supports a study-driven workflow for local training, evaluation, and iterative search.
 
 <!-- Hero Banner Image Placeholder -->
 <div align="center">
@@ -30,7 +30,7 @@ By natively combining **Stable Baselines3** with high-performance hyperparameter
 
 - 🧠 **Study-driven PPO training:** Train and evaluate the maintained PPO navigation and scenario studies directly on CarlaBEV simulations.
 - 🎛️ **Massive Parallel Tuning:** Integrates robust Optuna searches with an SQLite backend, utilizing `constant_liar` sampling and connection timeouts for conflict-free concurrent parameter optimization.
-- 🖥️ **HPC Grid Search Ready:** Out-of-the-box support for generating Slurm Job Arrays to run immense GPU searches efficiently across massive computing clusters.
+- 🧪 **Study-owned tuning stages:** Optuna search is declared per study with explicit tuning stages such as policy dynamics, rollout geometry, and loss regularization.
 - 📊 **Rich Analysis & Visualization:** Instantly generate HTML visualizations (Parameter Importance, Parallel Coordinates, Optimization History) of any search.
 
 ---
@@ -395,45 +395,43 @@ videos/
 
 ## 🔬 Optuna Hyperparameter Tuning
 
-CarlaBEV-Lab is structured into continuous and categorical search phases. You can run tuning locally, or scale it up across several nodes.
+CarlaBEV-Lab now declares tuning through the study system. Each study can own an explicit sequence of tuning stages instead of opaque phase numbers.
 
 ### 1. Running Locally (Interactive)
 
-Execute tuning phases sequentially from your terminal:
+Execute tuning stages sequentially from your terminal:
 
-**Phase 1: Tune Continuous Hyperparameters**
+**Policy Dynamics: tune learning rate, GAE lambda, and discount factor**
 ```bash
 uv run python -m src.tuning.optuna_tuner \
     --study-id PPO_NAVIGATION \
     --exp-id 26 \
-    --phase 1 \
-    --n-trials-phase-1 100 \
-    --timesteps-phase-1 1000000 \
+    --stage policy_dynamics \
+    --n-trials 100 \
+    --total-timesteps 1000000 \
     --eval-episodes 30 \
     --eval-final-episodes 100
 ```
-*(Video and model saving is automatically disabled during Phase 1 to reduce IO overhead.)*
+*(Video and model saving are disabled during tuning stages by the study-owned tuning config.)*
 
-**Phase 2: Tune Categorical Hyperparameters**
+**Rollout Geometry: tune rollout horizon and minibatch/update geometry**
 ```bash
 uv run python -m src.tuning.optuna_tuner \
     --study-id PPO_NAVIGATION \
     --exp-id 26 \
-    --phase 2a \
-    --n-trials-phase-2a 50 \
-    --timesteps-phase-2a 2000000
+    --stage rollout_geometry \
+    --n-trials 50 \
+    --total-timesteps 2000000
 ```
 
-### 2. Large Scale HPC Grids
+The current `PPO_NAVIGATION` study declares these stages:
 
-To deploy robust searches (for example, across multiple GPU nodes), utilize the included Slurm launcher scripts.
-```bash
-# Example: Submit the Job Array for 10 concurrent nodes to solve Phase 1
-sbatch scripts/slurm_phase1_launcher.sh
-```
-*(Logs for each concurrent node scale gracefully into `results/logs/phaseX_%A_%a.out`)*
+- `policy_dynamics`
+- `rollout_geometry`
+- `loss_regularization`
+- `network_capacity`
 
-### 3. Analysis and Visualization
+### 2. Analysis and Visualization
 
 Review tuning runs instantly:
 ```bash
@@ -452,7 +450,7 @@ The project splits the PPO training flow cleanly from tuning logic:
 - `src/trainers/`: PPO training loop and checkpoint/evaluation orchestration.
 - `src/eval/`: PPO evaluation, protocol aggregation, and study scoring.
 - `src/tuning/`: Distributed Optuna orchestration (`optuna_tuner.py`) and analysis tooling (`optuna_analysis.py`).
-- `scripts/`: Slurm launchers and study/result inspection utilities.
+- `scripts/`: study/result inspection utilities and analysis helpers.
 
 ---
 
