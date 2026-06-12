@@ -75,6 +75,40 @@ uv run python eval.py exp --study-id PPO_NAVIGATION --exp-id 26
 uv run pytest
 ```
 
+### Testing
+
+The repo ships with a `pytest` suite focused on the maintained PPO path.
+
+Run the full suite:
+
+```bash
+uv run pytest
+```
+
+Run a focused subset:
+
+```bash
+uv run pytest tests/config
+uv run pytest tests/factories tests/agents
+uv run pytest -m integration
+```
+
+Current test coverage is organized as:
+
+- `tests/config/`: study schema, experiment loading, reset protocol sampling, and run-path generation
+- `tests/factories/`: PPO-only factory dispatch and unsupported-algorithm rejection
+- `tests/agents/`: CNN PPO backbone, discrete head, and continuous head behavior
+- `tests/eval/`: evaluation aggregation and study scoring
+- `tests/trainers/`: PPO smoke coverage with fake vector environments
+- `tests/tuning/`: Optuna phase mutation and orchestration behavior
+
+Markers declared in `pyproject.toml`:
+
+- `unit`: fast isolated tests
+- `integration`: multi-module local integration tests
+- `slow`: heavier smoke coverage
+- `envdep`: tests that rely on the CarlaBEV runtime contract
+
 ### Configuration Contract
 
 CarlaBEV-Lab now uses CarlaBEV's public config contract internally. The canonical environment fields are:

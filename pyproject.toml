@@ -37,13 +37,19 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+    "unit: fast isolated tests",
+    "integration: multi-module local integration",
+    "slow: heavier training or evaluation smoke tests",
+    "envdep: requires the CarlaBEV package/runtime contract",
+]
 
 [tool.uv.sources]
 #MAC
-#CarlaBEV = {path = "/Users/danielmtz/Data/projects/driverless/carlabev-env", editable= true}
+CarlaBEV = {path = "/Users/danielmtz/Data/projects/driverless/carlabev-env", editable= true}
 
 #MSI
-CarlaBEV = {path = "/home/danielmtz/Projects/carlabev-env", editable= true}
+#CarlaBEV = {path = "/home/danielmtz/Projects/carlabev-env", editable= true}
 
 #HPC
 #CarlaBEV = {path = "/data/horse/ws/dama898h-danielmtz/carlabev", editable= true}
