@@ -58,8 +58,12 @@ To verify everything is working, you can manually execute an evaluation, debuggi
 The packaged CLI is now the primary way to interact with the lab:
 
 ```bash
-uv run carlabev-lab --help
+uv run drl --help
 ```
+
+After `uv sync`, the installed entry point also lives at `.venv/bin/drl`, so you
+can run it directly once the virtualenv is activated or `.venv/bin` is on your
+`PATH`.
 
 The main command groups are:
 
@@ -70,7 +74,7 @@ The main command groups are:
 - `db`: inspect or clean Optuna state
 - `diagnostics`: run seed-scene and pruning diagnostics
 
-The legacy `drl` command remains available as a compatibility alias, but new docs and scripts use `carlabev-lab`.
+`drl` is the primary installed command.
 
 ### Git Hooks
 
@@ -90,8 +94,8 @@ Hook behavior:
 
 
 ```bash
-uv run carlabev-lab train exp --study-id PPO_NAVIGATION --exp-id 26
-uv run carlabev-lab eval exp --study-id PPO_NAVIGATION --exp-id 26
+uv run drl train exp --study-id PPO_NAVIGATION --exp-id 26
+uv run drl eval exp --study-id PPO_NAVIGATION --exp-id 26
 uv run pytest
 ```
 
@@ -228,7 +232,7 @@ Current limitation:
 A normal training command such as:
 
 ```bash
-uv run carlabev-lab train exp --study-id EDGE_CASE_SCENARIOS --exp-id 1
+uv run drl train exp --study-id EDGE_CASE_SCENARIOS --exp-id 1
 ```
 
 is still recorded through Optuna. It is treated as a single fixed trial using the current config values for that experiment.
@@ -239,15 +243,15 @@ Use this when you want:
 - one reproduced run with fixed parameters
 - one study/experiment run logged into the same Optuna database
 
-Use `uv run carlabev-lab tune run` when you want actual hyperparameter search across many trials.
+Use `uv run drl tune run` when you want actual hyperparameter search across many trials.
 
 Typical workflow:
 
 ```bash
-uv run carlabev-lab train exp --study-id PPO_NAVIGATION --exp-id 26
-uv run carlabev-lab eval exp --study-id PPO_NAVIGATION --exp-id 26
-uv run carlabev-lab train exp --study-id EDGE_CASE_SCENARIOS --exp-id 1
-uv run carlabev-lab train exp --study-id EDGE_CASE_SCENARIOS --exp-id 4
+uv run drl train exp --study-id PPO_NAVIGATION --exp-id 26
+uv run drl eval exp --study-id PPO_NAVIGATION --exp-id 26
+uv run drl train exp --study-id EDGE_CASE_SCENARIOS --exp-id 1
+uv run drl train exp --study-id EDGE_CASE_SCENARIOS --exp-id 4
 ```
 
 ### Evaluation Metrics And Study Scoring
@@ -282,7 +286,7 @@ Raw `mean_return` is still logged and saved, but it is no longer the preferred l
 Print raw completed trials for a study:
 
 ```bash
-uv run carlabev-lab results top-trials \
+uv run drl results top-trials \
   --study-id PPO_NAVIGATION_DIFFICULTY \
   --top-k 10
 ```
@@ -290,7 +294,7 @@ uv run carlabev-lab results top-trials \
 Print seed-averaged experiment summaries:
 
 ```bash
-uv run carlabev-lab results top-experiments \
+uv run drl results top-experiments \
   --study-id PPO_NAVIGATION_MEDIUM_TEMPORAL_FUSION \
   --top-k 3
 ```
@@ -298,7 +302,7 @@ uv run carlabev-lab results top-experiments \
 Print the normalized-score leaderboard:
 
 ```bash
-uv run carlabev-lab results leaderboard \
+uv run drl results leaderboard \
   --study-id PPO_NAVIGATION_MEDIUM_SEMANTIC_CLASSES \
   --top-k 6
 ```
@@ -310,7 +314,7 @@ The seed-scene diagnostic tooling is now split into two stages so you do not nee
 Run the expensive data-generation pass once:
 
 ```bash
-uv run carlabev-lab diagnostics seed-scenes analyze \
+uv run drl diagnostics seed-scenes analyze \
   --difficulty-ids rt_medium_v1 \
   --samples-per-seed 1000 \
   --seed-mode incremental \
@@ -335,14 +339,14 @@ results/seed_scene_diag_medium_incremental/
 Re-render figures from those saved artifacts without touching the simulator:
 
 ```bash
-uv run carlabev-lab diagnostics seed-scenes visualize \
+uv run drl diagnostics seed-scenes visualize \
   --output-dir results/seed_scene_diag_medium_incremental
 ```
 
 Spawn clustering is visualization-only and can be tuned without rerunning analysis:
 
 ```bash
-uv run carlabev-lab diagnostics seed-scenes visualize \
+uv run drl diagnostics seed-scenes visualize \
   --output-dir results/seed_scene_diag_medium_incremental \
   --spawn-cluster-radius 20 \
   --spawn-top-k 10
@@ -433,7 +437,7 @@ Execute tuning stages sequentially from your terminal:
 
 **Policy Dynamics: tune learning rate, GAE lambda, and discount factor**
 ```bash
-uv run carlabev-lab tune run \
+uv run drl tune run \
     --study-id PPO_NAVIGATION \
     --exp-id 26 \
     --stage policy_dynamics \
@@ -446,7 +450,7 @@ uv run carlabev-lab tune run \
 
 **Rollout Geometry: tune rollout horizon and minibatch/update geometry**
 ```bash
-uv run carlabev-lab tune run \
+uv run drl tune run \
     --study-id PPO_NAVIGATION \
     --exp-id 26 \
     --stage rollout_geometry \
@@ -465,7 +469,7 @@ The current `PPO_NAVIGATION` study declares these stages:
 
 Review tuning runs instantly:
 ```bash
-uv run carlabev-lab tune analyze --study-id PPO_NAVIGATION --exp-id 26 --top-k 5
+uv run drl tune analyze --study-id PPO_NAVIGATION --exp-id 26 --top-k 5
 ```
 This loads the Optuna study configured for `PPO_NAVIGATION`, filters to experiment `26`, and generates parameter curves, importance breakdowns, and history charts under `results/`.
 

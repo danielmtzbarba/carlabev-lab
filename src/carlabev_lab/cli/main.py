@@ -7,24 +7,24 @@ import sys
 from collections.abc import Sequence
 
 USAGE = """Usage:
-  carlabev-lab train exp [ARGS...]
-  carlabev-lab eval exp [ARGS...]
-  carlabev-lab tune run [ARGS...]
-  carlabev-lab tune analyze [ARGS...]
-  carlabev-lab results top-trials [ARGS...]
-  carlabev-lab results top-experiments [ARGS...]
-  carlabev-lab results leaderboard [ARGS...]
-  carlabev-lab results confirmation-summary [ARGS...]
-  carlabev-lab results plots [ARGS...]
-  carlabev-lab results medium-report [ARGS...]
-  carlabev-lab db trial-states [ARGS...]
-  carlabev-lab db inspect [ARGS...]
-  carlabev-lab db clean-stale [ARGS...]
-  carlabev-lab db delete-trials [ARGS...]
-  carlabev-lab diagnostics seed-scenes [ARGS...]
-  carlabev-lab diagnostics pruning [ARGS...]
+  drl train exp [ARGS...]
+  drl eval exp [ARGS...]
+  drl tune run [ARGS...]
+  drl tune analyze [ARGS...]
+  drl results top-trials [ARGS...]
+  drl results top-experiments [ARGS...]
+  drl results leaderboard [ARGS...]
+  drl results confirmation-summary [ARGS...]
+  drl results plots [ARGS...]
+  drl results medium-report [ARGS...]
+  drl db trial-states [ARGS...]
+  drl db inspect [ARGS...]
+  drl db clean-stale [ARGS...]
+  drl db delete-trials [ARGS...]
+  drl diagnostics seed-scenes [ARGS...]
+  drl diagnostics pruning [ARGS...]
 
-Legacy aliases remain available:
+Compatibility aliases remain available:
   drl run train exp [ARGS...]
   drl run eval exp [ARGS...]
 """
@@ -224,7 +224,7 @@ def main(argv: Sequence[str] | None = None) -> object:
         return None
 
     args = _normalize_legacy_args(args)
-    group = _pop_command(args, "carlabev-lab")
+    group = _pop_command(args, "drl")
 
     if group == "train":
         return run_train_command(args)
@@ -232,14 +232,14 @@ def main(argv: Sequence[str] | None = None) -> object:
         return run_eval_command(args)
 
     if group == "tune":
-        command = _pop_command(args, "carlabev-lab tune")
+        command = _pop_command(args, "drl tune")
         if command == "run":
             return run_tune_command(args)
         if command == "analyze":
             return run_tune_analysis_command(args)
 
     if group == "results":
-        command = _pop_command(args, "carlabev-lab results")
+        command = _pop_command(args, "drl results")
         if command == "top-trials":
             return run_results_top_trials_command(args)
         if command == "top-experiments":
@@ -254,7 +254,7 @@ def main(argv: Sequence[str] | None = None) -> object:
             return run_results_medium_report_command(args)
 
     if group == "db":
-        command = _pop_command(args, "carlabev-lab db")
+        command = _pop_command(args, "drl db")
         if command == "trial-states":
             return run_db_trial_states_command(args)
         if command == "inspect":
@@ -265,7 +265,7 @@ def main(argv: Sequence[str] | None = None) -> object:
             return run_db_delete_trials_command(args)
 
     if group == "diagnostics":
-        command = _pop_command(args, "carlabev-lab diagnostics")
+        command = _pop_command(args, "drl diagnostics")
         if command == "seed-scenes":
             return run_diagnostics_seed_scenes_command(args)
         if command == "pruning":

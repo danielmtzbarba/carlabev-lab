@@ -80,7 +80,7 @@ sleep_time=$(((SLURM_ARRAY_TASK_ID - 1) * 20))
 echo "Sleeping ${sleep_time}s before launch..."
 sleep "${sleep_time}"
 
-srun env PYTHONUNBUFFERED=1 uv run carlabev-lab train exp \
+srun env PYTHONUNBUFFERED=1 uv run drl train exp \
     --study-id "${STUDY_ID}" \
     --exp-id "${EXP_ID}" \
     --seed "${SEED}" \
