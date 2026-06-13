@@ -10,6 +10,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset, Subset
 
+from src.world_model.config import WorldModelDataConfig
 from src.world_model.contracts import DatasetRootConfig, DatasetSummaryModel, WorldModelSequenceConfig
 
 REQUIRED_ARRAYS = (
@@ -80,6 +81,17 @@ class IndexedDataset:
     shards: tuple[ShardRecord, ...]
     transitions: tuple[TransitionRef, ...]
     episodes: dict[tuple[int, int, int], tuple[TransitionRef, ...]]
+
+
+@dataclass(frozen=True)
+class WorldModelDataArtifacts:
+    train_dataset: Dataset
+    val_dataset: Dataset
+    train_loader: DataLoader
+    val_loader: DataLoader
+    indexed: IndexedDataset
+    obs_shape: tuple[int, int, int]
+    num_actions: int
 
 
 def _summary_path(dataset_dir: Path) -> Path:
@@ -434,3 +446,41 @@ def build_sequence_datasets(
     train_dataset, val_dataset = build_train_val_subsets(dataset, val_ratio=cfg.val_ratio)
     return train_dataset, val_dataset, indexed
 
+
+def build_world_model_data(cfg: WorldModelDataConfig) -> WorldModelDataArtifacts:
+    sequence_cfg = WorldModelSequenceConfig(
+        chunk_length=cfg.chunk_length,
+        stride=cfg.stride,
+        val_ratio=cfg.val_ratio,
+        expected_num_actions=cfg.expected_num_actions,
+    )
+    train_dataset, val_dataset, indexed = build_sequence_datasets(
+        cfg.dataset_paths,
+        cfg=sequence_cfg,
+        include_metadata=cfg.include_metadata,
+    )
+    if len(train_dataset) == 0:
+        raise ValueError("Training dataset is empty after sequence-window construction.")
+    train_loader = build_dataloader(
+        train_dataset,
+        batch_size=cfg.batch_size,
+        shuffle=True,
+        num_workers=cfg.num_workers,
+    )
+    val_loader = build_dataloader(
+        val_dataset,
+        batch_size=cfg.batch_size,
+        shuffle=False,
+        num_workers=cfg.num_workers,
+    )
+    sample = train_dataset[0]
+    obs_shape = tuple(sample["obs"].shape[1:])
+    return WorldModelDataArtifacts(
+        train_dataset=train_dataset,
+        val_dataset=val_dataset,
+        train_loader=train_loader,
+        val_loader=val_loader,
+        indexed=indexed,
+        obs_shape=obs_shape,
+        num_actions=cfg.expected_num_actions,
+    )

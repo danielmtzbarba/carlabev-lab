@@ -26,6 +26,7 @@ USAGE = """Usage:
   drl world-model collect exp [ARGS...]
   drl world-model inspect [ARGS...]
   drl world-model summary [ARGS...]
+  drl world-model train [ARGS...]
   drl world-model validate [ARGS...]
 
 Compatibility aliases remain available:
@@ -221,6 +222,10 @@ def run_world_model_summary_command(argv: Sequence[str]) -> object:
     return _invoke_module_main("src.carlabev_lab.world_model.summary", argv)
 
 
+def run_world_model_train_command(argv: Sequence[str]) -> object:
+    return _invoke_module_main("src.carlabev_lab.world_model.train", argv)
+
+
 def run_world_model_validate_command(argv: Sequence[str]) -> object:
     return _invoke_module_main("src.carlabev_lab.world_model.validate", argv)
 
@@ -299,6 +304,8 @@ def main(argv: Sequence[str] | None = None) -> object:
             return run_world_model_inspect_command(args)
         if command == "summary":
             return run_world_model_summary_command(args)
+        if command == "train":
+            return run_world_model_train_command(args)
         if command == "validate":
             return run_world_model_validate_command(args)
 

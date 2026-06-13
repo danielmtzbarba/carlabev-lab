@@ -140,6 +140,24 @@ def test_main_dispatches_world_model_summary_command(monkeypatch):
 
 
 @pytest.mark.unit
+def test_main_dispatches_world_model_train_command(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_train(argv):
+        captured["argv"] = list(argv)
+        return "trained-wm"
+
+    monkeypatch.setattr(drl_cli, "run_world_model_train_command", fake_train)
+
+    result = drl_cli.main(
+        ["world-model", "train", "--data.dataset-paths", "datasets/world_model/demo"]
+    )
+
+    assert result == "trained-wm"
+    assert captured["argv"] == ["--data.dataset-paths", "datasets/world_model/demo"]
+
+
+@pytest.mark.unit
 def test_main_dispatches_world_model_validate_command(monkeypatch):
     captured: dict[str, object] = {}
 

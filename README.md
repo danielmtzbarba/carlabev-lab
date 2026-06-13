@@ -74,6 +74,7 @@ The main command groups are:
 - `db`: inspect or clean Optuna state
 - `diagnostics`: run seed-scene and pruning diagnostics
 - `world-model`: collect, inspect, validate, and prepare offline datasets for the LeWM proof of concept
+- `world-model`: collect, inspect, validate, and train offline world models for the LeWM proof of concept
 
 `drl` is the primary installed command.
 
@@ -117,6 +118,7 @@ The Phase 1 data layer now includes:
 - PyTorch `Dataset` / `DataLoader` support for one-step transitions
 - PyTorch `Dataset` / `DataLoader` support for fixed-length episode-aware sequence windows
 - training-readiness validation for shard integrity, action coverage, episode structure, and valid rollout windows
+- a ViT-style latent world-model trainer with separate action conditioning and JEPA-style latent prediction
 
 The collector stores reusable offline datasets under:
 
@@ -226,6 +228,28 @@ uv run drl world-model validate \
   --paths datasets/world_model/lewm-random-100k/PPO_NAVIGATION/exp_26/train/seed_0
 ```
 
+Train the Phase 1 latent world model:
+
+```bash
+uv run drl world-model train \
+  --run-name lewm-random-phase1 \
+  --data.dataset-paths datasets/world_model/lewm-random-100k/PPO_NAVIGATION/exp_26/train/seed_0 \
+  --data.batch-size 16 \
+  --data.chunk-length 8 \
+  --training.epochs 5
+```
+
+The world-model trainer now uses a nested config surface that mirrors the repo's
+more structured runtime patterns:
+
+- `data.*`: dataset roots, chunking, batching, action-space expectations
+- `model.*`: ViT encoder and latent-predictor dimensions
+- `optimizer.*`: optimizer and gradient-clip settings
+- `training.*`: epochs, device, checkpoint cadence, regularization weight
+
+`training.device` now defaults to `cuda`. Override it with
+`--training.device cpu` when running a local smoke test or when a GPU is not available.
+
 The summary command reports:
 
 - total episodes and transitions
@@ -254,6 +278,20 @@ The validation uniqueness metrics intentionally distinguish:
 - transition-level uniqueness: a concentration signal that will naturally be low in long episodes
 
 Warnings are now based on episode-level diversity so healthy long-horizon datasets do not get misleading route-diversity alerts.
+
+The trainer writes artifacts under:
+
+```text
+runs/world_model/<run_name>/
+```
+
+including:
+
+- `checkpoints/world_model_best.pt`
+- `checkpoints/world_model_final.pt`
+- `artifacts/validation_report.json`
+- `artifacts/history.json`
+- `config.json`
 
 For PPO-collected datasets, the summary also reports the source run directory and
 checkpoint path so you can trace the dataset back to the exact baseline policy.
