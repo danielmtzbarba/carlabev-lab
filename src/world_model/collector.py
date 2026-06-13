@@ -18,7 +18,11 @@ from src.world_model.dataset_schema import (
     DatasetShardSummary,
     summary_path,
 )
-from src.world_model.policies import build_policy
+from src.world_model.policies import (
+    build_policy,
+    resolve_ppo_checkpoint,
+    validate_ppo_checkpoint_compatibility,
+)
 
 
 def _normalize_action(action: Any) -> np.ndarray:
@@ -194,6 +198,15 @@ def collect_dataset(
 
     envs = make_env(to_carlabev_run_config(cfg), eval=False)
     sampler = build_train_protocol_sampler(cfg)
+    checkpoint_info = {"checkpoint_path": None, "source_run_dir": None}
+    if policy == "ppo":
+        resolved_checkpoint_path, _resolved_run_dir = resolve_ppo_checkpoint(
+            cfg, checkpoint_path=checkpoint_path
+        )
+        checkpoint_info = validate_ppo_checkpoint_compatibility(
+            cfg, envs, resolved_checkpoint_path
+        )
+        checkpoint_path = checkpoint_info["checkpoint_path"]
     policy_adapter = build_policy(
         policy_name=policy,
         cfg=cfg,
@@ -300,6 +313,8 @@ def collect_dataset(
         study_id=cfg.study_id,
         exp_id=cfg.exp_id,
         seed=cfg.seed,
+        checkpoint_path=checkpoint_info["checkpoint_path"],
+        source_run_dir=checkpoint_info["source_run_dir"],
     )
     with open(summary_path(out_dir), "w", encoding="utf-8") as handle:
         json.dump(summary.to_dict(), handle, indent=2, sort_keys=True)

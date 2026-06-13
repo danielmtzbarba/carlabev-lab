@@ -73,6 +73,7 @@ The main command groups are:
 - `results`: inspect leaderboards, plots, and report assets
 - `db`: inspect or clean Optuna state
 - `diagnostics`: run seed-scene and pruning diagnostics
+- `world-model`: collect and inspect offline datasets for the LeWM proof of concept
 
 `drl` is the primary installed command.
 
@@ -98,6 +99,104 @@ uv run drl train exp --study-id PPO_NAVIGATION --exp-id 26
 uv run drl eval exp --study-id PPO_NAVIGATION --exp-id 26
 uv run pytest
 ```
+
+### World Model / LeWM Data Collection
+
+The repo now includes a world-model dataset pipeline intended for a fast
+LeWorld Model style proof of concept against the maintained PPO baseline.
+
+The collector stores reusable offline datasets under:
+
+```text
+datasets/world_model/<dataset_name>/<study_id>/exp_<exp_id>/<split>/seed_<seed>/
+```
+
+Each shard stores transition-level arrays such as:
+
+- `obs`
+- `actions`
+- `rewards`
+- `dones`
+- `next_obs`
+- `route_signature`
+- `scene_signature`
+- `straight_fraction`
+- `left_turn_fraction`
+- `right_turn_fraction`
+
+Collect a random-policy dataset:
+
+```bash
+uv run drl world-model collect exp \
+  --study-id PPO_NAVIGATION \
+  --exp-id 26 \
+  --seed 0 \
+  --num-envs 14 \
+  --total-transitions 100000 \
+  --steps-per-shard 4096 \
+  --policy random \
+  --dataset-name lewm-random-100k \
+  --split train \
+  --device cpu
+```
+
+Collect a PPO-policy dataset from the latest matching run:
+
+```bash
+uv run drl world-model collect exp \
+  --study-id PPO_NAVIGATION \
+  --exp-id 26 \
+  --seed 0 \
+  --num-envs 14 \
+  --total-transitions 100000 \
+  --steps-per-shard 4096 \
+  --policy ppo \
+  --dataset-name lewm-ppo-100k \
+  --split train \
+  --device cpu
+```
+
+For `--policy ppo`, the collector resolves the latest matching checkpoint from
+the experiment's `LATEST_RUN.json` when `--checkpoint-path` is omitted.
+
+Before collection starts, the collector validates that the checkpoint is
+compatible with the requested dataset configuration. The checks include:
+
+- `study_id`
+- `exp_id`
+- `algorithm`
+- observation mode and semantic layout
+- temporal fusion mode and frame stack
+- action mode and action profile
+- FOV settings
+- live observation shape and action-space type
+
+If the checkpoint contract does not match the requested dataset environment, the
+collector fails fast instead of silently producing inconsistent PPO rollouts.
+
+Inspect one shard:
+
+```bash
+uv run drl world-model inspect \
+  --path datasets/world_model/lewm-random-100k/PPO_NAVIGATION/exp_26/train/seed_0
+```
+
+Summarize whole-dataset quality:
+
+```bash
+uv run drl world-model summary \
+  --path datasets/world_model/lewm-random-100k/PPO_NAVIGATION/exp_26/train/seed_0
+```
+
+The summary command reports:
+
+- total episodes and transitions
+- action histogram
+- episode-level route and scene uniqueness
+- transition-level route and scene concentration
+- mean reward
+- done and terminated rates
+- mean straight / left / right route fractions
 
 ### Testing
 

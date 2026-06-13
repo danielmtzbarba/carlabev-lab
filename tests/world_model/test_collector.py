@@ -176,9 +176,15 @@ def test_summarize_dataset_aggregates_quality_metrics(monkeypatch, tiny_cfg, dis
 
     assert payload["total_transitions"] == 4
     assert payload["shard_count"] == 2
-    assert payload["unique_routes"] == 2
-    assert payload["unique_scenes"] == 2
+    assert payload["unique_routes_transition"] == 2
+    assert payload["unique_scenes_transition"] == 2
+    assert payload["unique_routes_episode"] == 2
+    assert payload["unique_scenes_episode"] == 2
+    assert payload["total_episodes"] == 4
+    assert payload["route_uniqueness_rate_episode"] == pytest.approx(0.5)
     assert payload["done_rate"] == pytest.approx(1.0)
     assert payload["mean_reward"] == pytest.approx(1.0)
     assert payload["mean_straight_fraction"] == pytest.approx(0.55)
+    assert payload["mean_transitions_per_route"] == pytest.approx(2.0)
+    assert payload["max_transitions_per_route"] == 2
     assert payload["action_histogram"]

@@ -25,6 +25,8 @@ def _render_overview(console: Console, payload: dict[str, object]) -> None:
         ("Policy", "policy"),
         ("Split", "split"),
         ("Seed", "seed"),
+        ("Checkpoint", "checkpoint_path"),
+        ("Source Run Dir", "source_run_dir"),
         ("Shard Count", "shard_count"),
         ("Transitions", "total_transitions"),
         ("Episodes", "total_episodes"),
@@ -33,15 +35,23 @@ def _render_overview(console: Console, payload: dict[str, object]) -> None:
         ("Mean Reward", "mean_reward"),
         ("Done Rate", "done_rate"),
         ("Terminated Rate", "terminated_rate"),
-        ("Unique Routes", "unique_routes"),
-        ("Unique Scenes", "unique_scenes"),
-        ("Route Repeat Ratio", "route_repeat_ratio"),
-        ("Scene Repeat Ratio", "scene_repeat_ratio"),
+        ("Unique Routes (Episode)", "unique_routes_episode"),
+        ("Unique Scenes (Episode)", "unique_scenes_episode"),
+        ("Route Uniqueness Rate", "route_uniqueness_rate_episode"),
+        ("Scene Uniqueness Rate", "scene_uniqueness_rate_episode"),
+        ("Unique Routes (Transition)", "unique_routes_transition"),
+        ("Unique Scenes (Transition)", "unique_scenes_transition"),
+        ("Mean Transitions / Route", "mean_transitions_per_route"),
+        ("Max Transitions / Route", "max_transitions_per_route"),
+        ("Mean Transitions / Scene", "mean_transitions_per_scene"),
+        ("Max Transitions / Scene", "max_transitions_per_scene"),
         ("Mean Straight Fraction", "mean_straight_fraction"),
         ("Mean Left Fraction", "mean_left_turn_fraction"),
         ("Mean Right Fraction", "mean_right_turn_fraction"),
     ):
         value = payload[key]
+        if value is None:
+            continue
         if isinstance(value, float):
             if "rate" in key or "ratio" in key or "fraction" in key:
                 rendered = f"{value:.3f}"

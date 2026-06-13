@@ -22,6 +22,8 @@ class DatasetCollectionSummary:
     study_id: str
     exp_id: int
     seed: int
+    checkpoint_path: str | None = None
+    source_run_dir: str | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
