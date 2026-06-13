@@ -105,6 +105,12 @@ uv run pytest
 The repo now includes a world-model dataset pipeline intended for a fast
 LeWorld Model style proof of concept against the maintained PPO baseline.
 
+For the current proof of concept, the plan is:
+
+1. collect offline transition datasets from the maintained PPO navigation study
+2. train a lightweight world model on those rollouts
+3. compare the LeWM-style control loop against the direct PPO baseline
+
 The collector stores reusable offline datasets under:
 
 ```text
@@ -117,12 +123,23 @@ Each shard stores transition-level arrays such as:
 - `actions`
 - `rewards`
 - `dones`
+- `terminated`
+- `truncated`
 - `next_obs`
+- `env_index`
+- `episode_id`
+- `step_in_episode`
+- `protocol_id`
+- `reset_seed`
 - `route_signature`
 - `scene_signature`
 - `straight_fraction`
 - `left_turn_fraction`
 - `right_turn_fraction`
+
+Each dataset directory also includes a `summary.json` manifest with shard
+metadata, total transition count, collection policy, and PPO checkpoint
+provenance when applicable.
 
 Collect a random-policy dataset:
 
@@ -159,6 +176,9 @@ uv run drl world-model collect exp \
 For `--policy ppo`, the collector resolves the latest matching checkpoint from
 the experiment's `LATEST_RUN.json` when `--checkpoint-path` is omitted.
 
+If you want to pin a specific PPO checkpoint explicitly, pass
+`--checkpoint-path /absolute/path/to/ppo_final.pt`.
+
 Before collection starts, the collector validates that the checkpoint is
 compatible with the requested dataset configuration. The checks include:
 
@@ -173,6 +193,10 @@ compatible with the requested dataset configuration. The checks include:
 
 If the checkpoint contract does not match the requested dataset environment, the
 collector fails fast instead of silently producing inconsistent PPO rollouts.
+
+During collection, the CLI shows a Rich progress bar and the collector disables
+video capture so dataset generation does not overwrite training videos or pay
+extra rendering overhead for recorder wrappers.
 
 Inspect one shard:
 
@@ -194,9 +218,20 @@ The summary command reports:
 - action histogram
 - episode-level route and scene uniqueness
 - transition-level route and scene concentration
+- mean and max transitions per route / scene
 - mean reward
 - done and terminated rates
 - mean straight / left / right route fractions
+
+For PPO-collected datasets, the summary also reports the source run directory and
+checkpoint path so you can trace the dataset back to the exact baseline policy.
+
+The intended quick validation loop is:
+
+1. run a smoke dataset with `--total-transitions 64` or `256`
+2. inspect a shard with `drl world-model inspect`
+3. summarize the full dataset with `drl world-model summary`
+4. scale up to random and PPO datasets once action balance and route metadata look sane
 
 ### Testing
 
