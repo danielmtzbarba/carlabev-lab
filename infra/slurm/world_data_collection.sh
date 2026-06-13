@@ -34,6 +34,11 @@ echo "  steps_per_shard=${STEPS_PER_SHARD}"
 echo "  exp_ids=${EXP_IDS[*]}"
 echo "  seeds=${SEEDS[*]}"
 
+PROGRESS_FLAG="--show-progress"
+if [[ "${SHOW_PROGRESS}" == "false" ]]; then
+    PROGRESS_FLAG="--no-show-progress"
+fi
+
 for SEED in "${SEEDS[@]}"; do
     for EXP_ID in "${EXP_IDS[@]}"; do
         echo
@@ -49,6 +54,6 @@ for SEED in "${SEEDS[@]}"; do
             --dataset-name "${DATASET_NAME}" \
             --split "${SPLIT}" \
             --device "${DEVICE}" \
-            --show-progress "${SHOW_PROGRESS}"
+            "${PROGRESS_FLAG}"
     done
 done
