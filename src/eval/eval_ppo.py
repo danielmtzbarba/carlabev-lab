@@ -14,6 +14,18 @@ from src.config.base_config import to_carlabev_run_config
 from src.eval.scoring import compute_comfort_score, compute_eval_score
 
 
+def _initial_reset_seeds(sampler, num_envs: int):
+    if hasattr(sampler, "initial_reset_seeds"):
+        return sampler.initial_reset_seeds(num_envs)
+    return None
+
+
+def _next_reset_seeds(sampler, reset_mask):
+    if hasattr(sampler, "next_reset_seeds"):
+        return sampler.next_reset_seeds(reset_mask)
+    return None
+
+
 def _evenly_spaced_indices(total: int, count: int) -> list[int]:
     if count <= 0 or total <= 0:
         return []
@@ -40,7 +52,7 @@ def _capture_protocol_videos(cfg, agent, protocol_id, num_episodes, output_dir, 
     sampler = build_eval_protocol_samplers(cfg_capture, [protocol_id])[protocol_id]
 
     options = sampler.initial_options(1)
-    reset_seeds = sampler.initial_reset_seeds(1)
+    reset_seeds = _initial_reset_seeds(sampler, 1)
     obs, _ = capture_env.reset(seed=reset_seeds, options=options)
     obs_t = torch.tensor(obs, dtype=torch.float32, device=device)
     episodes_finished = 0
@@ -60,7 +72,7 @@ def _capture_protocol_videos(cfg, agent, protocol_id, num_episodes, output_dir, 
             episodes_finished += 1
             if episodes_finished < num_episodes:
                 next_obs, _ = capture_env.reset(
-                    seed=sampler.next_reset_seeds(np.array([True], dtype=bool)),
+                    seed=_next_reset_seeds(sampler, np.array([True], dtype=bool)),
                     options=sampler.next_options(reset_mask=np.array([True], dtype=bool)),
                 )
 
@@ -95,7 +107,7 @@ def _run_eval_protocol(eval_env, agent, cfg_eval, protocol_id, sampler, num_epis
     ep_lengths = np.zeros(num_envs, dtype=np.int32)
 
     options = sampler.initial_options(num_envs)
-    reset_seeds = sampler.initial_reset_seeds(num_envs)
+    reset_seeds = _initial_reset_seeds(sampler, num_envs)
     obs, _ = eval_env.reset(seed=reset_seeds, options=options)
     obs_t = torch.tensor(obs, dtype=torch.float32, device=device)
 
@@ -160,7 +172,7 @@ def _run_eval_protocol(eval_env, agent, cfg_eval, protocol_id, sampler, num_epis
 
             if np.any(done) and episodes_finished < num_episodes:
                 next_obs, _ = eval_env.reset(
-                    seed=sampler.next_reset_seeds(done.copy()),
+                    seed=_next_reset_seeds(sampler, done.copy()),
                     options=sampler.next_options(reset_mask=done.copy()),
                 )
 
@@ -230,11 +242,13 @@ def _aggregate_protocol_results(protocol_results):
         "harsh_brake_rate",
     ):
         weighted[key] = sum(
-            result[key] * result["episodes"] for result in protocol_results.values()
+            result.get(key, 0.0) * result["episodes"]
+            for result in protocol_results.values()
         ) / total_episodes
 
     weighted["std_return"] = sum(
-        result["std_return"] * result["episodes"] for result in protocol_results.values()
+        result.get("std_return", 0.0) * result["episodes"]
+        for result in protocol_results.values()
     ) / total_episodes
     weighted["evaluated_protocol_ids"] = list(protocol_results.keys())
     return weighted

@@ -90,6 +90,56 @@ def test_main_dispatches_seed_scene_diagnostics_command(monkeypatch):
 
 
 @pytest.mark.unit
+def test_main_dispatches_world_model_collect_command(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_collect(argv):
+        captured["argv"] = list(argv)
+        return "collected"
+
+    monkeypatch.setattr(drl_cli, "run_world_model_collect_command", fake_collect)
+
+    result = drl_cli.main(
+        ["world-model", "collect", "exp", "--study-id", "PPO_NAVIGATION"]
+    )
+
+    assert result == "collected"
+    assert captured["argv"] == ["exp", "--study-id", "PPO_NAVIGATION"]
+
+
+@pytest.mark.unit
+def test_main_dispatches_world_model_inspect_command(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_inspect(argv):
+        captured["argv"] = list(argv)
+        return "inspected"
+
+    monkeypatch.setattr(drl_cli, "run_world_model_inspect_command", fake_inspect)
+
+    result = drl_cli.main(["world-model", "inspect", "--path", "datasets/world_model/demo"])
+
+    assert result == "inspected"
+    assert captured["argv"] == ["--path", "datasets/world_model/demo"]
+
+
+@pytest.mark.unit
+def test_main_dispatches_world_model_summary_command(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_summary(argv):
+        captured["argv"] = list(argv)
+        return "summarized"
+
+    monkeypatch.setattr(drl_cli, "run_world_model_summary_command", fake_summary)
+
+    result = drl_cli.main(["world-model", "summary", "--path", "datasets/world_model/demo"])
+
+    assert result == "summarized"
+    assert captured["argv"] == ["--path", "datasets/world_model/demo"]
+
+
+@pytest.mark.unit
 def test_parse_experiment_args_applies_study_config(monkeypatch):
     monkeypatch.setattr(drl_cli, "validate_run_config", lambda _cfg: None)
 

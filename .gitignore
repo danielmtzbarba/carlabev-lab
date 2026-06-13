@@ -12,6 +12,7 @@ runs/
 bkup/
 logs/
 results/
+datasets/
 *.cleanrl_model
 *.DS_Store
 

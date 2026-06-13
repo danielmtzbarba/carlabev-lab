@@ -12,6 +12,12 @@ import numpy as np
 from PIL import Image
 from rich.progress import BarColumn, Progress, TextColumn, TimeElapsedColumn, TimeRemainingColumn
 
+from src.carlabev_lab.simulator.signatures import (
+    extract_scene_route_metadata,
+    route_signature,
+    scene_signature,
+)
+
 from .common import (
     CARLABEV_REPO,
     CoverageData,
@@ -42,51 +48,6 @@ def make_env(frame_size: int) -> CarlaBEV:
     return CarlaBEV(cfg)
 
 
-def scene_signature(env: CarlaBEV) -> str:
-    hero = env.map.hero
-    route_x, route_y = env.map.route
-    vehicles = []
-    for actor in env.map.actor_manager.actors.get("vehicle", []):
-        ax, ay, ayaw, av = actor.state
-        vehicles.append(
-            (
-                round(float(ax), 3),
-                round(float(ay), 3),
-                round(float(ayaw), 5),
-                round(float(av), 5),
-            )
-        )
-
-    payload = {
-        "hero": (
-            round(float(hero.x), 3),
-            round(float(hero.y), 3),
-            round(float(hero.yaw), 5),
-            round(float(hero.v), 5),
-        ),
-        "route_head": tuple((int(route_x[i]), int(route_y[i])) for i in range(min(24, len(route_x)))),
-        "route_len": int(len(route_x)),
-        "vehicles": tuple(vehicles),
-        "num_vehicles": int(env.num_vehicles),
-        "route_length": round(float(env.len_ego_route), 4),
-    }
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:16]
-
-
-def route_signature(env: CarlaBEV) -> str:
-    route_x, route_y = env.map.route
-    payload = {
-        "route": tuple(
-            (round(float(route_x[i]), 3), round(float(route_y[i]), 3))
-            for i in range(min(len(route_x), len(route_y)))
-        ),
-        "route_length": round(float(env.len_ego_route), 4),
-    }
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:16]
-
-
 def extract_sample(
     *,
     difficulty_id: str,
@@ -99,13 +60,14 @@ def extract_sample(
     hero = env.map.hero
     scenario = info.get("scenario", {})
     spawn = info.get("spawn_validation", {})
+    metadata = extract_scene_route_metadata(env, info)
     return SceneSample(
         difficulty_id=difficulty_id,
         seed=seed,
         sample_index=sample_index,
         applied_seed=applied_seed,
-        scene_signature=scene_signature(env),
-        route_signature=route_signature(env),
+        scene_signature=metadata["scene_signature"],
+        route_signature=metadata["route_signature"],
         hero_x=round(float(hero.x), 6),
         hero_y=round(float(hero.y), 6),
         hero_yaw=round(float(hero.yaw), 6),
@@ -115,9 +77,9 @@ def extract_sample(
         route_profile=str(scenario.get("route_profile", "unknown")),
         route_turn_count=int(scenario.get("route_turn_count", 0)),
         route_intersection_like=bool(scenario.get("route_intersection_like", False)),
-        straight_fraction=float(scenario.get("straight_fraction", math.nan)),
-        left_turn_fraction=float(scenario.get("left_turn_fraction", math.nan)),
-        right_turn_fraction=float(scenario.get("right_turn_fraction", math.nan)),
+        straight_fraction=float(metadata["straight_fraction"]),
+        left_turn_fraction=float(metadata["left_turn_fraction"]),
+        right_turn_fraction=float(metadata["right_turn_fraction"]),
         spawn_valid=bool(spawn.get("valid", False)),
         spawn_reason=str(spawn.get("reason", "unknown")),
         reset_attempts=spawn.get("attempts"),
