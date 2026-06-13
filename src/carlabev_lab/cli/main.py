@@ -26,6 +26,7 @@ USAGE = """Usage:
   drl world-model collect exp [ARGS...]
   drl world-model inspect [ARGS...]
   drl world-model summary [ARGS...]
+  drl world-model validate [ARGS...]
 
 Compatibility aliases remain available:
   drl run train exp [ARGS...]
@@ -220,6 +221,10 @@ def run_world_model_summary_command(argv: Sequence[str]) -> object:
     return _invoke_module_main("src.carlabev_lab.world_model.summary", argv)
 
 
+def run_world_model_validate_command(argv: Sequence[str]) -> object:
+    return _invoke_module_main("src.carlabev_lab.world_model.validate", argv)
+
+
 def _pop_command(argv: list[str], context: str) -> str:
     if not argv:
         raise SystemExit(f"Missing command after {context}.\n\n{USAGE}")
@@ -294,6 +299,8 @@ def main(argv: Sequence[str] | None = None) -> object:
             return run_world_model_inspect_command(args)
         if command == "summary":
             return run_world_model_summary_command(args)
+        if command == "validate":
+            return run_world_model_validate_command(args)
 
     raise SystemExit(f"Unknown command: {' '.join([group, *args])}\n\n{USAGE}")
 

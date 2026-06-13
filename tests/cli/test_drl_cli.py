@@ -140,6 +140,24 @@ def test_main_dispatches_world_model_summary_command(monkeypatch):
 
 
 @pytest.mark.unit
+def test_main_dispatches_world_model_validate_command(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_validate(argv):
+        captured["argv"] = list(argv)
+        return "validated"
+
+    monkeypatch.setattr(drl_cli, "run_world_model_validate_command", fake_validate)
+
+    result = drl_cli.main(
+        ["world-model", "validate", "--paths", "datasets/world_model/demo"]
+    )
+
+    assert result == "validated"
+    assert captured["argv"] == ["--paths", "datasets/world_model/demo"]
+
+
+@pytest.mark.unit
 def test_parse_experiment_args_applies_study_config(monkeypatch):
     monkeypatch.setattr(drl_cli, "validate_run_config", lambda _cfg: None)
 

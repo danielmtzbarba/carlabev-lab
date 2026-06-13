@@ -73,7 +73,7 @@ The main command groups are:
 - `results`: inspect leaderboards, plots, and report assets
 - `db`: inspect or clean Optuna state
 - `diagnostics`: run seed-scene and pruning diagnostics
-- `world-model`: collect and inspect offline datasets for the LeWM proof of concept
+- `world-model`: collect, inspect, validate, and prepare offline datasets for the LeWM proof of concept
 
 `drl` is the primary installed command.
 
@@ -110,6 +110,13 @@ For the current proof of concept, the plan is:
 1. collect offline transition datasets from the maintained PPO navigation study
 2. train a lightweight world model on those rollouts
 3. compare the LeWM-style control loop against the direct PPO baseline
+
+The Phase 1 data layer now includes:
+
+- Pydantic-backed dataset and validation contracts
+- PyTorch `Dataset` / `DataLoader` support for one-step transitions
+- PyTorch `Dataset` / `DataLoader` support for fixed-length episode-aware sequence windows
+- training-readiness validation for shard integrity, action coverage, episode structure, and valid rollout windows
 
 The collector stores reusable offline datasets under:
 
@@ -212,6 +219,13 @@ uv run drl world-model summary \
   --path datasets/world_model/lewm-random-100k/PPO_NAVIGATION/exp_26/train/seed_0
 ```
 
+Validate training readiness:
+
+```bash
+uv run drl world-model validate \
+  --paths datasets/world_model/lewm-random-100k/PPO_NAVIGATION/exp_26/train/seed_0
+```
+
 The summary command reports:
 
 - total episodes and transitions
@@ -223,6 +237,24 @@ The summary command reports:
 - done and terminated rates
 - mean straight / left / right route fractions
 
+The validation command reports:
+
+- total datasets, shards, transitions, and episodes
+- action histogram
+- episode length statistics
+- episode-level route and scene uniqueness
+- transition-level route and scene uniqueness
+- done / terminated / truncated rates
+- valid sequence-window counts for chunk lengths such as `1`, `8`, and `16`
+- per-dataset transition counts when mixing random and PPO roots later
+
+The validation uniqueness metrics intentionally distinguish:
+
+- episode-level uniqueness: the right metric for route diversity across episodes
+- transition-level uniqueness: a concentration signal that will naturally be low in long episodes
+
+Warnings are now based on episode-level diversity so healthy long-horizon datasets do not get misleading route-diversity alerts.
+
 For PPO-collected datasets, the summary also reports the source run directory and
 checkpoint path so you can trace the dataset back to the exact baseline policy.
 
@@ -230,8 +262,9 @@ The intended quick validation loop is:
 
 1. run a smoke dataset with `--total-transitions 64` or `256`
 2. inspect a shard with `drl world-model inspect`
-3. summarize the full dataset with `drl world-model summary`
-4. scale up to random and PPO datasets once action balance and route metadata look sane
+3. validate the dataset with `drl world-model validate`
+4. summarize the full dataset with `drl world-model summary`
+5. scale up to random and PPO datasets once action balance and route metadata look sane
 
 ### Testing
 
