@@ -74,7 +74,7 @@ The main command groups are:
 - `db`: inspect or clean Optuna state
 - `diagnostics`: run seed-scene and pruning diagnostics
 - `world-model`: collect, inspect, validate, and prepare offline datasets for the LeWM proof of concept
-- `world-model`: collect, inspect, validate, and train offline world models for the LeWM proof of concept
+- `world-model`: collect, inspect, validate, benchmark, and train offline world models for the LeWM proof of concept
 
 `drl` is the primary installed command.
 
@@ -227,6 +227,28 @@ Validate training readiness:
 uv run drl world-model validate \
   --paths datasets/world_model/lewm-random-100k/PPO_NAVIGATION/exp_26/train/seed_0
 ```
+
+Benchmark candidate batch sizes and chunk lengths on your current device:
+
+```bash
+uv run drl world-model benchmark \
+  --run-name lewm-bench-a100 \
+  --data.dataset-paths datasets/world_model/lewm-random-100k/PPO_NAVIGATION/exp_26/train/seed_0 \
+  --batch-sizes 8 16 32 64 \
+  --chunk-lengths 8 16 32 \
+  --warmup-batches 2 \
+  --measure-batches 10 \
+  --training.device cuda
+```
+
+The benchmark runs real train steps for each `(batch_size, chunk_length)` pair and
+reports:
+
+- `status`: `ok` or `oom`
+- `samples/s`
+- `tokens/s` where `tokens = batch_size * chunk_length`
+- peak allocated CUDA memory in MB when running on GPU
+- the artifact files written to `runs/world_model/<run_name>/artifacts/benchmark_results.{json,csv}`
 
 Train the Phase 1 latent world model:
 

@@ -108,6 +108,24 @@ def test_main_dispatches_world_model_collect_command(monkeypatch):
 
 
 @pytest.mark.unit
+def test_main_dispatches_world_model_benchmark_command(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_benchmark(argv):
+        captured["argv"] = list(argv)
+        return "benchmarked"
+
+    monkeypatch.setattr(drl_cli, "run_world_model_benchmark_command", fake_benchmark)
+
+    result = drl_cli.main(
+        ["world-model", "benchmark", "--data.dataset-paths", "datasets/world_model/demo"]
+    )
+
+    assert result == "benchmarked"
+    assert captured["argv"] == ["--data.dataset-paths", "datasets/world_model/demo"]
+
+
+@pytest.mark.unit
 def test_main_dispatches_world_model_inspect_command(monkeypatch):
     captured: dict[str, object] = {}
 
