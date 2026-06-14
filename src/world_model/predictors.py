@@ -4,95 +4,154 @@ import torch
 from torch import nn
 
 from src.world_model.config import WorldModelModelConfig
-from src.world_model.encoders import FeedForward
+from src.world_model.encoders import Attention, Block, FeedForward
 
 
-def _modulate(x: torch.Tensor, shift: torch.Tensor, scale: torch.Tensor) -> torch.Tensor:
+def modulate(x: torch.Tensor, shift: torch.Tensor, scale: torch.Tensor) -> torch.Tensor:
     return x * (1 + scale) + shift
 
 
-class CausalAttention(nn.Module):
-    def __init__(self, dim: int, heads: int, dropout: float = 0.0) -> None:
+class ConditionalBlock(nn.Module):
+    def __init__(
+        self,
+        dim: int,
+        heads: int,
+        dim_head: int,
+        mlp_dim: int,
+        dropout: float = 0.0,
+    ) -> None:
         super().__init__()
-        self.norm = nn.LayerNorm(dim)
-        self.attn = nn.MultiheadAttention(
-            embed_dim=dim,
-            num_heads=heads,
-            dropout=dropout,
-            batch_first=True,
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x_norm = self.norm(x)
-        seq_len = x.size(1)
-        attn_mask = torch.triu(
-            torch.ones((seq_len, seq_len), device=x.device, dtype=torch.bool),
-            diagonal=1,
-        )
-        out, _ = self.attn(x_norm, x_norm, x_norm, attn_mask=attn_mask, need_weights=False)
-        return out
-
-
-class ConditionalTransformerBlock(nn.Module):
-    def __init__(self, dim: int, heads: int, mlp_dim: int, dropout: float = 0.0) -> None:
-        super().__init__()
-        self.attn = CausalAttention(dim, heads=heads, dropout=dropout)
-        self.ff = FeedForward(dim, hidden_dim=mlp_dim, dropout=dropout)
+        self.attn = Attention(dim, heads=heads, dim_head=dim_head, dropout=dropout)
+        self.mlp = FeedForward(dim, mlp_dim, dropout=dropout)
         self.norm1 = nn.LayerNorm(dim, elementwise_affine=False, eps=1e-6)
         self.norm2 = nn.LayerNorm(dim, elementwise_affine=False, eps=1e-6)
-        self.cond = nn.Sequential(
+        self.ada_ln_modulation = nn.Sequential(
             nn.SiLU(),
-            nn.Linear(dim, 6 * dim),
+            nn.Linear(dim, 6 * dim, bias=True),
         )
-        nn.init.zeros_(self.cond[-1].weight)
-        nn.init.zeros_(self.cond[-1].bias)
+        nn.init.constant_(self.ada_ln_modulation[-1].weight, 0)
+        nn.init.constant_(self.ada_ln_modulation[-1].bias, 0)
 
-    def forward(self, x: torch.Tensor, cond: torch.Tensor) -> torch.Tensor:
-        shift_attn, scale_attn, gate_attn, shift_ff, scale_ff, gate_ff = self.cond(cond).chunk(6, dim=-1)
-        x = x + gate_attn * self.attn(_modulate(self.norm1(x), shift_attn, scale_attn))
-        ff_input = _modulate(self.norm2(x), shift_ff, scale_ff)
-        x = x + gate_ff * self.ff(ff_input)
+    def forward(self, x: torch.Tensor, c: torch.Tensor) -> torch.Tensor:
+        shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.ada_ln_modulation(c).chunk(6, dim=-1)
+        x = x + gate_msa * self.attn(modulate(self.norm1(x), shift_msa, scale_msa), causal=True)
+        x = x + gate_mlp * self.mlp(modulate(self.norm2(x), shift_mlp, scale_mlp))
         return x
 
 
-class ActionEncoder(nn.Module):
-    def __init__(self, *, num_actions: int, cfg: WorldModelModelConfig) -> None:
+class Transformer(nn.Module):
+    def __init__(
+        self,
+        *,
+        input_dim: int,
+        hidden_dim: int,
+        output_dim: int,
+        depth: int,
+        heads: int,
+        dim_head: int,
+        mlp_dim: int,
+        dropout: float = 0.0,
+        block_class=Block,
+    ) -> None:
         super().__init__()
-        self.embedding = nn.Embedding(num_actions, cfg.action_embed_dim)
-        self.proj = nn.Sequential(
-            nn.Linear(cfg.action_embed_dim, cfg.encoder_dim),
-            nn.SiLU(),
-            nn.Linear(cfg.encoder_dim, cfg.encoder_dim),
-        )
-
-    def forward(self, actions: torch.Tensor) -> torch.Tensor:
-        if actions.ndim == 1:
-            actions = actions.unsqueeze(1)
-        embedded = self.embedding(actions.long())
-        return self.proj(embedded)
-
-
-class ARLatentPredictor(nn.Module):
-    def __init__(self, *, cfg: WorldModelModelConfig, max_frames: int) -> None:
-        super().__init__()
-        self.pos_embedding = nn.Parameter(torch.zeros(1, max_frames, cfg.encoder_dim))
-        mlp_dim = int(cfg.encoder_dim * cfg.mlp_ratio)
-        self.blocks = nn.ModuleList(
+        self.norm = nn.LayerNorm(hidden_dim)
+        self.input_proj = nn.Linear(input_dim, hidden_dim) if input_dim != hidden_dim else nn.Identity()
+        self.cond_proj = nn.Linear(input_dim, hidden_dim) if input_dim != hidden_dim else nn.Identity()
+        self.output_proj = nn.Linear(hidden_dim, output_dim) if hidden_dim != output_dim else nn.Identity()
+        self.layers = nn.ModuleList(
             [
-                ConditionalTransformerBlock(
-                    dim=cfg.encoder_dim,
-                    heads=cfg.num_heads,
-                    mlp_dim=mlp_dim,
-                    dropout=cfg.dropout,
+                block_class(
+                    hidden_dim,
+                    heads,
+                    dim_head,
+                    mlp_dim,
+                    dropout,
                 )
-                for _ in range(cfg.predictor_depth)
+                for _ in range(depth)
             ]
         )
-        self.norm = nn.LayerNorm(cfg.encoder_dim)
-        nn.init.trunc_normal_(self.pos_embedding, std=0.02)
 
-    def forward(self, latents: torch.Tensor, action_cond: torch.Tensor) -> torch.Tensor:
-        x = latents + self.pos_embedding[:, : latents.size(1)]
-        for block in self.blocks:
-            x = block(x, action_cond)
-        return self.norm(x)
+    def forward(self, x: torch.Tensor, c: torch.Tensor | None = None) -> torch.Tensor:
+        x = self.input_proj(x)
+        if c is not None:
+            c = self.cond_proj(c)
+        for block in self.layers:
+            if isinstance(block, Block):
+                x = block(x)
+            else:
+                x = block(x, c)
+        x = self.norm(x)
+        return self.output_proj(x)
+
+
+class Embedder(nn.Module):
+    def __init__(
+        self,
+        *,
+        input_dim: int,
+        smoothed_dim: int,
+        emb_dim: int,
+        mlp_scale: int = 4,
+    ) -> None:
+        super().__init__()
+        self.patch_embed = nn.Conv1d(input_dim, smoothed_dim, kernel_size=1, stride=1)
+        self.embed = nn.Sequential(
+            nn.Linear(smoothed_dim, mlp_scale * emb_dim),
+            nn.SiLU(),
+            nn.Linear(mlp_scale * emb_dim, emb_dim),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = x.float()
+        x = x.permute(0, 2, 1)
+        x = self.patch_embed(x)
+        x = x.permute(0, 2, 1)
+        return self.embed(x)
+
+
+class MLP(nn.Module):
+    def __init__(
+        self,
+        *,
+        input_dim: int,
+        hidden_dim: int,
+        output_dim: int | None = None,
+        norm_fn=nn.LayerNorm,
+        act_fn=nn.GELU,
+    ) -> None:
+        super().__init__()
+        norm = norm_fn(hidden_dim) if norm_fn is not None else nn.Identity()
+        self.net = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            norm,
+            act_fn(),
+            nn.Linear(hidden_dim, output_dim or input_dim),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.net(x)
+
+
+class ARPredictor(nn.Module):
+    def __init__(self, *, cfg: WorldModelModelConfig, num_frames: int) -> None:
+        super().__init__()
+        mlp_dim = int(cfg.encoder_dim * cfg.mlp_ratio)
+        self.pos_embedding = nn.Parameter(torch.randn(1, num_frames, cfg.encoder_dim))
+        self.dropout = nn.Dropout(cfg.emb_dropout)
+        self.transformer = Transformer(
+            input_dim=cfg.encoder_dim,
+            hidden_dim=cfg.encoder_dim,
+            output_dim=cfg.encoder_dim,
+            depth=cfg.predictor_depth,
+            heads=cfg.num_heads,
+            dim_head=cfg.dim_head,
+            mlp_dim=mlp_dim,
+            dropout=cfg.dropout,
+            block_class=ConditionalBlock,
+        )
+
+    def forward(self, x: torch.Tensor, c: torch.Tensor) -> torch.Tensor:
+        time_steps = x.size(1)
+        x = x + self.pos_embedding[:, :time_steps]
+        x = self.dropout(x)
+        return self.transformer(x, c)

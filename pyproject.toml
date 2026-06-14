@@ -40,6 +40,7 @@ dependencies = [
     "optuna>=4.7.0",
     "plotly>=6.5.2",
     "scikit-learn>=1.8.0",
+    "stable-pretraining",
 ]
 
 [project.scripts]
@@ -64,3 +65,4 @@ markers = [
 
 [tool.uv.sources]
 CarlaBEV = { git = "https://github.com/danielmtzbarba/carlabev-env.git", branch = "main" }
+stable-pretraining = { git = "https://github.com/galilai-group/stable-pretraining.git" }

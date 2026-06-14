@@ -118,7 +118,7 @@ The Phase 1 data layer now includes:
 - PyTorch `Dataset` / `DataLoader` support for one-step transitions
 - PyTorch `Dataset` / `DataLoader` support for fixed-length episode-aware sequence windows
 - training-readiness validation for shard integrity, action coverage, episode structure, and valid rollout windows
-- a ViT-style latent world-model trainer with separate action conditioning and JEPA-style latent prediction
+- a LeWM-style latent world-model trainer with separate action conditioning and JEPA-style latent prediction
 
 The collector stores reusable offline datasets under:
 
@@ -239,6 +239,10 @@ uv run drl world-model train \
   --training.epochs 5
 ```
 
+During training, the CLI now shows a Rich progress view for overall epochs plus
+train/validation batch progress, so longer runs give immediate feedback without
+tailing logs.
+
 The world-model trainer now uses a nested config surface that mirrors the repo's
 more structured runtime patterns:
 
@@ -249,6 +253,24 @@ more structured runtime patterns:
 
 `training.device` now defaults to `cuda`. Override it with
 `--training.device cpu` when running a local smoke test or when a GPU is not available.
+
+`model.encoder_backend` now defaults to `stable_pretraining_vit_hf`, which
+uses the [`stable-pretraining`](https://github.com/galilai-group/stable-pretraining)
+`vit_hf` construction path as the closest open-source encoder baseline to LeWM.
+For semantic BEV stacks with more than three channels, the adapter currently
+projects inputs to RGB with a learned `1x1` convolution before the ViT, then
+projects token features back to the configured `model.encoder_dim` so the rest
+of the trainer keeps a stable latent contract.
+
+If you want to fall back to the fully in-repo encoder implementation, use:
+
+```bash
+uv run drl world-model train \
+  --run-name lewm-random-phase1 \
+  --data.dataset-paths datasets/world_model/lewm-random-100k/PPO_NAVIGATION/exp_26/train/seed_0 \
+  --model.encoder-backend lewm_compatible_vit \
+  --training.epochs 5
+```
 
 The summary command reports:
 

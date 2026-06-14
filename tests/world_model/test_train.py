@@ -105,7 +105,8 @@ def test_train_world_model_smoke(monkeypatch, tiny_cfg, tmp_workdir):
                 save_every=1,
                 sigreg_weight=0.01,
             ),
-        )
+        ),
+        show_progress=False,
     )
 
     run_dir = tmp_workdir / "runs" / "world_model" / "wm-smoke"

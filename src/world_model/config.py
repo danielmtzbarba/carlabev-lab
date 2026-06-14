@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Literal
 
 
 @dataclass
@@ -17,15 +18,20 @@ class WorldModelDataConfig:
 
 @dataclass
 class WorldModelModelConfig:
+    encoder_backend: Literal["lewm_compatible_vit", "stable_pretraining_vit_hf"] = "stable_pretraining_vit_hf"
+    encoder_size: str = "small"
     patch_size: int = 8
     encoder_dim: int = 256
     encoder_depth: int = 4
     predictor_depth: int = 4
     num_heads: int = 4
+    dim_head: int = 64
     mlp_ratio: float = 4.0
     action_embed_dim: int = 64
+    action_mlp_scale: int = 4
     latent_dim: int = 256
     dropout: float = 0.0
+    emb_dropout: float = 0.0
 
 
 @dataclass

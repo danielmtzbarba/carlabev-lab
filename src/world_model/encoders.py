@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import torch
+import torch.nn.functional as F
 from torch import nn
 
 from src.world_model.config import WorldModelModelConfig
@@ -10,6 +11,7 @@ class FeedForward(nn.Module):
     def __init__(self, dim: int, hidden_dim: int, dropout: float = 0.0) -> None:
         super().__init__()
         self.net = nn.Sequential(
+            nn.LayerNorm(dim),
             nn.Linear(dim, hidden_dim),
             nn.GELU(),
             nn.Dropout(dropout),
@@ -22,32 +24,50 @@ class FeedForward(nn.Module):
 
 
 class Attention(nn.Module):
-    def __init__(self, dim: int, heads: int, dropout: float = 0.0) -> None:
+    def __init__(self, dim: int, heads: int = 8, dim_head: int = 64, dropout: float = 0.0) -> None:
         super().__init__()
+        inner_dim = dim_head * heads
+        self.heads = heads
+        self.dropout = dropout
         self.norm = nn.LayerNorm(dim)
-        self.attn = nn.MultiheadAttention(
-            embed_dim=dim,
-            num_heads=heads,
-            dropout=dropout,
-            batch_first=True,
+        self.to_qkv = nn.Linear(dim, inner_dim * 3, bias=False)
+        self.to_out = (
+            nn.Sequential(nn.Linear(inner_dim, dim), nn.Dropout(dropout))
+            if not (heads == 1 and dim_head == dim)
+            else nn.Identity()
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x_norm = self.norm(x)
-        out, _ = self.attn(x_norm, x_norm, x_norm, need_weights=False)
-        return out
+    def forward(self, x: torch.Tensor, *, causal: bool = False) -> torch.Tensor:
+        x = self.norm(x)
+        drop = self.dropout if self.training else 0.0
+        qkv = self.to_qkv(x).chunk(3, dim=-1)
+        q, k, v = (
+            t.reshape(t.size(0), t.size(1), self.heads, -1).transpose(1, 2)
+            for t in qkv
+        )
+        out = F.scaled_dot_product_attention(q, k, v, dropout_p=drop, is_causal=causal)
+        out = out.transpose(1, 2).reshape(x.size(0), x.size(1), -1)
+        return self.to_out(out)
 
 
-class TransformerBlock(nn.Module):
-    def __init__(self, dim: int, heads: int, mlp_dim: int, dropout: float = 0.0) -> None:
+class Block(nn.Module):
+    def __init__(
+        self,
+        dim: int,
+        heads: int,
+        dim_head: int,
+        mlp_dim: int,
+        dropout: float = 0.0,
+    ) -> None:
         super().__init__()
-        self.attn = Attention(dim, heads=heads, dropout=dropout)
-        self.ff = FeedForward(dim, hidden_dim=mlp_dim, dropout=dropout)
-        self.norm = nn.LayerNorm(dim)
+        self.attn = Attention(dim, heads=heads, dim_head=dim_head, dropout=dropout)
+        self.mlp = FeedForward(dim, mlp_dim, dropout=dropout)
+        self.norm1 = nn.LayerNorm(dim, elementwise_affine=False, eps=1e-6)
+        self.norm2 = nn.LayerNorm(dim, elementwise_affine=False, eps=1e-6)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = x + self.attn(x)
-        x = x + self.ff(self.norm(x))
+        x = x + self.attn(self.norm1(x), causal=False)
+        x = x + self.mlp(self.norm2(x))
         return x
 
 
@@ -72,9 +92,10 @@ class ViTEncoder(nn.Module):
         mlp_dim = int(cfg.encoder_dim * cfg.mlp_ratio)
         self.blocks = nn.ModuleList(
             [
-                TransformerBlock(
+                Block(
                     dim=cfg.encoder_dim,
                     heads=cfg.num_heads,
+                    dim_head=cfg.dim_head,
                     mlp_dim=mlp_dim,
                     dropout=cfg.dropout,
                 )
@@ -88,7 +109,7 @@ class ViTEncoder(nn.Module):
         nn.init.trunc_normal_(self.cls_token, std=0.02)
         nn.init.trunc_normal_(self.pos_embed, std=0.02)
 
-    def forward(self, obs: torch.Tensor) -> torch.Tensor:
+    def forward_tokens(self, obs: torch.Tensor) -> torch.Tensor:
         patches = self.patch_embed(obs)
         patches = patches.flatten(2).transpose(1, 2)
         cls = self.cls_token.expand(obs.size(0), -1, -1)
@@ -96,5 +117,7 @@ class ViTEncoder(nn.Module):
         x = x + self.pos_embed[:, : x.size(1)]
         for block in self.blocks:
             x = block(x)
-        x = self.norm(x)
-        return x[:, 0]
+        return self.norm(x)
+
+    def forward(self, obs: torch.Tensor) -> torch.Tensor:
+        return self.forward_tokens(obs)[:, 0]
