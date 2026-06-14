@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import tyro
 
+from src.utils.common_logging import configure_logging
 from src.world_model.config import WorldModelConfig
 from src.world_model.train import train_world_model
 
 
 def main() -> None:
+    configure_logging()
     cfg = tyro.cli(WorldModelConfig)
     if not cfg.data.dataset_paths:
         raise SystemExit("Provide at least one dataset path via --data.dataset-paths.")

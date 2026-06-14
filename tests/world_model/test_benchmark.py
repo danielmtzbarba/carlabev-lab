@@ -57,7 +57,8 @@ def test_benchmark_world_model_smoke(monkeypatch, tiny_cfg, tmp_workdir):
             chunk_lengths=[2],
             warmup_batches=0,
             measure_batches=1,
-        )
+        ),
+        show_progress=False,
     )
 
     run_dir = tmp_workdir / "runs" / "world_model" / "wm-bench-smoke"

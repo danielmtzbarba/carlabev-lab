@@ -250,6 +250,12 @@ reports:
 - peak allocated CUDA memory in MB when running on GPU
 - the artifact files written to `runs/world_model/<run_name>/artifacts/benchmark_results.{json,csv}`
 
+It now also logs initialization, dataset indexing/loading, model construction,
+warmup, and measurement stages to stdout and to
+`runs/world_model/<run_name>/benchmark.log`, which is especially useful on HPC
+when the first candidate spends time importing the encoder stack or building the
+first CUDA workload.
+
 Train the Phase 1 latent world model:
 
 ```bash

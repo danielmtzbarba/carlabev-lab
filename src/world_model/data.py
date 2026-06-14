@@ -10,6 +10,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset, Subset
 
+from src.utils.common_logging import get_logger
 from src.world_model.config import WorldModelDataConfig
 from src.world_model.contracts import DatasetRootConfig, DatasetSummaryModel, WorldModelSequenceConfig
 
@@ -32,6 +33,8 @@ REQUIRED_ARRAYS = (
     "left_turn_fraction",
     "right_turn_fraction",
 )
+
+LOGGER = get_logger("world_model.data")
 
 
 @dataclass(frozen=True)
@@ -151,6 +154,7 @@ def _load_shard_arrays(shard_path: Path) -> dict[str, np.ndarray]:
 
 
 def build_index(dataset_roots: list[str | Path | DatasetRootConfig]) -> IndexedDataset:
+    LOGGER.info("Building world-model dataset index for %d dataset root(s)", len(dataset_roots))
     sources: list[DatasetSource] = []
     shard_records: list[ShardRecord] = []
     transitions: list[TransitionRef] = []
@@ -167,6 +171,13 @@ def build_index(dataset_roots: list[str | Path | DatasetRootConfig]) -> IndexedD
         dataset_dir = _coerce_dataset_dir(root_cfg.path)
         summary = load_dataset_summary(dataset_dir)
         source_name = _dataset_source_name(root_cfg, summary)
+        LOGGER.info(
+            "Loading dataset root %s as source=%s transitions=%d shards=%d",
+            dataset_dir,
+            source_name,
+            summary.total_transitions,
+            summary.shard_count,
+        )
         sources.append(
             DatasetSource(
                 dataset_id=dataset_id,
@@ -230,6 +241,12 @@ def build_index(dataset_roots: list[str | Path | DatasetRootConfig]) -> IndexedD
     for episode_key, refs in episodes.items():
         ordered = tuple(sorted(refs, key=lambda ref: (ref.step_in_episode, ref.shard_index, ref.row_index)))
         ordered_episodes[episode_key] = ordered
+    LOGGER.info(
+        "Indexed %d transition(s) across %d episode(s) and %d shard(s)",
+        len(transitions),
+        len(ordered_episodes),
+        len(shard_records),
+    )
     return IndexedDataset(
         sources=tuple(sources),
         shards=tuple(shard_records),
@@ -448,6 +465,13 @@ def build_sequence_datasets(
 
 
 def build_world_model_data(cfg: WorldModelDataConfig) -> WorldModelDataArtifacts:
+    LOGGER.info(
+        "Preparing world-model dataloaders batch_size=%d chunk_length=%d stride=%d num_workers=%d",
+        cfg.batch_size,
+        cfg.chunk_length,
+        cfg.stride,
+        cfg.num_workers,
+    )
     sequence_cfg = WorldModelSequenceConfig(
         chunk_length=cfg.chunk_length,
         stride=cfg.stride,
@@ -475,6 +499,14 @@ def build_world_model_data(cfg: WorldModelDataConfig) -> WorldModelDataArtifacts
     )
     sample = train_dataset[0]
     obs_shape = tuple(sample["obs"].shape[1:])
+    LOGGER.info(
+        "Built world-model data train_windows=%d val_windows=%d train_batches=%d val_batches=%d obs_shape=%s",
+        len(train_dataset),
+        len(val_dataset),
+        len(train_loader),
+        len(val_loader),
+        obs_shape,
+    )
     return WorldModelDataArtifacts(
         train_dataset=train_dataset,
         val_dataset=val_dataset,

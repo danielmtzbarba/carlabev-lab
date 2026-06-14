@@ -4,6 +4,7 @@ from rich.console import Console
 from rich.table import Table
 import tyro
 
+from src.utils.common_logging import configure_logging
 from src.world_model.benchmark import WorldModelBenchmarkConfig, benchmark_world_model
 
 
@@ -78,6 +79,7 @@ def _render_recommendation(console: Console, summary) -> None:
 
 
 def main() -> None:
+    configure_logging()
     cfg = tyro.cli(WorldModelBenchmarkConfig)
     if not cfg.data.dataset_paths:
         raise SystemExit("Provide at least one dataset path via --data.dataset-paths.")

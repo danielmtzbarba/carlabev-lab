@@ -9,7 +9,9 @@ from pathlib import Path
 from typing import Any
 
 import torch
+from rich.progress import BarColumn, Progress, TextColumn, TimeElapsedColumn, TimeRemainingColumn
 
+from src.utils.common_logging import add_file_handler, get_logger
 from src.world_model.config import (
     WorldModelConfig,
     WorldModelDataConfig,
@@ -20,6 +22,8 @@ from src.world_model.config import (
 from src.world_model.data import build_world_model_data
 from src.world_model.factory import build_world_model
 from src.world_model.run_paths import WorldModelRunPaths
+
+LOGGER = get_logger("world_model.benchmark")
 
 
 @dataclass
@@ -122,6 +126,8 @@ def _run_single_benchmark(
     *,
     batch_size: int,
     chunk_length: int,
+    progress: Progress | None = None,
+    task_id: int | None = None,
 ) -> tuple[WorldModelBenchmarkResult, tuple[int, int, int]]:
     if batch_size <= 0:
         raise ValueError("batch_size must be positive")
@@ -139,7 +145,27 @@ def _run_single_benchmark(
         optimizer=cfg.optimizer,
         training=cfg.training,
     )
+    LOGGER.info(
+        "Benchmark start chunk_length=%d batch_size=%d device=%s",
+        chunk_length,
+        batch_size,
+        cfg.training.device,
+    )
+    if progress is not None and task_id is not None:
+        progress.update(
+            task_id,
+            candidate=f"chunk={chunk_length} batch={batch_size}",
+            stage="loading data",
+        )
+    LOGGER.info("Loading datasets for benchmark candidate")
     data_artifacts = build_world_model_data(run_cfg.data)
+    if progress is not None and task_id is not None:
+        progress.update(task_id, stage="building model")
+    LOGGER.info(
+        "Building model for benchmark candidate obs_shape=%s train_batches=%d",
+        data_artifacts.obs_shape,
+        len(data_artifacts.train_loader),
+    )
     artifacts = build_world_model(
         run_cfg,
         obs_shape=data_artifacts.obs_shape,
@@ -152,6 +178,10 @@ def _run_single_benchmark(
 
     try:
         model.train(True)
+        if cfg.warmup_batches > 0:
+            if progress is not None and task_id is not None:
+                progress.update(task_id, stage=f"warmup {cfg.warmup_batches} batches")
+            LOGGER.info("Running %d warmup batch(es)", cfg.warmup_batches)
         for batch in _iter_batches(data_artifacts.train_loader, cfg.warmup_batches):
             batch = _to_device(batch, device)
             optimizer.zero_grad(set_to_none=True)
@@ -166,6 +196,9 @@ def _run_single_benchmark(
         _sync_device(device)
 
         measured_samples = 0
+        if progress is not None and task_id is not None:
+            progress.update(task_id, stage=f"measuring {cfg.measure_batches} batches")
+        LOGGER.info("Measuring %d batch(es)", cfg.measure_batches)
         start = time.perf_counter()
         for batch in _iter_batches(data_artifacts.train_loader, cfg.measure_batches):
             batch = _to_device(batch, device)
@@ -198,6 +231,16 @@ def _run_single_benchmark(
             peak_memory_mb=peak_memory_mb,
             last_loss=last_loss,
         )
+        LOGGER.info(
+            "Benchmark done chunk_length=%d batch_size=%d status=ok samples_per_second=%.2f tokens_per_second=%.2f peak_memory_mb=%s",
+            chunk_length,
+            batch_size,
+            samples_per_second or 0.0,
+            tokens_per_second or 0.0,
+            "-" if peak_memory_mb is None else f"{peak_memory_mb:.1f}",
+        )
+        if progress is not None and task_id is not None:
+            progress.update(task_id, stage="done")
         return result, data_artifacts.obs_shape
     except RuntimeError as exc:
         if not _is_oom_error(exc):
@@ -218,6 +261,14 @@ def _run_single_benchmark(
             last_loss=last_loss,
             error_message=str(exc),
         )
+        LOGGER.warning(
+            "Benchmark OOM chunk_length=%d batch_size=%d error=%s",
+            chunk_length,
+            batch_size,
+            exc,
+        )
+        if progress is not None and task_id is not None:
+            progress.update(task_id, stage="oom")
         return result, data_artifacts.obs_shape
     finally:
         del model
@@ -254,7 +305,11 @@ def _write_csv(path: Path, results: list[WorldModelBenchmarkResult]) -> None:
             writer.writerow(asdict(result))
 
 
-def benchmark_world_model(cfg: WorldModelBenchmarkConfig) -> WorldModelBenchmarkSummary:
+def benchmark_world_model(
+    cfg: WorldModelBenchmarkConfig,
+    *,
+    show_progress: bool = True,
+) -> WorldModelBenchmarkSummary:
     if not cfg.data.dataset_paths:
         raise ValueError("Provide at least one dataset path.")
     if not cfg.batch_sizes:
@@ -264,23 +319,51 @@ def benchmark_world_model(cfg: WorldModelBenchmarkConfig) -> WorldModelBenchmark
 
     run_paths = WorldModelRunPaths(cfg.run_name)
     run_paths.ensure_dirs()
+    add_file_handler(run_paths.run_dir / "benchmark.log")
     config_path = run_paths.run_dir / "benchmark_config.json"
     json_path = run_paths.artifacts_dir / "benchmark_results.json"
     csv_path = run_paths.artifacts_dir / "benchmark_results.csv"
+    LOGGER.info(
+        "Initializing world-model benchmark run_name=%s device=%s candidates=%d",
+        cfg.run_name,
+        cfg.training.device,
+        len(cfg.chunk_lengths) * len(cfg.batch_sizes),
+    )
+    LOGGER.info("Dataset paths: %s", ", ".join(cfg.data.dataset_paths))
     _write_json(config_path, asdict(cfg))
 
     results: list[WorldModelBenchmarkResult] = []
     obs_shape: tuple[int, int, int] | None = None
-    for chunk_length in cfg.chunk_lengths:
-        for batch_size in cfg.batch_sizes:
-            result, current_obs_shape = _run_single_benchmark(
-                cfg,
-                batch_size=batch_size,
-                chunk_length=chunk_length,
-            )
-            if obs_shape is None:
-                obs_shape = current_obs_shape
-            results.append(result)
+    total_candidates = len(cfg.chunk_lengths) * len(cfg.batch_sizes)
+    with Progress(
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("{task.completed}/{task.total}"),
+        TextColumn("{task.fields[candidate]}"),
+        TextColumn("stage={task.fields[stage]}"),
+        TimeElapsedColumn(),
+        TimeRemainingColumn(),
+        disable=not show_progress,
+    ) as progress:
+        task_id = progress.add_task(
+            "Benchmark sweep",
+            total=total_candidates,
+            candidate="-",
+            stage="initializing",
+        )
+        for chunk_length in cfg.chunk_lengths:
+            for batch_size in cfg.batch_sizes:
+                result, current_obs_shape = _run_single_benchmark(
+                    cfg,
+                    batch_size=batch_size,
+                    chunk_length=chunk_length,
+                    progress=progress,
+                    task_id=task_id,
+                )
+                if obs_shape is None:
+                    obs_shape = current_obs_shape
+                results.append(result)
+                progress.advance(task_id)
 
     payload = {
         "run_name": cfg.run_name,
@@ -291,6 +374,13 @@ def benchmark_world_model(cfg: WorldModelBenchmarkConfig) -> WorldModelBenchmark
     }
     _write_json(json_path, payload)
     _write_csv(csv_path, results)
+    ok_results = [result for result in results if result.status == "ok"]
+    LOGGER.info(
+        "Finished world-model benchmark successful=%d total=%d results_json=%s",
+        len(ok_results),
+        len(results),
+        json_path,
+    )
     return WorldModelBenchmarkSummary(
         run_dir=str(run_paths.run_dir),
         config_path=str(config_path),

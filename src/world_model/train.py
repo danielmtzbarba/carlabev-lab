@@ -9,12 +9,15 @@ import torch
 from rich.progress import BarColumn, Progress, TextColumn, TimeElapsedColumn, TimeRemainingColumn
 from torch import nn
 
+from src.utils.common_logging import add_file_handler, get_logger
 from src.world_model.config import WorldModelConfig
 from src.world_model.contracts import WorldModelSequenceConfig
 from src.world_model.data import WorldModelDataArtifacts, build_world_model_data
 from src.world_model.factory import WorldModelArtifacts, build_world_model
 from src.world_model.run_paths import WorldModelRunPaths
 from src.world_model.validate import validate_datasets
+
+LOGGER = get_logger("world_model.train")
 
 
 @dataclass
@@ -121,6 +124,14 @@ def train_world_model(
 
     run_paths = WorldModelRunPaths(cfg.run_name)
     run_paths.ensure_dirs()
+    add_file_handler(run_paths.run_dir / "train_world_model.log")
+    LOGGER.info(
+        "Initializing world-model training run_name=%s device=%s epochs=%d",
+        cfg.run_name,
+        cfg.training.device,
+        cfg.training.epochs,
+    )
+    LOGGER.info("Validating dataset paths: %s", ", ".join(cfg.data.dataset_paths))
     validation_report = validate_datasets(
         cfg.data.dataset_paths,
         cfg=WorldModelSequenceConfig(
@@ -149,7 +160,9 @@ def train_world_model(
         encoding="utf-8",
     )
 
+    LOGGER.info("Building world-model datasets and dataloaders")
     data_artifacts = build_world_model_data(cfg.data)
+    LOGGER.info("Building world-model model and optimizer")
     artifacts = build_world_model(
         cfg,
         obs_shape=data_artifacts.obs_shape,
@@ -162,6 +175,11 @@ def train_world_model(
     final_val_loss = 0.0
     history: list[dict[str, float | int]] = []
     train_steps = 0
+    LOGGER.info(
+        "Starting world-model optimization train_batches=%d val_batches=%d",
+        len(data_artifacts.train_loader),
+        len(data_artifacts.val_loader),
+    )
 
     with Progress(
         TextColumn("[progress.description]{task.description}"),
@@ -191,6 +209,7 @@ def train_world_model(
         )
 
         for epoch in range(1, cfg.training.epochs + 1):
+            LOGGER.info("Epoch %d/%d started", epoch, cfg.training.epochs)
             progress.update(
                 train_task_id,
                 description=f"Train epoch {epoch}/{cfg.training.epochs}",
@@ -262,6 +281,13 @@ def train_world_model(
                 advance=1,
                 loss=f"train={train_metrics['loss']:.4f} val={val_metrics['loss']:.4f}",
             )
+            LOGGER.info(
+                "Epoch %d/%d finished train_loss=%.6f val_loss=%.6f",
+                epoch,
+                cfg.training.epochs,
+                train_metrics["loss"],
+                val_metrics["loss"],
+            )
 
     _save_checkpoint(
         run_paths.checkpoints_dir / "world_model_final.pt",
@@ -274,6 +300,12 @@ def train_world_model(
     (run_paths.artifacts_dir / "history.json").write_text(
         json.dumps(history, indent=2),
         encoding="utf-8",
+    )
+    LOGGER.info(
+        "Finished world-model training best_val_loss=%.6f final_train_loss=%.6f final_val_loss=%.6f",
+        best_val_loss,
+        final_train_loss,
+        final_val_loss,
     )
 
     return TrainWorldModelResult(
