@@ -9,11 +9,12 @@ import torch
 from rich.progress import BarColumn, Progress, TextColumn, TimeElapsedColumn, TimeRemainingColumn
 from torch import nn
 
-from src.utils.common_logging import add_file_handler, get_logger
+from src.utils.common_logging import add_file_handler, build_progress, get_logger
 from src.world_model.config import WorldModelConfig
 from src.world_model.contracts import WorldModelSequenceConfig
 from src.world_model.data import WorldModelDataArtifacts, build_world_model_data
 from src.world_model.factory import WorldModelArtifacts, build_world_model
+from src.world_model.runtime import build_grad_scaler, maybe_compile_model, run_world_model_step
 from src.world_model.run_paths import WorldModelRunPaths
 from src.world_model.validate import validate_datasets
 
@@ -47,9 +48,9 @@ def _epoch_loop(
     loader,
     *,
     optimizer: torch.optim.Optimizer | None,
+    scaler: torch.amp.GradScaler,
     device: torch.device,
-    sigreg_weight: float,
-    max_grad_norm: float,
+    cfg: WorldModelConfig,
     progress: Progress | None = None,
     task_id: int | None = None,
 ) -> dict[str, float]:
@@ -65,13 +66,15 @@ def _epoch_loop(
 
     for batch in loader:
         batch = _to_device(batch, device)
-        if optimizer is not None:
-            optimizer.zero_grad()
-        loss, metrics = model.loss(batch, sigreg_weight=sigreg_weight)
-        if optimizer is not None:
-            loss.backward()
-            nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
-            optimizer.step()
+        _loss, metrics = run_world_model_step(
+            model,
+            batch,
+            optimizer=optimizer,
+            scaler=scaler,
+            device=device,
+            training_cfg=cfg.training,
+            optimizer_cfg=cfg.optimizer,
+        )
         losses.append(metrics["loss"])
         pred_losses.append(metrics["pred_loss"])
         reg_losses.append(metrics["reg_loss"])
@@ -101,9 +104,10 @@ def _save_checkpoint(
     cfg: WorldModelConfig,
     data_artifacts: WorldModelDataArtifacts,
 ) -> None:
+    model_to_save = getattr(artifacts.model, "_orig_mod", artifacts.model)
     torch.save(
         {
-            "model_state_dict": artifacts.model.state_dict(),
+            "model_state_dict": model_to_save.state_dict(),
             "optimizer_state_dict": artifacts.optimizer.state_dict(),
             "epoch": epoch,
             "best_val_loss": best_val_loss,
@@ -126,10 +130,13 @@ def train_world_model(
     run_paths.ensure_dirs()
     add_file_handler(run_paths.run_dir / "train_world_model.log")
     LOGGER.info(
-        "Initializing world-model training run_name=%s device=%s epochs=%d",
+        "Initializing world-model training run_name=%s device=%s epochs=%d amp=%s amp_dtype=%s compile_model=%s",
         cfg.run_name,
         cfg.training.device,
         cfg.training.epochs,
+        cfg.training.amp,
+        cfg.training.amp_dtype,
+        cfg.training.compile_model,
     )
     LOGGER.info("Validating dataset paths: %s", ", ".join(cfg.data.dataset_paths))
     validation_report = validate_datasets(
@@ -160,8 +167,14 @@ def train_world_model(
         encoding="utf-8",
     )
 
-    LOGGER.info("Building world-model datasets and dataloaders")
-    data_artifacts = build_world_model_data(cfg.data)
+    LOGGER.info(
+        "Building world-model datasets and dataloaders num_workers=%d pin_memory=%s persistent_workers=%s prefetch_factor=%s",
+        cfg.data.num_workers,
+        cfg.data.pin_memory,
+        cfg.data.persistent_workers,
+        cfg.data.prefetch_factor,
+    )
+    data_artifacts = build_world_model_data(cfg.data, device=cfg.training.device)
     LOGGER.info("Building world-model model and optimizer")
     artifacts = build_world_model(
         cfg,
@@ -169,6 +182,8 @@ def train_world_model(
         device=cfg.training.device,
     )
     torch_device = torch.device(cfg.training.device)
+    artifacts.model = maybe_compile_model(artifacts.model, cfg.training)
+    grad_scaler = build_grad_scaler(cfg.training, torch_device)
 
     best_val_loss = float("inf")
     final_train_loss = 0.0
@@ -181,7 +196,7 @@ def train_world_model(
         len(data_artifacts.val_loader),
     )
 
-    with Progress(
+    with build_progress(
         TextColumn("[progress.description]{task.description}"),
         BarColumn(),
         TextColumn("{task.completed}/{task.total}"),
@@ -189,6 +204,7 @@ def train_world_model(
         TimeElapsedColumn(),
         TimeRemainingColumn(),
         disable=not show_progress,
+        refresh_per_second=4,
     ) as progress:
         epoch_task_id = progress.add_task(
             "World-model epochs",
@@ -218,9 +234,9 @@ def train_world_model(
                 artifacts.model,
                 data_artifacts.train_loader,
                 optimizer=artifacts.optimizer,
+                scaler=grad_scaler,
                 device=torch_device,
-                sigreg_weight=cfg.training.sigreg_weight,
-                max_grad_norm=cfg.optimizer.max_grad_norm,
+                cfg=cfg,
                 progress=progress,
                 task_id=train_task_id,
             )
@@ -233,9 +249,9 @@ def train_world_model(
                     artifacts.model,
                     data_artifacts.val_loader,
                     optimizer=None,
+                    scaler=grad_scaler,
                     device=torch_device,
-                    sigreg_weight=cfg.training.sigreg_weight,
-                    max_grad_norm=cfg.optimizer.max_grad_norm,
+                    cfg=cfg,
                     progress=progress,
                     task_id=val_task_id,
                 )

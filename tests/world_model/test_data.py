@@ -142,3 +142,39 @@ def test_validate_datasets_reports_training_readiness(monkeypatch, tiny_cfg, tmp
     assert report.route_uniqueness_rate_episode == pytest.approx(1.0 / 2.0)
     assert report.unique_routes_transition == 1
     assert report.action_histogram
+
+
+@pytest.mark.unit
+def test_build_dataloader_enables_cuda_friendly_options():
+    dataset = [torch.tensor([1.0]), torch.tensor([2.0])]
+
+    loader = build_dataloader(
+        dataset,
+        batch_size=1,
+        shuffle=False,
+        num_workers=2,
+        device="cuda",
+    )
+
+    assert loader.pin_memory is True
+    assert loader.persistent_workers is True
+
+
+@pytest.mark.unit
+def test_build_dataloader_respects_explicit_loader_tuning():
+    dataset = [torch.tensor([1.0]), torch.tensor([2.0])]
+
+    loader = build_dataloader(
+        dataset,
+        batch_size=1,
+        shuffle=False,
+        num_workers=2,
+        pin_memory=False,
+        persistent_workers=False,
+        prefetch_factor=4,
+        device="cuda",
+    )
+
+    assert loader.pin_memory is False
+    assert loader.persistent_workers is False
+    assert loader.prefetch_factor == 4

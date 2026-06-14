@@ -425,12 +425,28 @@ def build_dataloader(
     batch_size: int,
     shuffle: bool,
     num_workers: int = 0,
+    pin_memory: bool | None = None,
+    persistent_workers: bool | None = None,
+    prefetch_factor: int | None = None,
+    device: str | None = None,
 ) -> DataLoader:
+    resolved_pin_memory = pin_memory if pin_memory is not None else bool(device and device.startswith("cuda"))
+    resolved_persistent_workers = (
+        persistent_workers if persistent_workers is not None else num_workers > 0
+    )
+    loader_kwargs: dict[str, Any] = {
+        "batch_size": batch_size,
+        "shuffle": shuffle,
+        "num_workers": num_workers,
+        "pin_memory": resolved_pin_memory,
+    }
+    if num_workers > 0:
+        loader_kwargs["persistent_workers"] = resolved_persistent_workers
+        if prefetch_factor is not None:
+            loader_kwargs["prefetch_factor"] = prefetch_factor
     return DataLoader(
         dataset,
-        batch_size=batch_size,
-        shuffle=shuffle,
-        num_workers=num_workers,
+        **loader_kwargs,
     )
 
 
@@ -480,13 +496,18 @@ def build_sequence_datasets_from_indexed(
 def build_world_model_data_from_indexed(
     indexed: IndexedDataset,
     cfg: WorldModelDataConfig,
+    *,
+    device: str | None = None,
 ) -> WorldModelDataArtifacts:
     LOGGER.info(
-        "Preparing world-model dataloaders batch_size=%d chunk_length=%d stride=%d num_workers=%d",
+        "Preparing world-model dataloaders batch_size=%d chunk_length=%d stride=%d num_workers=%d pin_memory=%s persistent_workers=%s prefetch_factor=%s",
         cfg.batch_size,
         cfg.chunk_length,
         cfg.stride,
         cfg.num_workers,
+        cfg.pin_memory,
+        cfg.persistent_workers,
+        cfg.prefetch_factor,
     )
     sequence_cfg = WorldModelSequenceConfig(
         chunk_length=cfg.chunk_length,
@@ -506,12 +527,20 @@ def build_world_model_data_from_indexed(
         batch_size=cfg.batch_size,
         shuffle=True,
         num_workers=cfg.num_workers,
+        pin_memory=cfg.pin_memory,
+        persistent_workers=cfg.persistent_workers,
+        prefetch_factor=cfg.prefetch_factor,
+        device=device,
     )
     val_loader = build_dataloader(
         val_dataset,
         batch_size=cfg.batch_size,
         shuffle=False,
         num_workers=cfg.num_workers,
+        pin_memory=cfg.pin_memory,
+        persistent_workers=cfg.persistent_workers,
+        prefetch_factor=cfg.prefetch_factor,
+        device=device,
     )
     sample = train_dataset[0]
     obs_shape = tuple(sample["obs"].shape[1:])
@@ -534,8 +563,12 @@ def build_world_model_data_from_indexed(
     )
 
 
-def build_world_model_data(cfg: WorldModelDataConfig) -> WorldModelDataArtifacts:
+def build_world_model_data(
+    cfg: WorldModelDataConfig,
+    *,
+    device: str | None = None,
+) -> WorldModelDataArtifacts:
     indexed = build_index(
         cfg.dataset_paths,
     )
-    return build_world_model_data_from_indexed(indexed, cfg)
+    return build_world_model_data_from_indexed(indexed, cfg, device=device)

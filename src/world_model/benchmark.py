@@ -9,9 +9,9 @@ from pathlib import Path
 from typing import Any
 
 import torch
-from rich.progress import BarColumn, Progress, TextColumn, TimeElapsedColumn, TimeRemainingColumn
+from rich.progress import BarColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn
 
-from src.utils.common_logging import add_file_handler, get_logger
+from src.utils.common_logging import add_file_handler, build_progress, get_logger
 from src.world_model.config import (
     WorldModelConfig,
     WorldModelDataConfig,
@@ -19,8 +19,15 @@ from src.world_model.config import (
     WorldModelOptimizerConfig,
     WorldModelTrainLoopConfig,
 )
-from src.world_model.data import IndexedDataset, WorldModelDataArtifacts, build_index, build_world_model_data_from_indexed
+from src.world_model.data import (
+    IndexedDataset,
+    WorldModelDataArtifacts,
+    build_dataloader,
+    build_index,
+    build_world_model_data_from_indexed,
+)
 from src.world_model.factory import build_world_model
+from src.world_model.runtime import build_grad_scaler, maybe_compile_model, run_world_model_step
 from src.world_model.run_paths import WorldModelRunPaths
 
 LOGGER = get_logger("world_model.benchmark")
@@ -79,26 +86,35 @@ def _build_artifacts_from_cached_chunk(
     cfg: WorldModelDataConfig,
     *,
     chunk_entry: _ChunkDataCacheEntry | None = None,
+    device: str | None = None,
 ) -> WorldModelDataArtifacts:
     if chunk_entry is None:
-        return build_world_model_data_from_indexed(indexed, cfg)
+        return build_world_model_data_from_indexed(indexed, cfg, device=device)
 
     LOGGER.info(
         "Reusing cached sequence windows for batch_size=%d chunk_length=%d",
         cfg.batch_size,
         cfg.chunk_length,
     )
-    train_loader = torch.utils.data.DataLoader(
+    train_loader = build_dataloader(
         chunk_entry.train_dataset,
         batch_size=cfg.batch_size,
         shuffle=True,
         num_workers=cfg.num_workers,
+        pin_memory=cfg.pin_memory,
+        persistent_workers=cfg.persistent_workers,
+        prefetch_factor=cfg.prefetch_factor,
+        device=device,
     )
-    val_loader = torch.utils.data.DataLoader(
+    val_loader = build_dataloader(
         chunk_entry.val_dataset,
         batch_size=cfg.batch_size,
         shuffle=False,
         num_workers=cfg.num_workers,
+        pin_memory=cfg.pin_memory,
+        persistent_workers=cfg.persistent_workers,
+        prefetch_factor=cfg.prefetch_factor,
+        device=device,
     )
     LOGGER.info(
         "Built dataloaders from cached windows train_windows=%d val_windows=%d train_batches=%d val_batches=%d obs_shape=%s",
@@ -180,8 +196,9 @@ def _run_single_benchmark(
     chunk_length: int,
     indexed: IndexedDataset,
     chunk_entry: _ChunkDataCacheEntry | None = None,
-    progress: Progress | None = None,
+    progress=None,
     task_id: int | None = None,
+    batch_task_id: int | None = None,
 ) -> tuple[WorldModelBenchmarkResult, tuple[int, int, int], _ChunkDataCacheEntry | None]:
     if batch_size <= 0:
         raise ValueError("batch_size must be positive")
@@ -211,11 +228,21 @@ def _run_single_benchmark(
             candidate=f"chunk={chunk_length} batch={batch_size}",
             stage="preparing loaders",
         )
+        if batch_task_id is not None:
+            progress.update(
+                batch_task_id,
+                description="Benchmark batches",
+                total=1,
+                completed=0,
+                visible=False,
+                phase="-",
+            )
     LOGGER.info("Preparing datasets for benchmark candidate")
     data_artifacts = _build_artifacts_from_cached_chunk(
         indexed,
         run_cfg.data,
         chunk_entry=chunk_entry,
+        device=run_cfg.training.device,
     )
     if progress is not None and task_id is not None:
         progress.update(task_id, stage="building model")
@@ -230,6 +257,8 @@ def _run_single_benchmark(
         device=run_cfg.training.device,
     )
     device = torch.device(run_cfg.training.device)
+    artifacts.model = maybe_compile_model(artifacts.model, run_cfg.training)
+    grad_scaler = build_grad_scaler(run_cfg.training, device)
     model = artifacts.model
     optimizer = artifacts.optimizer
     last_loss: float | None = None
@@ -239,15 +268,29 @@ def _run_single_benchmark(
         if cfg.warmup_batches > 0:
             if progress is not None and task_id is not None:
                 progress.update(task_id, stage=f"warmup {cfg.warmup_batches} batches")
+                if batch_task_id is not None:
+                    progress.reset(
+                        batch_task_id,
+                        total=max(cfg.warmup_batches, 1),
+                        completed=0,
+                        visible=True,
+                        phase="warmup",
+                    )
             LOGGER.info("Running %d warmup batch(es)", cfg.warmup_batches)
         for batch in _iter_batches(data_artifacts.train_loader, cfg.warmup_batches):
             batch = _to_device(batch, device)
-            optimizer.zero_grad(set_to_none=True)
-            loss, _metrics = model.loss(batch, sigreg_weight=cfg.training.sigreg_weight)
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=cfg.optimizer.max_grad_norm)
-            optimizer.step()
+            loss, _metrics = run_world_model_step(
+                model,
+                batch,
+                optimizer=optimizer,
+                scaler=grad_scaler,
+                device=device,
+                training_cfg=run_cfg.training,
+                optimizer_cfg=run_cfg.optimizer,
+            )
             last_loss = float(loss.detach().cpu().item())
+            if progress is not None and batch_task_id is not None:
+                progress.update(batch_task_id, advance=1)
 
         _cleanup_device(device)
         _reset_peak_memory(device)
@@ -256,17 +299,31 @@ def _run_single_benchmark(
         measured_samples = 0
         if progress is not None and task_id is not None:
             progress.update(task_id, stage=f"measuring {cfg.measure_batches} batches")
+            if batch_task_id is not None:
+                progress.reset(
+                    batch_task_id,
+                    total=max(cfg.measure_batches, 1),
+                    completed=0,
+                    visible=True,
+                    phase="measure",
+                )
         LOGGER.info("Measuring %d batch(es)", cfg.measure_batches)
         start = time.perf_counter()
         for batch in _iter_batches(data_artifacts.train_loader, cfg.measure_batches):
             batch = _to_device(batch, device)
-            optimizer.zero_grad(set_to_none=True)
-            loss, _metrics = model.loss(batch, sigreg_weight=cfg.training.sigreg_weight)
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=cfg.optimizer.max_grad_norm)
-            optimizer.step()
+            loss, _metrics = run_world_model_step(
+                model,
+                batch,
+                optimizer=optimizer,
+                scaler=grad_scaler,
+                device=device,
+                training_cfg=run_cfg.training,
+                optimizer_cfg=run_cfg.optimizer,
+            )
             measured_samples += int(batch["obs"].shape[0])
             last_loss = float(loss.detach().cpu().item())
+            if progress is not None and batch_task_id is not None:
+                progress.update(batch_task_id, advance=1)
         _sync_device(device)
         elapsed_seconds = time.perf_counter() - start
         peak_memory_mb = _peak_memory_mb(device)
@@ -299,6 +356,8 @@ def _run_single_benchmark(
         )
         if progress is not None and task_id is not None:
             progress.update(task_id, stage="done")
+            if batch_task_id is not None:
+                progress.update(batch_task_id, visible=False, phase="done")
         built_chunk_entry = None
         if chunk_entry is None:
             built_chunk_entry = _ChunkDataCacheEntry(
@@ -334,6 +393,8 @@ def _run_single_benchmark(
         )
         if progress is not None and task_id is not None:
             progress.update(task_id, stage="oom")
+            if batch_task_id is not None:
+                progress.update(batch_task_id, visible=False, phase="oom")
         built_chunk_entry = None
         if chunk_entry is None:
             built_chunk_entry = _ChunkDataCacheEntry(
@@ -396,10 +457,13 @@ def benchmark_world_model(
     json_path = run_paths.artifacts_dir / "benchmark_results.json"
     csv_path = run_paths.artifacts_dir / "benchmark_results.csv"
     LOGGER.info(
-        "Initializing world-model benchmark run_name=%s device=%s candidates=%d",
+        "Initializing world-model benchmark run_name=%s device=%s candidates=%d amp=%s amp_dtype=%s compile_model=%s",
         cfg.run_name,
         cfg.training.device,
         len(cfg.chunk_lengths) * len(cfg.batch_sizes),
+        cfg.training.amp,
+        cfg.training.amp_dtype,
+        cfg.training.compile_model,
     )
     LOGGER.info("Dataset paths: %s", ", ".join(cfg.data.dataset_paths))
     _write_json(config_path, asdict(cfg))
@@ -410,7 +474,7 @@ def benchmark_world_model(
     LOGGER.info("Building shared dataset index once for benchmark sweep")
     indexed = build_index(cfg.data.dataset_paths)
     chunk_cache: dict[int, _ChunkDataCacheEntry] = {}
-    with Progress(
+    with build_progress(
         TextColumn("[progress.description]{task.description}"),
         BarColumn(),
         TextColumn("{task.completed}/{task.total}"),
@@ -419,12 +483,19 @@ def benchmark_world_model(
         TimeElapsedColumn(),
         TimeRemainingColumn(),
         disable=not show_progress,
+        refresh_per_second=4,
     ) as progress:
         task_id = progress.add_task(
             "Benchmark sweep",
             total=total_candidates,
             candidate="-",
             stage="initializing",
+        )
+        batch_task_id = progress.add_task(
+            "Benchmark batches",
+            total=1,
+            phase="-",
+            visible=False,
         )
         for chunk_length in cfg.chunk_lengths:
             for batch_size in cfg.batch_sizes:
@@ -437,6 +508,7 @@ def benchmark_world_model(
                     chunk_entry=chunk_entry,
                     progress=progress,
                     task_id=task_id,
+                    batch_task_id=batch_task_id,
                 )
                 if obs_shape is None:
                     obs_shape = current_obs_shape

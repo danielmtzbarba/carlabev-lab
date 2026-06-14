@@ -97,8 +97,9 @@ def test_benchmark_reuses_chunk_cache(monkeypatch, tmp_workdir):
         chunk_entry=None,
         progress=None,
         task_id=None,
+        batch_task_id=None,
     ):
-        del cfg, indexed, progress, task_id
+        del cfg, indexed, progress, task_id, batch_task_id
         calls.append((chunk_length, batch_size, chunk_entry is None))
         built_chunk_entry = None
         if chunk_entry is None:

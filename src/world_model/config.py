@@ -9,6 +9,9 @@ class WorldModelDataConfig:
     dataset_paths: list[str] = field(default_factory=list)
     batch_size: int = 32
     num_workers: int = 0
+    pin_memory: bool | None = None
+    persistent_workers: bool | None = None
+    prefetch_factor: int | None = None
     chunk_length: int = 8
     stride: int = 1
     val_ratio: float = 0.1
@@ -47,6 +50,10 @@ class WorldModelTrainLoopConfig:
     device: str = "cuda"
     save_every: int = 1
     sigreg_weight: float = 0.1
+    amp: bool = True
+    amp_dtype: Literal["bfloat16", "float16"] = "bfloat16"
+    compile_model: bool = False
+    compile_mode: Literal["default", "reduce-overhead", "max-autotune"] = "default"
 
 
 @dataclass

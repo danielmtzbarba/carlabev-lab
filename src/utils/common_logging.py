@@ -1,30 +1,46 @@
 from __future__ import annotations
 
 import logging
-import sys
 from pathlib import Path
+from typing import Any
 
+from rich.console import Console
+from rich.logging import RichHandler
+from rich.progress import Progress
 
-_FORMAT = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+_FORMAT = "%(message)s"
 _DATEFMT = "%H:%M:%S"
 _CONFIGURED = False
+_CONSOLE = Console(stderr=False, soft_wrap=True)
 
 
 def configure_logging(*, level: int = logging.INFO) -> None:
     global _CONFIGURED
     if _CONFIGURED:
+        logging.getLogger().setLevel(level)
         logging.getLogger("carlabev_lab").setLevel(level)
         return
 
-    logger = logging.getLogger("carlabev_lab")
-    logger.setLevel(level)
-    logger.propagate = False
-    logger.handlers.clear()
+    root_logger = logging.getLogger()
+    root_logger.setLevel(level)
+    root_logger.handlers.clear()
 
-    handler = logging.StreamHandler(stream=sys.stdout)
+    handler = RichHandler(
+        console=_CONSOLE,
+        show_time=True,
+        show_level=True,
+        show_path=False,
+        markup=True,
+        rich_tracebacks=True,
+        log_time_format=_DATEFMT,
+    )
     handler.setLevel(level)
     handler.setFormatter(logging.Formatter(_FORMAT, datefmt=_DATEFMT))
-    logger.addHandler(handler)
+    root_logger.addHandler(handler)
+
+    logger = logging.getLogger("carlabev_lab")
+    logger.setLevel(level)
+    logger.propagate = True
     _CONFIGURED = True
 
 
@@ -33,6 +49,25 @@ def get_logger(name: str) -> logging.Logger:
         configure_logging()
     namespace = name if name.startswith("carlabev_lab") else f"carlabev_lab.{name}"
     return logging.getLogger(namespace)
+
+
+def get_console() -> Console:
+    if not _CONFIGURED:
+        configure_logging()
+    return _CONSOLE
+
+
+def build_progress(*columns: Any, **kwargs: Any) -> Progress:
+    if not _CONFIGURED:
+        configure_logging()
+    return Progress(
+        *columns,
+        console=_CONSOLE,
+        expand=True,
+        redirect_stdout=False,
+        redirect_stderr=False,
+        **kwargs,
+    )
 
 
 def add_file_handler(path: str | Path, *, level: int = logging.INFO) -> None:

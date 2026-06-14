@@ -299,6 +299,7 @@ uv run drl world-model benchmark \
   --data.dataset-paths datasets/world_model/lewm-random-100k/PPO_NAVIGATION/exp_26/train/seed_0 \
   --batch-sizes 8 16 32 64 \
   --chunk-lengths 8 16 32 \
+  --data.num-workers 4 \
   --warmup-batches 2 \
   --measure-batches 10 \
   --training.device cuda
@@ -318,6 +319,29 @@ warmup, and measurement stages to stdout and to
 `runs/world_model/<run_name>/benchmark.log`, which is especially useful on HPC
 when the first candidate spends time importing the encoder stack or building the
 first CUDA workload.
+
+The benchmark console output now uses Rich-colored logging and two coordinated
+progress views:
+
+- an outer sweep bar for candidate-level progress across `(batch_size, chunk_length)`
+- an inner batch bar for warmup and measured benchmark batches inside the current candidate
+
+Because the logs and progress bars now share the same Rich console, stage updates
+and INFO lines render much more cleanly during long HPC runs.
+
+On CUDA, the world-model runtime now supports:
+
+- AMP with `training.amp` and `training.amp-dtype`
+- optional `torch.compile` with `training.compile-model`
+- dataloader tuning with `data.num-workers`, `data.pin-memory`,
+  `data.persistent-workers`, and `data.prefetch-factor`
+
+The default CUDA optimization path is:
+
+- `training.amp=True`
+- `training.amp-dtype=bfloat16`
+- auto-enabled pinned memory when the active device is CUDA
+- auto-enabled persistent workers when `data.num-workers > 0`
 
 For TU Dresden HPC workflows on `horse`, the recommended pattern is:
 
@@ -351,21 +375,28 @@ uv run drl world-model train \
   --run-name lewm-random-phase1 \
   --data.dataset-paths datasets/world_model/lewm-random-100k/PPO_NAVIGATION/exp_26/train/seed_0 \
   --data.batch-size 16 \
+  --data.num-workers 4 \
   --data.chunk-length 8 \
+  --training.amp true \
+  --training.amp-dtype bfloat16 \
   --training.epochs 5
 ```
 
 During training, the CLI now shows a Rich progress view for overall epochs plus
-train/validation batch progress, so longer runs give immediate feedback without
-tailing logs.
+train/validation batch progress, and the shared world-model logger now renders
+colored Rich log lines to the same console. That keeps initialization messages,
+epoch transitions, and progress bars readable in one place without the previous
+bar/log interference.
 
 The world-model trainer now uses a nested config surface that mirrors the repo's
 more structured runtime patterns:
 
 - `data.*`: dataset roots, chunking, batching, action-space expectations
+  - includes loader tuning such as `num-workers`, `pin-memory`, and `prefetch-factor`
 - `model.*`: ViT encoder and latent-predictor dimensions
 - `optimizer.*`: optimizer and gradient-clip settings
 - `training.*`: epochs, device, checkpoint cadence, regularization weight
+  - includes runtime optimization flags such as `amp`, `amp-dtype`, and `compile-model`
 
 `training.device` now defaults to `cuda`. Override it with
 `--training.device cpu` when running a local smoke test or when a GPU is not available.
