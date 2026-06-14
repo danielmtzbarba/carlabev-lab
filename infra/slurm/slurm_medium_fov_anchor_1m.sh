@@ -1,13 +1,14 @@
 #!/bin/bash
 #SBATCH --job-name=carlabev_med_fov_1m
-#SBATCH --output=results/logs/medium_fov_anchor_1m_%A_%a.out
-#SBATCH --error=results/logs/medium_fov_anchor_1m_%A_%a.err
+#SBATCH --output=/data/horse/ws/dama898h-carlabev/results/logs/medium_fov_anchor_1m_%A_%a.out
+#SBATCH --error=/data/horse/ws/dama898h-carlabev/results/logs/medium_fov_anchor_1m_%A_%a.err
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=14
 #SBATCH --gres=gpu:1
 #SBATCH --time=04:00:00
 #SBATCH --array=1-20
+#SBATCH -L horse
 
 # 1M-step medium-difficulty FOV-anchor ablation:
 #   PPO_NAVIGATION_MEDIUM_FOV_ANCHOR
@@ -43,6 +44,7 @@ for exp_id in "${EXP_VARIANTS[@]}"; do
 done
 
 module purge
+source "${SLURM_SUBMIT_DIR}/infra/slurm/common_storage.sh"
 
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK}"
 export PYTHONUNBUFFERED=1
@@ -52,8 +54,6 @@ export OPTUNA_STUDY_ACQUIRE_RETRY_MIN_SECONDS=5
 export OPTUNA_STUDY_ACQUIRE_RETRY_MAX_SECONDS=15
 
 cd "${SLURM_SUBMIT_DIR}"
-
-mkdir -p results/logs
 
 TOTAL_TASKS=${#EXP_IDS[@]}
 ARRAY_INDEX=$((SLURM_ARRAY_TASK_ID - 1))
@@ -74,7 +74,9 @@ echo "Resolved seed: ${SEED}"
 echo "Resolved total_timesteps: ${TOTAL_TIMESTEPS}"
 echo "Resolved eval_episodes: ${EVAL_EPISODES}"
 echo "Resolved eval_final_episodes: ${FINAL_EVAL_EPISODES}"
-echo "Artifacts will be recorded under runs/${STUDY_ID}/exp_${EXP_ID}/..."
+echo "Artifact root: ${CARLABEV_ARTIFACT_ROOT}"
+echo "Run artifacts: ${CARLABEV_RUNS_ROOT}/${STUDY_ID}/exp_${EXP_ID}/..."
+echo "Result logs: ${CARLABEV_RESULTS_ROOT}/logs"
 
 sleep_time=$(((SLURM_ARRAY_TASK_ID - 1) * 20))
 echo "Sleeping ${sleep_time}s before launch..."

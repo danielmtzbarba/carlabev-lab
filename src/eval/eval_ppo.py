@@ -9,8 +9,9 @@ from rich.table import Table
 
 from CarlaBEV.envs import make_env
 from src.agents import build_agent
-from src.config.reset_protocol import build_eval_protocol_samplers
 from src.config.base_config import to_carlabev_run_config
+from src.config.reset_protocol import build_eval_protocol_samplers
+from src.utils.storage_paths import resolve_artifact_path
 from src.eval.scoring import compute_comfort_score, compute_eval_score
 
 
@@ -274,7 +275,11 @@ def evaluate_ppo(
     console = Console()
 
     cfg_eval = deepcopy(cfg)
-    run_dir = getattr(cfg_eval, "run_dir", os.path.join("runs", cfg_eval.exp_name))
+    run_dir = str(
+        resolve_artifact_path(
+            getattr(cfg_eval, "run_dir", os.path.join("runs", cfg_eval.exp_name))
+        )
+    )
     cfg_eval.num_envs = num_envs
     eval_env = make_env(to_carlabev_run_config(cfg_eval), eval=True)
 

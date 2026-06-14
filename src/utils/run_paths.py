@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from src.utils.storage_paths import runs_root
+
 
 def build_run_label(study_id: str, exp_id: int) -> str:
     return f"{study_id}_e{exp_id}"
@@ -26,7 +28,7 @@ class RunPaths:
 
     @property
     def experiment_root(self) -> Path:
-        return Path("runs") / self.study_id / f"exp_{self.exp_id}"
+        return runs_root() / self.study_id / f"exp_{self.exp_id}"
 
     @property
     def trial_token(self) -> str:

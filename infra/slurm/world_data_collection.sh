@@ -22,6 +22,8 @@ if [[ -n "${SLURM_SUBMIT_DIR:-}" ]]; then
     cd "${SLURM_SUBMIT_DIR}"
 fi
 
+source "${SLURM_SUBMIT_DIR:-$(pwd)}/infra/slurm/common_storage.sh"
+
 echo "World-model dataset collection"
 echo "  study_id=${STUDY_ID}"
 echo "  dataset_name=${DATASET_NAME}"
@@ -33,6 +35,10 @@ echo "  total_transitions=${TOTAL_TRANSITIONS}"
 echo "  steps_per_shard=${STEPS_PER_SHARD}"
 echo "  exp_ids=${EXP_IDS[*]}"
 echo "  seeds=${SEEDS[*]}"
+echo "  artifact_root=${CARLABEV_ARTIFACT_ROOT}"
+echo "  datasets_root=${CARLABEV_DATASETS_ROOT}"
+echo "  runs_root=${CARLABEV_RUNS_ROOT}"
+echo "  results_root=${CARLABEV_RESULTS_ROOT}"
 
 PROGRESS_FLAG="--show-progress"
 if [[ "${SHOW_PROGRESS}" == "false" ]]; then

@@ -108,6 +108,24 @@ def test_main_dispatches_world_model_collect_command(monkeypatch):
 
 
 @pytest.mark.unit
+def test_main_dispatches_world_model_stage_command(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_stage(argv):
+        captured["argv"] = list(argv)
+        return "staged"
+
+    monkeypatch.setattr(drl_cli, "run_world_model_stage_command", fake_stage)
+
+    result = drl_cli.main(
+        ["world-model", "stage", "--path", "datasets/world_model/demo"]
+    )
+
+    assert result == "staged"
+    assert captured["argv"] == ["--path", "datasets/world_model/demo"]
+
+
+@pytest.mark.unit
 def test_main_dispatches_world_model_benchmark_command(monkeypatch):
     captured: dict[str, object] = {}
 

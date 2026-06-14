@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from src.utils.storage_paths import runs_root
+
 
 def build_world_model_run_id(run_name: str) -> str:
     return run_name
@@ -14,7 +16,7 @@ class WorldModelRunPaths:
 
     @property
     def experiment_root(self) -> Path:
-        return Path("runs") / "world_model" / self.run_name
+        return runs_root() / "world_model" / self.run_name
 
     @property
     def run_dir(self) -> Path:

@@ -24,6 +24,7 @@ USAGE = """Usage:
   drl diagnostics seed-scenes [ARGS...]
   drl diagnostics pruning [ARGS...]
   drl world-model collect exp [ARGS...]
+  drl world-model stage [ARGS...]
   drl world-model benchmark [ARGS...]
   drl world-model inspect [ARGS...]
   drl world-model summary [ARGS...]
@@ -215,6 +216,10 @@ def run_world_model_collect_command(argv: Sequence[str]) -> object:
     return _invoke_module_main("src.carlabev_lab.world_model.collect", argv)
 
 
+def run_world_model_stage_command(argv: Sequence[str]) -> object:
+    return _invoke_module_main("src.carlabev_lab.world_model.stage", argv)
+
+
 def run_world_model_benchmark_command(argv: Sequence[str]) -> object:
     return _invoke_module_main("src.carlabev_lab.world_model.benchmark", argv)
 
@@ -305,6 +310,8 @@ def main(argv: Sequence[str] | None = None) -> object:
         command = _pop_command(args, "drl world-model")
         if command == "collect":
             return run_world_model_collect_command(args)
+        if command == "stage":
+            return run_world_model_stage_command(args)
         if command == "benchmark":
             return run_world_model_benchmark_command(args)
         if command == "inspect":

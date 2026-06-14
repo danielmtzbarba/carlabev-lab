@@ -1,4 +1,6 @@
 import optuna
+
+from src.utils.storage_paths import resolve_artifact_path
 import pandas as pd
 
 from src.tuning.engine import trial_stage_name
@@ -7,7 +9,7 @@ from src.tuning.engine import trial_stage_name
 def check_median() -> None:
     study = optuna.load_study(
         study_name="carlabev",
-        storage="sqlite:///results/carlabev_optuna.db",
+        storage=f"sqlite:///{resolve_artifact_path('results/carlabev_optuna.db')}",
     )
 
     # Pruner thresholds are based on the historically best trials at a given step.

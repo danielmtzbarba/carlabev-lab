@@ -47,6 +47,58 @@ CarlaBEV-Lab installs `CarlaBEV` from the GitHub source pinned in `pyproject.tom
     uv sync
     ```
 
+### HPC Storage Layout
+
+For the TU Dresden setup discussed in this repo, the recommended split is:
+
+- code and `.venv`: `/home/h6/dama898h/carlabev-lab`
+- active artifacts: `/data/horse/ws/dama898h-carlabev`
+- optional long-term archive later: a separate `walrus` workspace
+
+The Python runtime now resolves heavy artifact roots centrally:
+
+- `runs/` -> `${CARLABEV_RUNS_ROOT}` or `${CARLABEV_ARTIFACT_ROOT}/runs`
+- `results/` -> `${CARLABEV_RESULTS_ROOT}` or `${CARLABEV_ARTIFACT_ROOT}/results`
+- `datasets/` -> `${CARLABEV_DATASETS_ROOT}` or `${CARLABEV_ARTIFACT_ROOT}/datasets`
+
+If none of those environment variables are set, the repo auto-detects
+`/data/horse/ws/$USER-carlabev` when it exists; otherwise it falls back to local
+relative paths for non-HPC development.
+
+For your current cluster setup, exporting this once is the clearest option:
+
+```bash
+export CARLABEV_ARTIFACT_ROOT=/data/horse/ws/dama898h-carlabev
+```
+
+Suggested workspace tree:
+
+```text
+/data/horse/ws/dama898h-carlabev/
+  datasets/
+    world_model/
+  runs/
+    PPO_NAVIGATION/
+    PPO_NAVIGATION_DIFFICULTY/
+    world_model/
+  results/
+    logs/
+    diagnostics/
+    optuna/
+```
+
+Separation of responsibilities:
+
+- `runs/`: per-run artifacts such as checkpoints, eval outputs, run-local logs, and all PPO videos
+- `results/`: cross-run artifacts such as Slurm logs, Optuna databases/exports, diagnostics, and reports
+- `datasets/`: reusable collected data such as world-model shards
+
+The Slurm scripts now mirror that split by writing:
+
+- Slurm stdout/stderr to `/data/horse/ws/dama898h-carlabev/results/logs/`
+- Python run artifacts to `/data/horse/ws/dama898h-carlabev/runs/`
+- collected datasets to `/data/horse/ws/dama898h-carlabev/datasets/`
+
 Right now the lab tracks the `main` branch of `carlabev-env`. Once you create a release tag such as `v0.1.0`, switch `[tool.uv.sources].CarlaBEV` from `branch = "main"` to `tag = "v0.1.0"` and run `uv sync` again for a reproducible pinned release.
 
 ### Base Training & Evaluation
@@ -228,6 +280,17 @@ uv run drl world-model validate \
   --paths datasets/world_model/lewm-random-100k/PPO_NAVIGATION/exp_26/train/seed_0
 ```
 
+Stage one dataset root into node-local `/tmp` before benchmarking on HPC:
+
+```bash
+uv run drl world-model stage \
+  --path datasets/world_model/lewm-ppo-difficulty-hpc/PPO_NAVIGATION_DIFFICULTY/exp_1/train/seed_2
+```
+
+This copies the dataset directory, verifies the staged `summary.json`, and prints
+the resolved staged path. Use that staged path as `--data.dataset-paths` for the
+benchmark or training command on the same node.
+
 Benchmark candidate batch sizes and chunk lengths on your current device:
 
 ```bash
@@ -255,6 +318,31 @@ warmup, and measurement stages to stdout and to
 `runs/world_model/<run_name>/benchmark.log`, which is especially useful on HPC
 when the first candidate spends time importing the encoder stack or building the
 first CUDA workload.
+
+For TU Dresden HPC workflows on `horse`, the recommended pattern is:
+
+- keep the repo, persistent datasets, and final run artifacts on the `horse` workspace
+- request the filesystem explicitly with `-L horse`
+- stage the active dataset root to node-local `/tmp` before benchmarking or training
+- point `--data.dataset-paths` at the staged local copy to avoid repeated shared-filesystem metadata traffic
+
+The repo includes a workspace-aware Slurm launcher for this:
+
+```bash
+sbatch infra/slurm/world_model_benchmark.sh
+```
+
+Useful overrides:
+
+```bash
+sbatch \
+  --export=ALL,RUN_NAME=lewm-bench-exp1,DATASET_PATH=datasets/world_model/lewm-ppo-difficulty-hpc/PPO_NAVIGATION_DIFFICULTY/exp_1/train/seed_2,BATCH_SIZES="16 32 64",CHUNK_LENGTHS="8 16" \
+  infra/slurm/world_model_benchmark.sh
+```
+
+The launcher requests `horse`, copies the dataset root into node-local storage,
+runs the benchmark against that staged copy, and keeps results under
+`runs/world_model/<run_name>/` on the workspace.
 
 Train the Phase 1 latent world model:
 

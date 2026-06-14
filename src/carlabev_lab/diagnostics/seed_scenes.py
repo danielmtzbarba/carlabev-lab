@@ -7,6 +7,7 @@ from pathlib import Path
 from rich.console import Console
 from rich.table import Table
 
+from src.utils.storage_paths import results_root
 from .seed_scene_diag.analysis import generate_dataset
 from .seed_scene_diag.common import DEFAULT_MAP_ASSET_SIZE
 from .seed_scene_diag.visualization import render_from_artifacts
@@ -77,7 +78,12 @@ def _add_shared_args(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--save-frames-per-pair", type=int, default=6, help="Number of representative spawn frames to save for each seed+difficulty pair.")
     parser.add_argument("--frame-size", type=int, default=128, help="Rendered frame size for spawn-frame captures.")
-    parser.add_argument("--output-dir", type=Path, default=Path("results/seed_scene_diagnostics"), help="Directory where summary artifacts will be written.")
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=results_root() / "seed_scene_diagnostics",
+        help="Directory where summary artifacts will be written.",
+    )
     parser.add_argument("--map-asset-size", type=int, default=DEFAULT_MAP_ASSET_SIZE, help="Town01 raster size used for coverage rendering.")
 
 
@@ -96,7 +102,12 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_shared_args(analyze_parser)
 
     visualize_parser = subparsers.add_parser("visualize", help="Render figures from saved CSV/JSON artifacts without rerunning the simulator.")
-    visualize_parser.add_argument("--output-dir", type=Path, default=Path("results/seed_scene_diagnostics"), help="Directory containing summary.json and per-pair point CSVs.")
+    visualize_parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=results_root() / "seed_scene_diagnostics",
+        help="Directory containing summary.json and per-pair point CSVs.",
+    )
     visualize_parser.add_argument("--map-asset-size", type=int, default=DEFAULT_MAP_ASSET_SIZE, help="Town01 raster size used for coverage rendering.")
     _add_visualization_args(visualize_parser)
 

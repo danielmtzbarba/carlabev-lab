@@ -10,6 +10,7 @@ import numpy as np
 from rich.console import Console
 from rich.table import Table
 from torch.utils.tensorboard import SummaryWriter
+from src.utils.storage_paths import resolve_artifact_path
 
 
 def _utcnow_iso() -> str:
@@ -28,7 +29,11 @@ def abbreviate_number(n):
 
 class DRLogger:
     def __init__(self, config, stats_interval=100):
-        self.run_dir = getattr(config, "run_dir", os.path.join("runs", config.exp_name))
+        self.run_dir = str(
+            resolve_artifact_path(
+                getattr(config, "run_dir", os.path.join("runs", config.exp_name))
+            )
+        )
         os.makedirs(self.run_dir, exist_ok=True)
 
         self.writer = SummaryWriter(self.run_dir)

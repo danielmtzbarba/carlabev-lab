@@ -22,7 +22,8 @@ from src.config.studies.registry import (
     get_study_config,
     get_train_protocol,
 )
-from src.utils.run_paths import RunPaths, build_run_id, build_run_label
+from src.utils.run_paths import RunPaths, build_run_id
+from src.utils.storage_paths import resolve_artifact_path
 
 
 def get_study_name(study_id: str) -> str:
@@ -30,7 +31,7 @@ def get_study_name(study_id: str) -> str:
 
 
 def get_study_db_path(study_id: str) -> str:
-    return get_study_config(study_id).db_path
+    return str(resolve_artifact_path(get_study_config(study_id).db_path))
 
 
 def _get_env_int(name: str, default: int) -> int:

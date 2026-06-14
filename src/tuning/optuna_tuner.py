@@ -12,6 +12,7 @@ from src.config.experiment_loader import (
     get_study_name,
 )
 from src.config.studies.registry import get_study_config
+from src.utils.storage_paths import results_root
 from src.tuning.optuna_utils import OptunaArgs
 from src.tuning.engine import (
     completed_stage_trials,
@@ -47,7 +48,8 @@ def main():
         else optuna.pruners.NopPruner()
     )
     # Implement SQLite storage with concurrency support
-    os.makedirs("results", exist_ok=True)
+    results_dir = results_root()
+    os.makedirs(results_dir, exist_ok=True)
     db_path = get_study_db_path(cli_args.study_id)
     storage_name = f"sqlite:///{db_path}"
     
@@ -129,10 +131,9 @@ def main():
         print("No trials completed. Skipping best trial extraction.")
         
     # Save study statistics to CSV
-    os.makedirs("results", exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    csv_path = (
-        f"results/optuna_study_{base_args.study_id}_exp_{base_args.exp_id}_{timestamp}.csv"
+    csv_path = str(
+        results_dir / f"optuna_study_{base_args.study_id}_exp_{base_args.exp_id}_{timestamp}.csv"
     )
     df = study.trials_dataframe()
     df.to_csv(csv_path, index=False)

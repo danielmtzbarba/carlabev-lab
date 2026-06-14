@@ -13,6 +13,7 @@ from CarlaBEV.envs import make_env
 from src.carlabev_lab.simulator.signatures import extract_scene_route_metadata
 from src.config.base_config import to_carlabev_run_config
 from src.config.reset_protocol import build_train_protocol_sampler
+from src.utils.storage_paths import datasets_root
 from src.world_model.dataset_schema import (
     DatasetCollectionSummary,
     DatasetShardSummary,
@@ -137,7 +138,7 @@ class _ShardBuffer:
 
 def default_output_dir(cfg, *, split: str, dataset_name: str) -> Path:
     return (
-        Path("datasets")
+        datasets_root()
         / "world_model"
         / dataset_name
         / cfg.study_id

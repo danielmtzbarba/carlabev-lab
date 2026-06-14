@@ -11,6 +11,7 @@ import torch
 from torch.utils.data import DataLoader, Dataset, Subset
 
 from src.utils.common_logging import get_logger
+from src.utils.storage_paths import resolve_artifact_path
 from src.world_model.config import WorldModelDataConfig
 from src.world_model.contracts import DatasetRootConfig, DatasetSummaryModel, WorldModelSequenceConfig
 
@@ -102,7 +103,7 @@ def _summary_path(dataset_dir: Path) -> Path:
 
 
 def _coerce_dataset_dir(path: str | Path) -> Path:
-    dataset_dir = Path(path)
+    dataset_dir = resolve_artifact_path(path)
     if dataset_dir.is_file():
         dataset_dir = dataset_dir.parent
     return dataset_dir
@@ -188,9 +189,7 @@ def build_index(dataset_roots: list[str | Path | DatasetRootConfig]) -> IndexedD
         )
 
         for shard_meta in summary.shards:
-            shard_path = Path(shard_meta.path)
-            if not shard_path.is_absolute():
-                shard_path = Path.cwd() / shard_path
+            shard_path = resolve_artifact_path(shard_meta.path)
             if not shard_path.exists():
                 raise FileNotFoundError(f"Shard listed in summary does not exist: {shard_meta.path}")
             arrays = _load_shard_arrays(shard_path)
@@ -454,6 +453,20 @@ def build_sequence_datasets(
     include_metadata: bool = True,
 ) -> tuple[Dataset, Dataset, IndexedDataset]:
     indexed = build_index(dataset_roots)
+    train_dataset, val_dataset = build_sequence_datasets_from_indexed(
+        indexed,
+        cfg=cfg,
+        include_metadata=include_metadata,
+    )
+    return train_dataset, val_dataset, indexed
+
+
+def build_sequence_datasets_from_indexed(
+    indexed: IndexedDataset,
+    *,
+    cfg: WorldModelSequenceConfig,
+    include_metadata: bool = True,
+) -> tuple[Dataset, Dataset]:
     dataset = WorldModelSequenceDataset(
         indexed,
         chunk_length=cfg.chunk_length,
@@ -461,10 +474,13 @@ def build_sequence_datasets(
         include_metadata=include_metadata,
     )
     train_dataset, val_dataset = build_train_val_subsets(dataset, val_ratio=cfg.val_ratio)
-    return train_dataset, val_dataset, indexed
+    return train_dataset, val_dataset
 
 
-def build_world_model_data(cfg: WorldModelDataConfig) -> WorldModelDataArtifacts:
+def build_world_model_data_from_indexed(
+    indexed: IndexedDataset,
+    cfg: WorldModelDataConfig,
+) -> WorldModelDataArtifacts:
     LOGGER.info(
         "Preparing world-model dataloaders batch_size=%d chunk_length=%d stride=%d num_workers=%d",
         cfg.batch_size,
@@ -478,8 +494,8 @@ def build_world_model_data(cfg: WorldModelDataConfig) -> WorldModelDataArtifacts
         val_ratio=cfg.val_ratio,
         expected_num_actions=cfg.expected_num_actions,
     )
-    train_dataset, val_dataset, indexed = build_sequence_datasets(
-        cfg.dataset_paths,
+    train_dataset, val_dataset = build_sequence_datasets_from_indexed(
+        indexed,
         cfg=sequence_cfg,
         include_metadata=cfg.include_metadata,
     )
@@ -516,3 +532,10 @@ def build_world_model_data(cfg: WorldModelDataConfig) -> WorldModelDataArtifacts
         obs_shape=obs_shape,
         num_actions=cfg.expected_num_actions,
     )
+
+
+def build_world_model_data(cfg: WorldModelDataConfig) -> WorldModelDataArtifacts:
+    indexed = build_index(
+        cfg.dataset_paths,
+    )
+    return build_world_model_data_from_indexed(indexed, cfg)

@@ -7,6 +7,8 @@ from typing import Any
 
 import numpy as np
 
+from src.utils.storage_paths import resolve_artifact_path
+
 
 def _load_dataset_summary(dataset_dir: Path) -> dict[str, Any]:
     summary_file = dataset_dir / "summary.json"
@@ -19,7 +21,7 @@ def _load_dataset_summary(dataset_dir: Path) -> dict[str, Any]:
 
 
 def _coerce_dataset_dir(path: str) -> tuple[Path, dict[str, Any]]:
-    dataset_dir = Path(path)
+    dataset_dir = resolve_artifact_path(path)
     if not dataset_dir.exists():
         raise FileNotFoundError(f"Path does not exist: {dataset_dir}")
     if dataset_dir.is_file():
@@ -50,7 +52,7 @@ def summarize_dataset(path: str) -> dict[str, Any]:
     scene_by_episode: dict[tuple[int, int], str] = {}
 
     for shard in shard_entries:
-        shard_path = Path(shard["path"])
+        shard_path = resolve_artifact_path(shard["path"])
         with np.load(shard_path, allow_pickle=False) as data:
             rows = int(data["obs"].shape[0])
             total_transitions += rows

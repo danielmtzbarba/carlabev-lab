@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any
 
 import numpy as np
 
+from src.utils.storage_paths import resolve_artifact_path
+
 
 def inspect_dataset_path(path: str, *, shard_index: int = 0) -> dict[str, Any]:
-    target = Path(path)
+    target = resolve_artifact_path(path)
     if not target.exists():
         raise FileNotFoundError(f"Path does not exist: {target}")
 
@@ -29,7 +30,7 @@ def inspect_dataset_path(path: str, *, shard_index: int = 0) -> dict[str, Any]:
             raise IndexError(
                 f"shard_index {shard_index} is out of range for {len(shards)} shards."
             )
-        shard_path = Path(shards[shard_index]["path"])
+        shard_path = resolve_artifact_path(shards[shard_index]["path"])
     else:
         summary = None
         shard_path = target

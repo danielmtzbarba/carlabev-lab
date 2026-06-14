@@ -19,7 +19,7 @@ from src.world_model.config import (
     WorldModelOptimizerConfig,
     WorldModelTrainLoopConfig,
 )
-from src.world_model.data import build_world_model_data
+from src.world_model.data import IndexedDataset, WorldModelDataArtifacts, build_index, build_world_model_data_from_indexed
 from src.world_model.factory import build_world_model
 from src.world_model.run_paths import WorldModelRunPaths
 
@@ -65,6 +65,58 @@ class WorldModelBenchmarkSummary:
     device: str
     obs_shape: tuple[int, int, int] | None
     results: tuple[WorldModelBenchmarkResult, ...]
+
+
+@dataclass(frozen=True)
+class _ChunkDataCacheEntry:
+    train_dataset: Any
+    val_dataset: Any
+    obs_shape: tuple[int, int, int]
+
+
+def _build_artifacts_from_cached_chunk(
+    indexed: IndexedDataset,
+    cfg: WorldModelDataConfig,
+    *,
+    chunk_entry: _ChunkDataCacheEntry | None = None,
+) -> WorldModelDataArtifacts:
+    if chunk_entry is None:
+        return build_world_model_data_from_indexed(indexed, cfg)
+
+    LOGGER.info(
+        "Reusing cached sequence windows for batch_size=%d chunk_length=%d",
+        cfg.batch_size,
+        cfg.chunk_length,
+    )
+    train_loader = torch.utils.data.DataLoader(
+        chunk_entry.train_dataset,
+        batch_size=cfg.batch_size,
+        shuffle=True,
+        num_workers=cfg.num_workers,
+    )
+    val_loader = torch.utils.data.DataLoader(
+        chunk_entry.val_dataset,
+        batch_size=cfg.batch_size,
+        shuffle=False,
+        num_workers=cfg.num_workers,
+    )
+    LOGGER.info(
+        "Built dataloaders from cached windows train_windows=%d val_windows=%d train_batches=%d val_batches=%d obs_shape=%s",
+        len(chunk_entry.train_dataset),
+        len(chunk_entry.val_dataset),
+        len(train_loader),
+        len(val_loader),
+        chunk_entry.obs_shape,
+    )
+    return WorldModelDataArtifacts(
+        train_dataset=chunk_entry.train_dataset,
+        val_dataset=chunk_entry.val_dataset,
+        train_loader=train_loader,
+        val_loader=val_loader,
+        indexed=indexed,
+        obs_shape=chunk_entry.obs_shape,
+        num_actions=cfg.expected_num_actions,
+    )
 
 
 def _is_cuda_device(device: torch.device) -> bool:
@@ -126,9 +178,11 @@ def _run_single_benchmark(
     *,
     batch_size: int,
     chunk_length: int,
+    indexed: IndexedDataset,
+    chunk_entry: _ChunkDataCacheEntry | None = None,
     progress: Progress | None = None,
     task_id: int | None = None,
-) -> tuple[WorldModelBenchmarkResult, tuple[int, int, int]]:
+) -> tuple[WorldModelBenchmarkResult, tuple[int, int, int], _ChunkDataCacheEntry | None]:
     if batch_size <= 0:
         raise ValueError("batch_size must be positive")
     if chunk_length <= 0:
@@ -155,10 +209,14 @@ def _run_single_benchmark(
         progress.update(
             task_id,
             candidate=f"chunk={chunk_length} batch={batch_size}",
-            stage="loading data",
+            stage="preparing loaders",
         )
-    LOGGER.info("Loading datasets for benchmark candidate")
-    data_artifacts = build_world_model_data(run_cfg.data)
+    LOGGER.info("Preparing datasets for benchmark candidate")
+    data_artifacts = _build_artifacts_from_cached_chunk(
+        indexed,
+        run_cfg.data,
+        chunk_entry=chunk_entry,
+    )
     if progress is not None and task_id is not None:
         progress.update(task_id, stage="building model")
     LOGGER.info(
@@ -241,7 +299,14 @@ def _run_single_benchmark(
         )
         if progress is not None and task_id is not None:
             progress.update(task_id, stage="done")
-        return result, data_artifacts.obs_shape
+        built_chunk_entry = None
+        if chunk_entry is None:
+            built_chunk_entry = _ChunkDataCacheEntry(
+                train_dataset=data_artifacts.train_dataset,
+                val_dataset=data_artifacts.val_dataset,
+                obs_shape=data_artifacts.obs_shape,
+            )
+        return result, data_artifacts.obs_shape, built_chunk_entry
     except RuntimeError as exc:
         if not _is_oom_error(exc):
             raise
@@ -269,7 +334,14 @@ def _run_single_benchmark(
         )
         if progress is not None and task_id is not None:
             progress.update(task_id, stage="oom")
-        return result, data_artifacts.obs_shape
+        built_chunk_entry = None
+        if chunk_entry is None:
+            built_chunk_entry = _ChunkDataCacheEntry(
+                train_dataset=data_artifacts.train_dataset,
+                val_dataset=data_artifacts.val_dataset,
+                obs_shape=data_artifacts.obs_shape,
+            )
+        return result, data_artifacts.obs_shape, built_chunk_entry
     finally:
         del model
         del optimizer
@@ -335,6 +407,9 @@ def benchmark_world_model(
     results: list[WorldModelBenchmarkResult] = []
     obs_shape: tuple[int, int, int] | None = None
     total_candidates = len(cfg.chunk_lengths) * len(cfg.batch_sizes)
+    LOGGER.info("Building shared dataset index once for benchmark sweep")
+    indexed = build_index(cfg.data.dataset_paths)
+    chunk_cache: dict[int, _ChunkDataCacheEntry] = {}
     with Progress(
         TextColumn("[progress.description]{task.description}"),
         BarColumn(),
@@ -353,15 +428,20 @@ def benchmark_world_model(
         )
         for chunk_length in cfg.chunk_lengths:
             for batch_size in cfg.batch_sizes:
-                result, current_obs_shape = _run_single_benchmark(
+                chunk_entry = chunk_cache.get(chunk_length)
+                result, current_obs_shape, built_chunk_entry = _run_single_benchmark(
                     cfg,
                     batch_size=batch_size,
                     chunk_length=chunk_length,
+                    indexed=indexed,
+                    chunk_entry=chunk_entry,
                     progress=progress,
                     task_id=task_id,
                 )
                 if obs_shape is None:
                     obs_shape = current_obs_shape
+                if chunk_entry is None and built_chunk_entry is not None:
+                    chunk_cache[chunk_length] = built_chunk_entry
                 results.append(result)
                 progress.advance(task_id)
 
