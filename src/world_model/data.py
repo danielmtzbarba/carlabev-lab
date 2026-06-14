@@ -154,7 +154,12 @@ def _load_shard_arrays(shard_path: Path) -> dict[str, np.ndarray]:
     return arrays
 
 
-def build_index(dataset_roots: list[str | Path | DatasetRootConfig]) -> IndexedDataset:
+def build_index(
+    dataset_roots: list[str | Path | DatasetRootConfig],
+    *,
+    progress=None,
+    task_id: int | None = None,
+) -> IndexedDataset:
     LOGGER.info("Building world-model dataset index for %d dataset root(s)", len(dataset_roots))
     sources: list[DatasetSource] = []
     shard_records: list[ShardRecord] = []
@@ -168,10 +173,26 @@ def build_index(dataset_roots: list[str | Path | DatasetRootConfig]) -> IndexedD
         else:
             normalized_roots.append(DatasetRootConfig(path=str(root)))
 
+    dataset_infos: list[tuple[int, DatasetRootConfig, Path, DatasetSummaryModel, str]] = []
+    total_shards = 0
     for dataset_id, root_cfg in enumerate(normalized_roots):
         dataset_dir = _coerce_dataset_dir(root_cfg.path)
         summary = load_dataset_summary(dataset_dir)
         source_name = _dataset_source_name(root_cfg, summary)
+        dataset_infos.append((dataset_id, root_cfg, dataset_dir, summary, source_name))
+        total_shards += summary.shard_count
+
+    if progress is not None and task_id is not None:
+        progress.reset(
+            task_id,
+            total=max(total_shards, 1),
+            completed=0,
+            visible=True,
+            candidate="dataset index",
+            stage="loading shards",
+        )
+
+    for dataset_id, root_cfg, dataset_dir, summary, source_name in dataset_infos:
         LOGGER.info(
             "Loading dataset root %s as source=%s transitions=%d shards=%d",
             dataset_dir,
@@ -235,6 +256,8 @@ def build_index(dataset_roots: list[str | Path | DatasetRootConfig]) -> IndexedD
                 )
                 transitions.append(ref)
                 episodes[episode_key].append(ref)
+            if progress is not None and task_id is not None:
+                progress.update(task_id, advance=1)
 
     ordered_episodes: dict[tuple[int, int, int], tuple[TransitionRef, ...]] = {}
     for episode_key, refs in episodes.items():
@@ -246,6 +269,8 @@ def build_index(dataset_roots: list[str | Path | DatasetRootConfig]) -> IndexedD
         len(ordered_episodes),
         len(shard_records),
     )
+    if progress is not None and task_id is not None:
+        progress.update(task_id, stage="index complete", visible=False)
     return IndexedDataset(
         sources=tuple(sources),
         shards=tuple(shard_records),

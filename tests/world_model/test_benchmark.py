@@ -85,7 +85,8 @@ def test_benchmark_reuses_chunk_cache(monkeypatch, tmp_workdir):
 
     calls: list[tuple[int, int, bool]] = []
 
-    def fake_build_index(_dataset_paths):
+    def fake_build_index(_dataset_paths, *, progress=None, task_id=None):
+        del progress, task_id
         return object()
 
     def fake_run_single_benchmark(

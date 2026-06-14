@@ -178,3 +178,25 @@ def test_build_dataloader_respects_explicit_loader_tuning():
     assert loader.pin_memory is False
     assert loader.persistent_workers is False
     assert loader.prefetch_factor == 4
+
+
+@pytest.mark.integration
+def test_build_index_updates_progress(monkeypatch, tiny_cfg, tmp_path):
+    output_dir = _collect_sample_dataset(monkeypatch, tiny_cfg, tmp_path, total_transitions=6)
+
+    updates: list[dict[str, object]] = []
+
+    class FakeProgress:
+        def reset(self, task_id, **kwargs):
+            updates.append({"kind": "reset", "task_id": task_id, **kwargs})
+
+        def update(self, task_id, **kwargs):
+            updates.append({"kind": "update", "task_id": task_id, **kwargs})
+
+    indexed = build_index([str(output_dir)], progress=FakeProgress(), task_id=7)
+
+    assert len(indexed.transitions) == 6
+    assert updates[0]["kind"] == "reset"
+    assert updates[0]["total"] == 3
+    shard_advances = [entry for entry in updates if entry["kind"] == "update" and entry.get("advance") == 1]
+    assert len(shard_advances) == 3

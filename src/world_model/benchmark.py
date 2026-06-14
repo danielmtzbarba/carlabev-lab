@@ -490,8 +490,6 @@ def benchmark_world_model(
     obs_shape: tuple[int, int, int] | None = None
     total_candidates = len(cfg.chunk_lengths) * len(cfg.batch_sizes)
     LOGGER.info("Building shared dataset index once for benchmark sweep")
-    indexed = build_index(cfg.data.dataset_paths)
-    chunk_cache: dict[int, _ChunkDataCacheEntry] = {}
     with build_progress(
         TextColumn("[progress.description]{task.description}"),
         BarColumn(),
@@ -509,6 +507,12 @@ def benchmark_world_model(
             candidate="-",
             stage="initializing",
         )
+        index_task_id = progress.add_task(
+            "Dataset index",
+            total=1,
+            candidate="dataset index",
+            stage="initializing",
+        )
         batch_task_id = progress.add_task(
             "Benchmark batches",
             total=1,
@@ -517,6 +521,12 @@ def benchmark_world_model(
             phase="-",
             visible=False,
         )
+        indexed = build_index(
+            cfg.data.dataset_paths,
+            progress=progress,
+            task_id=index_task_id,
+        )
+        chunk_cache: dict[int, _ChunkDataCacheEntry] = {}
         for chunk_length in cfg.chunk_lengths:
             for batch_size in cfg.batch_sizes:
                 chunk_entry = chunk_cache.get(chunk_length)
