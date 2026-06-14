@@ -235,6 +235,8 @@ def _run_single_benchmark(
                 total=1,
                 completed=0,
                 visible=False,
+                candidate=f"chunk={chunk_length} batch={batch_size}",
+                stage="idle",
                 phase="-",
             )
     LOGGER.info("Preparing datasets for benchmark candidate")
@@ -274,6 +276,8 @@ def _run_single_benchmark(
                         total=max(cfg.warmup_batches, 1),
                         completed=0,
                         visible=True,
+                        candidate=f"chunk={chunk_length} batch={batch_size}",
+                        stage=f"warmup {cfg.warmup_batches} batches",
                         phase="warmup",
                     )
             LOGGER.info("Running %d warmup batch(es)", cfg.warmup_batches)
@@ -305,6 +309,8 @@ def _run_single_benchmark(
                     total=max(cfg.measure_batches, 1),
                     completed=0,
                     visible=True,
+                    candidate=f"chunk={chunk_length} batch={batch_size}",
+                    stage=f"measuring {cfg.measure_batches} batches",
                     phase="measure",
                 )
         LOGGER.info("Measuring %d batch(es)", cfg.measure_batches)
@@ -357,7 +363,13 @@ def _run_single_benchmark(
         if progress is not None and task_id is not None:
             progress.update(task_id, stage="done")
             if batch_task_id is not None:
-                progress.update(batch_task_id, visible=False, phase="done")
+                progress.update(
+                    batch_task_id,
+                    visible=False,
+                    candidate=f"chunk={chunk_length} batch={batch_size}",
+                    stage="done",
+                    phase="done",
+                )
         built_chunk_entry = None
         if chunk_entry is None:
             built_chunk_entry = _ChunkDataCacheEntry(
@@ -394,7 +406,13 @@ def _run_single_benchmark(
         if progress is not None and task_id is not None:
             progress.update(task_id, stage="oom")
             if batch_task_id is not None:
-                progress.update(batch_task_id, visible=False, phase="oom")
+                progress.update(
+                    batch_task_id,
+                    visible=False,
+                    candidate=f"chunk={chunk_length} batch={batch_size}",
+                    stage="oom",
+                    phase="oom",
+                )
         built_chunk_entry = None
         if chunk_entry is None:
             built_chunk_entry = _ChunkDataCacheEntry(
@@ -494,6 +512,8 @@ def benchmark_world_model(
         batch_task_id = progress.add_task(
             "Benchmark batches",
             total=1,
+            candidate="-",
+            stage="idle",
             phase="-",
             visible=False,
         )
