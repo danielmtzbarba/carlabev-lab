@@ -157,8 +157,15 @@ def _separator(label: str) -> None:
 
 def _log_table(table: Table) -> None:
     console = get_console()
-    with console.capture() as capture:
-        console.print(table)
+    plain_console = console.__class__(
+        stderr=False,
+        soft_wrap=True,
+        no_color=True,
+        markup=False,
+        width=console.width,
+    )
+    with plain_console.capture() as capture:
+        plain_console.print(table)
     for line in capture.get().rstrip().splitlines():
         LOGGER.info(line)
 

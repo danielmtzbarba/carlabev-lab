@@ -5,15 +5,33 @@ from pathlib import Path
 from typing import Any
 
 from rich.console import Console
+from rich.highlighter import RegexHighlighter
 from rich.logging import RichHandler
 from rich.progress import Progress
+from rich.theme import Theme
 
 _FORMAT = "[%(levelname)s] %(asctime)s | %(message)s"
 _DATEFMT = "%H:%M:%S"
 _CONFIGURED = False
-_CONSOLE = Console(stderr=False, soft_wrap=True)
+_THEME = Theme(
+    {
+        "level.info": "blue",
+        "level.debug": "yellow",
+    }
+)
 
 
+class _LevelPrefixHighlighter(RegexHighlighter):
+    highlights = [
+        r"^\[(?P<level_info>INFO)\]",
+        r"^\[(?P<level_debug>DEBUG)\]",
+        r"^\[(?P<level_warning>WARNING)\]",
+        r"^\[(?P<level_error>ERROR)\]",
+        r"^\[(?P<level_critical>CRITICAL)\]",
+    ]
+
+
+_CONSOLE = Console(stderr=False, soft_wrap=True, theme=_THEME)
 def configure_logging(*, level: int = logging.INFO) -> None:
     global _CONFIGURED
     if _CONFIGURED:
@@ -30,9 +48,10 @@ def configure_logging(*, level: int = logging.INFO) -> None:
         show_time=False,
         show_level=False,
         show_path=False,
-        markup=True,
+        markup=False,
         rich_tracebacks=True,
         log_time_format=_DATEFMT,
+        highlighter=_LevelPrefixHighlighter(),
     )
     handler.setLevel(level)
     handler.setFormatter(logging.Formatter(_FORMAT, datefmt=_DATEFMT))

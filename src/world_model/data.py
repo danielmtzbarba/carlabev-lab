@@ -217,7 +217,7 @@ def _load_prepared_shard_arrays(shard_path: Path) -> dict[str, np.ndarray] | Non
             return None
         arrays[name] = np.load(array_path, mmap_mode="r", allow_pickle=False)
     _validate_shard_arrays(arrays, shard_path)
-    LOGGER.info(event_message("DATA", "SHARD_PREPARED_LOAD", path=shard_path, rows=int(arrays["obs"].shape[0])))
+    LOGGER.debug(event_message("DATA", "SHARD_PREPARED_LOAD", path=shard_path, rows=int(arrays["obs"].shape[0])))
     return arrays
 
 
