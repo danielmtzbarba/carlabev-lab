@@ -148,6 +148,8 @@ def train_world_model(
             expected_num_actions=cfg.data.expected_num_actions,
         ),
         chunk_lengths=(1, cfg.data.chunk_length),
+        cache_sequence_indices=cfg.data.cache_sequence_indices,
+        sequence_cache_dir=cfg.data.sequence_cache_dir,
     )
     run_paths.config_path.write_text(json.dumps(asdict(cfg), indent=2), encoding="utf-8")
     run_paths.latest_pointer_path.write_text(

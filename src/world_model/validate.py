@@ -7,7 +7,7 @@ from statistics import mean
 import numpy as np
 
 from src.world_model.contracts import DatasetRootConfig, DatasetValidationReportModel, WorldModelSequenceConfig
-from src.world_model.data import build_index, build_sequence_refs
+from src.world_model.data import build_index, load_or_build_sequence_window_cache
 
 
 def validate_datasets(
@@ -15,6 +15,8 @@ def validate_datasets(
     *,
     cfg: WorldModelSequenceConfig | None = None,
     chunk_lengths: tuple[int, ...] = (1, 8, 16),
+    cache_sequence_indices: bool = True,
+    sequence_cache_dir: str | None = None,
 ) -> DatasetValidationReportModel:
     cfg = cfg or WorldModelSequenceConfig()
     indexed = build_index(dataset_roots)
@@ -35,8 +37,14 @@ def validate_datasets(
     truncated = [int(ref.truncated) for ref in indexed.transitions]
     per_source_counts = Counter(ref.source_name for ref in indexed.transitions)
     valid_windows = {
-        int(chunk_length): len(
-            build_sequence_refs(indexed, chunk_length=int(chunk_length), stride=cfg.stride)
+        int(chunk_length): int(
+            load_or_build_sequence_window_cache(
+                indexed,
+                chunk_length=int(chunk_length),
+                stride=cfg.stride,
+                enabled=cache_sequence_indices,
+                cache_dir=sequence_cache_dir,
+            ).window_transition_indices.shape[0]
         )
         for chunk_length in chunk_lengths
     }

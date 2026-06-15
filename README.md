@@ -335,7 +335,8 @@ sweep is interrupted part-way through, the finished candidates are still
 available for inspection instead of being lost at the end of the run.
 
 Sequence-window indices are now cached on disk and reused across benchmark and
-training runs. By default the cache is written to:
+training runs, and dataset validation reuses the same cache too. By default the
+cache is written to:
 
 - `<dataset_root>/.wm_cache/` for a single dataset root
 - `datasets/world_model/.wm_cache/` when mixing multiple roots

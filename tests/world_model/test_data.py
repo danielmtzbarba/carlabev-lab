@@ -200,6 +200,42 @@ def test_validate_datasets_reports_training_readiness(monkeypatch, tiny_cfg, tmp
 
 
 @pytest.mark.unit
+def test_validate_datasets_reuses_cached_window_indices(monkeypatch, tiny_cfg, tmp_path):
+    output_dir = _collect_sample_dataset(monkeypatch, tiny_cfg, tmp_path, total_transitions=6)
+    cache_dir = tmp_path / "validate-cache"
+
+    import src.world_model.data as data_mod
+
+    build_calls = {"count": 0}
+    original_builder = data_mod.build_sequence_window_indices
+
+    def counting_builder(*args, **kwargs):
+        build_calls["count"] += 1
+        return original_builder(*args, **kwargs)
+
+    monkeypatch.setattr(data_mod, "build_sequence_window_indices", counting_builder)
+
+    report_first = validate_datasets(
+        [str(output_dir)],
+        cfg=WorldModelSequenceConfig(chunk_length=1, stride=1, expected_num_actions=5),
+        chunk_lengths=(1, 2),
+        sequence_cache_dir=str(cache_dir),
+    )
+    assert report_first.valid_windows[1] == 6
+    assert report_first.valid_windows[2] == 4
+    assert build_calls["count"] == 2
+
+    report_second = validate_datasets(
+        [str(output_dir)],
+        cfg=WorldModelSequenceConfig(chunk_length=1, stride=1, expected_num_actions=5),
+        chunk_lengths=(1, 2),
+        sequence_cache_dir=str(cache_dir),
+    )
+    assert report_second.valid_windows == report_first.valid_windows
+    assert build_calls["count"] == 2
+
+
+@pytest.mark.unit
 def test_build_dataloader_enables_cuda_friendly_options():
     dataset = [torch.tensor([1.0]), torch.tensor([2.0])]
 

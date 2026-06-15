@@ -16,6 +16,8 @@ class ValidateDatasetArgs:
     chunk_lengths: list[int] = field(default_factory=lambda: [1, 8, 16])
     stride: int = 1
     expected_num_actions: int = 9
+    cache_sequence_indices: bool = True
+    sequence_cache_dir: str | None = None
 
 
 def _render_overview(console: Console, payload: dict[str, object]) -> None:
@@ -97,6 +99,8 @@ def main() -> None:
         args.paths,
         cfg=cfg,
         chunk_lengths=tuple(args.chunk_lengths),
+        cache_sequence_indices=args.cache_sequence_indices,
+        sequence_cache_dir=args.sequence_cache_dir,
     )
     payload = report.model_dump()
     console = Console()
