@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
@@ -15,8 +16,11 @@ _DATEFMT = "%H:%M:%S"
 _CONFIGURED = False
 _THEME = Theme(
     {
-        "level.info": "blue",
-        "level.debug": "yellow",
+        "level_info": "blue",
+        "level_debug": "yellow",
+        "level_warning": "yellow",
+        "level_error": "bold red",
+        "level_critical": "bold white on red",
     }
 )
 
@@ -30,8 +34,26 @@ class _LevelPrefixHighlighter(RegexHighlighter):
         r"^\[(?P<level_critical>CRITICAL)\]",
     ]
 
+def _env_flag(name: str) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return False
+    return value.strip().lower() not in {"", "0", "false", "no"}
 
-_CONSOLE = Console(stderr=False, soft_wrap=True, theme=_THEME)
+
+def _build_console() -> Console:
+    force_terminal = _env_flag("FORCE_COLOR") or _env_flag("CLICOLOR_FORCE") or _env_flag("PY_COLORS")
+    no_color = _env_flag("NO_COLOR")
+    return Console(
+        stderr=False,
+        soft_wrap=True,
+        theme=_THEME,
+        force_terminal=force_terminal,
+        no_color=no_color,
+    )
+
+
+_CONSOLE = _build_console()
 def configure_logging(*, level: int = logging.INFO) -> None:
     global _CONFIGURED
     if _CONFIGURED:
