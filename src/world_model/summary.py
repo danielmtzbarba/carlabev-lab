@@ -8,6 +8,7 @@ from typing import Any
 import numpy as np
 
 from src.utils.storage_paths import resolve_artifact_path
+from src.world_model.data import resolve_dataset_shard_path
 
 
 def _load_dataset_summary(dataset_dir: Path) -> dict[str, Any]:
@@ -52,7 +53,7 @@ def summarize_dataset(path: str) -> dict[str, Any]:
     scene_by_episode: dict[tuple[int, int], str] = {}
 
     for shard in shard_entries:
-        shard_path = resolve_artifact_path(shard["path"])
+        shard_path = resolve_dataset_shard_path(dataset_dir, shard["path"])
         with np.load(shard_path, allow_pickle=False) as data:
             rows = int(data["obs"].shape[0])
             total_transitions += rows

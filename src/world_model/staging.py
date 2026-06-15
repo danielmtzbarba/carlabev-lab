@@ -33,6 +33,19 @@ def _load_summary(dataset_dir: Path) -> dict:
     return json.loads(summary_file.read_text(encoding="utf-8"))
 
 
+def _rewrite_staged_summary_paths(staged_dir: Path) -> dict:
+    summary = _load_summary(staged_dir)
+    rewritten_shards: list[dict] = []
+    for shard_meta in summary.get("shards", []):
+        rewritten = dict(shard_meta)
+        rewritten["path"] = Path(str(shard_meta["path"])).name
+        rewritten_shards.append(rewritten)
+    summary["shards"] = rewritten_shards
+    summary["output_dir"] = str(staged_dir)
+    _summary_file(staged_dir).write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    return summary
+
+
 def _coerce_dataset_dir(path: str | Path) -> Path:
     dataset_dir = resolve_artifact_path(path)
     if dataset_dir.is_file():
@@ -83,7 +96,7 @@ def stage_dataset_to_tmp(
         shutil.rmtree(staged_dir)
     shutil.copytree(source_dir, staged_dir)
 
-    staged_summary = _load_summary(staged_dir)
+    staged_summary = _rewrite_staged_summary_paths(staged_dir)
     staged_shards = staged_summary.get("shards", [])
     if len(staged_shards) != shard_count:
         raise ValueError(

@@ -129,6 +129,13 @@ def load_dataset_summary(path: str | Path) -> DatasetSummaryModel:
     return DatasetSummaryModel.model_validate(payload)
 
 
+def resolve_dataset_shard_path(dataset_dir: Path, shard_path: str | Path) -> Path:
+    shard_entry = Path(shard_path)
+    if shard_entry.is_absolute():
+        return resolve_artifact_path(shard_entry)
+    return dataset_dir / shard_entry
+
+
 def _dataset_source_name(cfg: DatasetRootConfig, summary: DatasetSummaryModel) -> str:
     if cfg.source_name is not None:
         return cfg.source_name
@@ -304,7 +311,7 @@ def build_index(
         )
 
         for shard_meta in summary.shards:
-            shard_path = resolve_artifact_path(shard_meta.path)
+            shard_path = resolve_dataset_shard_path(dataset_dir, shard_meta.path)
             if not shard_path.exists():
                 raise FileNotFoundError(f"Shard listed in summary does not exist: {shard_meta.path}")
             arrays = _load_shard_arrays(shard_path)

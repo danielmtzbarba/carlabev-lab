@@ -6,6 +6,7 @@ from typing import Any
 import numpy as np
 
 from src.utils.storage_paths import resolve_artifact_path
+from src.world_model.data import resolve_dataset_shard_path
 
 
 def inspect_dataset_path(path: str, *, shard_index: int = 0) -> dict[str, Any]:
@@ -30,7 +31,7 @@ def inspect_dataset_path(path: str, *, shard_index: int = 0) -> dict[str, Any]:
             raise IndexError(
                 f"shard_index {shard_index} is out of range for {len(shards)} shards."
             )
-        shard_path = resolve_artifact_path(shards[shard_index]["path"])
+        shard_path = resolve_dataset_shard_path(target, shards[shard_index]["path"])
     else:
         summary = None
         shard_path = target
