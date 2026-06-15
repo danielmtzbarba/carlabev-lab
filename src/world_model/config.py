@@ -56,6 +56,7 @@ class WorldModelTrainLoopConfig:
     amp_dtype: Literal["bfloat16", "float16"] = "bfloat16"
     compile_model: bool = False
     compile_mode: Literal["default", "reduce-overhead", "max-autotune"] = "default"
+    timing_log_interval: int = 50
 
 
 @dataclass

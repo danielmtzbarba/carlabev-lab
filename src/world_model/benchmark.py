@@ -6,6 +6,7 @@ import json
 import time
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
+from statistics import mean
 from typing import Any
 
 import torch
@@ -58,6 +59,9 @@ class WorldModelBenchmarkResult:
     batches_per_second: float | None
     samples_per_second: float | None
     tokens_per_second: float | None
+    avg_fetch_ms: float | None
+    avg_transfer_ms: float | None
+    avg_step_ms: float | None
     peak_memory_mb: float | None
     last_loss: float | None
     error_message: str | None = None
@@ -69,6 +73,7 @@ class WorldModelBenchmarkSummary:
     config_path: str
     json_path: str
     csv_path: str
+    state_path: str
     device: str
     obs_shape: tuple[int, int, int] | None
     results: tuple[WorldModelBenchmarkResult, ...]
@@ -97,6 +102,26 @@ def _build_results_payload(
     }
 
 
+def _build_state_payload(
+    *,
+    cfg: WorldModelBenchmarkConfig,
+    run_paths: WorldModelRunPaths,
+    status: str,
+    obs_shape: tuple[int, int, int] | None,
+    results: list[WorldModelBenchmarkResult],
+    current_candidate: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        "run_name": cfg.run_name,
+        "run_dir": str(run_paths.run_dir),
+        "device": cfg.training.device,
+        "status": status,
+        "obs_shape": list(obs_shape) if obs_shape is not None else None,
+        "completed_results": [asdict(result) for result in results],
+        "current_candidate": current_candidate,
+    }
+
+
 def _persist_results(
     *,
     cfg: WorldModelBenchmarkConfig,
@@ -114,6 +139,27 @@ def _persist_results(
     )
     _write_json(json_path, payload)
     _write_csv(csv_path, results)
+
+
+def _persist_state(
+    *,
+    cfg: WorldModelBenchmarkConfig,
+    run_paths: WorldModelRunPaths,
+    state_path: Path,
+    status: str,
+    obs_shape: tuple[int, int, int] | None,
+    results: list[WorldModelBenchmarkResult],
+    current_candidate: dict[str, Any] | None = None,
+) -> None:
+    payload = _build_state_payload(
+        cfg=cfg,
+        run_paths=run_paths,
+        status=status,
+        obs_shape=obs_shape,
+        results=results,
+        current_candidate=current_candidate,
+    )
+    _write_json(state_path, payload)
 
 
 def _build_artifacts_from_cached_chunk(
@@ -217,6 +263,45 @@ def _iter_batches(loader, count: int):
         produced += 1
 
 
+def _next_batch(iterator, loader):
+    try:
+        return next(iterator), iterator
+    except StopIteration:
+        iterator = iter(loader)
+        return next(iterator), iterator
+
+
+def _candidate_state(
+    *,
+    batch_size: int,
+    chunk_length: int,
+    stage: str,
+    warmup_batches: int,
+    measure_batches: int,
+    warmup_completed: int = 0,
+    measured_completed: int = 0,
+    last_loss: float | None = None,
+    avg_fetch_ms: float | None = None,
+    avg_transfer_ms: float | None = None,
+    avg_step_ms: float | None = None,
+    error_message: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "batch_size": batch_size,
+        "chunk_length": chunk_length,
+        "stage": stage,
+        "warmup_batches": warmup_batches,
+        "measure_batches": measure_batches,
+        "warmup_completed": warmup_completed,
+        "measured_completed": measured_completed,
+        "last_loss": last_loss,
+        "avg_fetch_ms": avg_fetch_ms,
+        "avg_transfer_ms": avg_transfer_ms,
+        "avg_step_ms": avg_step_ms,
+        "error_message": error_message,
+    }
+
+
 def _is_oom_error(exc: RuntimeError) -> bool:
     message = str(exc).lower()
     return "out of memory" in message or "cuda error" in message and "memory" in message
@@ -234,6 +319,7 @@ def _run_single_benchmark(
     chunk_length: int,
     indexed: IndexedDataset,
     chunk_entry: _ChunkDataCacheEntry | None = None,
+    state_callback=None,
     progress=None,
     task_id: int | None = None,
     batch_task_id: int | None = None,
@@ -262,6 +348,16 @@ def _run_single_benchmark(
             device=cfg.training.device,
         )
     )
+    if state_callback is not None:
+        state_callback(
+            _candidate_state(
+                batch_size=batch_size,
+                chunk_length=chunk_length,
+                stage="preparing_loaders",
+                warmup_batches=cfg.warmup_batches,
+                measure_batches=cfg.measure_batches,
+            )
+        )
     if progress is not None and task_id is not None:
         progress.update(
             task_id,
@@ -288,6 +384,16 @@ def _run_single_benchmark(
     )
     if progress is not None and task_id is not None:
         progress.update(task_id, stage="building model")
+    if state_callback is not None:
+        state_callback(
+            _candidate_state(
+                batch_size=batch_size,
+                chunk_length=chunk_length,
+                stage="building_model",
+                warmup_batches=cfg.warmup_batches,
+                measure_batches=cfg.measure_batches,
+            )
+        )
     LOGGER.info(
         kv_message(
             "Build model",
@@ -323,7 +429,19 @@ def _run_single_benchmark(
                         phase="warmup",
                     )
             LOGGER.info(kv_message("Warmup", batches=cfg.warmup_batches))
-        for batch in _iter_batches(data_artifacts.train_loader, cfg.warmup_batches):
+            if state_callback is not None:
+                state_callback(
+                    _candidate_state(
+                        batch_size=batch_size,
+                        chunk_length=chunk_length,
+                        stage="warmup",
+                        warmup_batches=cfg.warmup_batches,
+                        measure_batches=cfg.measure_batches,
+                    )
+                )
+        warmup_iterator = iter(data_artifacts.train_loader)
+        for warmup_index in range(cfg.warmup_batches):
+            batch, warmup_iterator = _next_batch(warmup_iterator, data_artifacts.train_loader)
             batch = _to_device(batch, device)
             loss, _metrics = run_world_model_step(
                 model,
@@ -335,6 +453,18 @@ def _run_single_benchmark(
                 optimizer_cfg=run_cfg.optimizer,
             )
             last_loss = float(loss.detach().cpu().item())
+            if state_callback is not None:
+                state_callback(
+                    _candidate_state(
+                        batch_size=batch_size,
+                        chunk_length=chunk_length,
+                        stage="warmup",
+                        warmup_batches=cfg.warmup_batches,
+                        measure_batches=cfg.measure_batches,
+                        warmup_completed=warmup_index + 1,
+                        last_loss=last_loss,
+                    )
+                )
             if progress is not None and batch_task_id is not None:
                 progress.update(batch_task_id, advance=1)
 
@@ -343,6 +473,9 @@ def _run_single_benchmark(
         _sync_device(device)
 
         measured_samples = 0
+        fetch_times: list[float] = []
+        transfer_times: list[float] = []
+        step_times: list[float] = []
         if progress is not None and task_id is not None:
             progress.update(task_id, stage=f"measuring {cfg.measure_batches} batches")
             if batch_task_id is not None:
@@ -356,9 +489,30 @@ def _run_single_benchmark(
                     phase="measure",
                 )
         LOGGER.info(kv_message("Measure", batches=cfg.measure_batches))
+        if state_callback is not None:
+            state_callback(
+                _candidate_state(
+                    batch_size=batch_size,
+                    chunk_length=chunk_length,
+                    stage="measuring",
+                    warmup_batches=cfg.warmup_batches,
+                    measure_batches=cfg.measure_batches,
+                    warmup_completed=cfg.warmup_batches,
+                )
+            )
+        measure_iterator = iter(data_artifacts.train_loader)
         start = time.perf_counter()
-        for batch in _iter_batches(data_artifacts.train_loader, cfg.measure_batches):
+        for batch_index in range(cfg.measure_batches):
+            fetch_start = time.perf_counter()
+            batch, measure_iterator = _next_batch(measure_iterator, data_artifacts.train_loader)
+            fetch_time = time.perf_counter() - fetch_start
+
+            transfer_start = time.perf_counter()
             batch = _to_device(batch, device)
+            _sync_device(device)
+            transfer_time = time.perf_counter() - transfer_start
+
+            step_start = time.perf_counter()
             loss, _metrics = run_world_model_step(
                 model,
                 batch,
@@ -368,10 +522,43 @@ def _run_single_benchmark(
                 training_cfg=run_cfg.training,
                 optimizer_cfg=run_cfg.optimizer,
             )
+            _sync_device(device)
+            step_time = time.perf_counter() - step_start
             measured_samples += int(batch["obs"].shape[0])
             last_loss = float(loss.detach().cpu().item())
+            fetch_times.append(fetch_time)
+            transfer_times.append(transfer_time)
+            step_times.append(step_time)
             if progress is not None and batch_task_id is not None:
                 progress.update(batch_task_id, advance=1)
+            LOGGER.info(
+                kv_message(
+                    "Benchmark batch",
+                    chunk_length=chunk_length,
+                    batch_size=batch_size,
+                    batch=batch_index + 1,
+                    total_batches=cfg.measure_batches,
+                    fetch_ms=fetch_time * 1000.0,
+                    transfer_ms=transfer_time * 1000.0,
+                    step_ms=step_time * 1000.0,
+                )
+            )
+            if state_callback is not None:
+                state_callback(
+                    _candidate_state(
+                        batch_size=batch_size,
+                        chunk_length=chunk_length,
+                        stage="measuring",
+                        warmup_batches=cfg.warmup_batches,
+                        measure_batches=cfg.measure_batches,
+                        warmup_completed=cfg.warmup_batches,
+                        measured_completed=batch_index + 1,
+                        last_loss=last_loss,
+                        avg_fetch_ms=float(mean(fetch_times) * 1000.0),
+                        avg_transfer_ms=float(mean(transfer_times) * 1000.0),
+                        avg_step_ms=float(mean(step_times) * 1000.0),
+                    )
+                )
         _sync_device(device)
         elapsed_seconds = time.perf_counter() - start
         peak_memory_mb = _peak_memory_mb(device)
@@ -380,6 +567,9 @@ def _run_single_benchmark(
         tokens_per_second = (
             (measured_samples * chunk_length) / elapsed_seconds if elapsed_seconds > 0 else None
         )
+        avg_fetch_ms = float(mean(fetch_times) * 1000.0) if fetch_times else None
+        avg_transfer_ms = float(mean(transfer_times) * 1000.0) if transfer_times else None
+        avg_step_ms = float(mean(step_times) * 1000.0) if step_times else None
         result = WorldModelBenchmarkResult(
             batch_size=batch_size,
             chunk_length=chunk_length,
@@ -391,6 +581,9 @@ def _run_single_benchmark(
             batches_per_second=batches_per_second,
             samples_per_second=samples_per_second,
             tokens_per_second=tokens_per_second,
+            avg_fetch_ms=avg_fetch_ms,
+            avg_transfer_ms=avg_transfer_ms,
+            avg_step_ms=avg_step_ms,
             peak_memory_mb=peak_memory_mb,
             last_loss=last_loss,
         )
@@ -402,9 +595,28 @@ def _run_single_benchmark(
                 status="ok",
                 samples_per_second=samples_per_second or 0.0,
                 tokens_per_second=tokens_per_second or 0.0,
+                avg_fetch_ms="-" if avg_fetch_ms is None else avg_fetch_ms,
+                avg_transfer_ms="-" if avg_transfer_ms is None else avg_transfer_ms,
+                avg_step_ms="-" if avg_step_ms is None else avg_step_ms,
                 peak_memory_mb="-" if peak_memory_mb is None else f"{peak_memory_mb:.1f}",
             )
         )
+        if state_callback is not None:
+            state_callback(
+                _candidate_state(
+                    batch_size=batch_size,
+                    chunk_length=chunk_length,
+                    stage="done",
+                    warmup_batches=cfg.warmup_batches,
+                    measure_batches=cfg.measure_batches,
+                    warmup_completed=cfg.warmup_batches,
+                    measured_completed=cfg.measure_batches,
+                    last_loss=last_loss,
+                    avg_fetch_ms=avg_fetch_ms,
+                    avg_transfer_ms=avg_transfer_ms,
+                    avg_step_ms=avg_step_ms,
+                )
+            )
         if progress is not None and task_id is not None:
             progress.update(task_id, stage="done")
             if batch_task_id is not None:
@@ -438,16 +650,33 @@ def _run_single_benchmark(
             batches_per_second=None,
             samples_per_second=None,
             tokens_per_second=None,
+            avg_fetch_ms=None,
+            avg_transfer_ms=None,
+            avg_step_ms=None,
             peak_memory_mb=_peak_memory_mb(device),
             last_loss=last_loss,
             error_message=str(exc),
         )
         LOGGER.warning(
-            "Benchmark OOM chunk_length=%d batch_size=%d error=%s",
-            chunk_length,
-            batch_size,
-            exc,
+            kv_message(
+                "Benchmark OOM",
+                chunk_length=chunk_length,
+                batch_size=batch_size,
+                error=str(exc),
+            )
         )
+        if state_callback is not None:
+            state_callback(
+                _candidate_state(
+                    batch_size=batch_size,
+                    chunk_length=chunk_length,
+                    stage="oom",
+                    warmup_batches=cfg.warmup_batches,
+                    measure_batches=cfg.measure_batches,
+                    last_loss=last_loss,
+                    error_message=str(exc),
+                )
+            )
         if progress is not None and task_id is not None:
             progress.update(task_id, stage="oom")
             if batch_task_id is not None:
@@ -481,16 +710,33 @@ def _run_single_benchmark(
             batches_per_second=None,
             samples_per_second=None,
             tokens_per_second=None,
+            avg_fetch_ms=None,
+            avg_transfer_ms=None,
+            avg_step_ms=None,
             peak_memory_mb=_peak_memory_mb(device),
             last_loss=last_loss,
             error_message=str(exc),
         )
         LOGGER.warning(
-            "Benchmark worker crash chunk_length=%d batch_size=%d error=%s",
-            chunk_length,
-            batch_size,
-            exc,
+            kv_message(
+                "Benchmark worker crash",
+                chunk_length=chunk_length,
+                batch_size=batch_size,
+                error=str(exc),
+            )
         )
+        if state_callback is not None:
+            state_callback(
+                _candidate_state(
+                    batch_size=batch_size,
+                    chunk_length=chunk_length,
+                    stage="worker_crash",
+                    warmup_batches=cfg.warmup_batches,
+                    measure_batches=cfg.measure_batches,
+                    last_loss=last_loss,
+                    error_message=str(exc),
+                )
+            )
         if progress is not None and task_id is not None:
             progress.update(task_id, stage="worker crash")
             if batch_task_id is not None:
@@ -533,6 +779,9 @@ def _write_csv(path: Path, results: list[WorldModelBenchmarkResult]) -> None:
         batches_per_second=None,
         samples_per_second=None,
         tokens_per_second=None,
+        avg_fetch_ms=None,
+        avg_transfer_ms=None,
+        avg_step_ms=None,
         peak_memory_mb=None,
         last_loss=None,
         error_message=None,
@@ -562,22 +811,25 @@ def benchmark_world_model(
     config_path = run_paths.run_dir / "benchmark_config.json"
     json_path = run_paths.artifacts_dir / "benchmark_results.json"
     csv_path = run_paths.artifacts_dir / "benchmark_results.csv"
+    state_path = run_paths.artifacts_dir / "benchmark_state.json"
     LOGGER.info(
-        "Initializing world-model benchmark run_name=%s device=%s candidates=%d amp=%s amp_dtype=%s compile_model=%s",
-        cfg.run_name,
-        cfg.training.device,
-        len(cfg.chunk_lengths) * len(cfg.batch_sizes),
-        cfg.training.amp,
-        cfg.training.amp_dtype,
-        cfg.training.compile_model,
+        kv_message(
+            "Initialize benchmark",
+            run_name=cfg.run_name,
+            device=cfg.training.device,
+            candidates=len(cfg.chunk_lengths) * len(cfg.batch_sizes),
+            amp=cfg.training.amp,
+            amp_dtype=cfg.training.amp_dtype,
+            compile_model=cfg.training.compile_model,
+        )
     )
-    LOGGER.info("Dataset paths: %s", ", ".join(cfg.data.dataset_paths))
+    LOGGER.info(kv_message("Dataset paths", paths=cfg.data.dataset_paths))
     _write_json(config_path, asdict(cfg))
 
     results: list[WorldModelBenchmarkResult] = []
     obs_shape: tuple[int, int, int] | None = None
     total_candidates = len(cfg.chunk_lengths) * len(cfg.batch_sizes)
-    LOGGER.info("Building shared dataset index once for benchmark sweep")
+    LOGGER.info(kv_message("Build shared dataset index"))
     _persist_results(
         cfg=cfg,
         run_paths=run_paths,
@@ -585,6 +837,15 @@ def benchmark_world_model(
         csv_path=csv_path,
         obs_shape=obs_shape,
         results=results,
+    )
+    _persist_state(
+        cfg=cfg,
+        run_paths=run_paths,
+        state_path=state_path,
+        status="initializing",
+        obs_shape=obs_shape,
+        results=results,
+        current_candidate=None,
     )
     with build_progress(
         TextColumn("[progress.description]{task.description}"),
@@ -622,18 +883,44 @@ def benchmark_world_model(
             progress=progress,
             task_id=index_task_id,
         )
+        _persist_state(
+            cfg=cfg,
+            run_paths=run_paths,
+            state_path=state_path,
+            status="ready",
+            obs_shape=obs_shape,
+            results=results,
+            current_candidate=None,
+        )
         chunk_cache: dict[int, _ChunkDataCacheEntry] = {}
         candidate_index = 0
         for chunk_length in cfg.chunk_lengths:
             for batch_size in cfg.batch_sizes:
                 candidate_index += 1
                 LOGGER.info(
-                    "Candidate %d/%d chunk_length=%d batch_size=%d",
-                    candidate_index,
-                    total_candidates,
-                    chunk_length,
-                    batch_size,
+                    kv_message(
+                        "Benchmark candidate",
+                        candidate_index=candidate_index,
+                        total_candidates=total_candidates,
+                        chunk_length=chunk_length,
+                        batch_size=batch_size,
+                    )
                 )
+                def _state_callback(current_candidate: dict[str, Any]) -> None:
+                    _persist_state(
+                        cfg=cfg,
+                        run_paths=run_paths,
+                        state_path=state_path,
+                        status="running",
+                        obs_shape=obs_shape,
+                        results=results,
+                        current_candidate={
+                            **current_candidate,
+                            "candidate_index": candidate_index,
+                            "total_candidates": total_candidates,
+                        },
+                    )
+
                 chunk_entry = chunk_cache.get(chunk_length)
                 result, current_obs_shape, built_chunk_entry = _run_single_benchmark(
                     cfg,
@@ -641,6 +928,7 @@ def benchmark_world_model(
                     chunk_length=chunk_length,
                     indexed=indexed,
                     chunk_entry=chunk_entry,
+                    state_callback=_state_callback,
                     progress=progress,
                     task_id=task_id,
                     batch_task_id=batch_task_id,
@@ -658,20 +946,41 @@ def benchmark_world_model(
                     obs_shape=obs_shape,
                     results=results,
                 )
+                _persist_state(
+                    cfg=cfg,
+                    run_paths=run_paths,
+                    state_path=state_path,
+                    status="running",
+                    obs_shape=obs_shape,
+                    results=results,
+                    current_candidate=None,
+                )
                 progress.advance(task_id)
 
     ok_results = [result for result in results if result.status == "ok"]
     LOGGER.info(
-        "Finished world-model benchmark successful=%d total=%d results_json=%s",
-        len(ok_results),
-        len(results),
-        json_path,
+        kv_message(
+            "Finish benchmark sweep",
+            successful=len(ok_results),
+            total=len(results),
+            results_json=json_path,
+        )
+    )
+    _persist_state(
+        cfg=cfg,
+        run_paths=run_paths,
+        state_path=state_path,
+        status="finished",
+        obs_shape=obs_shape,
+        results=results,
+        current_candidate=None,
     )
     return WorldModelBenchmarkSummary(
         run_dir=str(run_paths.run_dir),
         config_path=str(config_path),
         json_path=str(json_path),
         csv_path=str(csv_path),
+        state_path=str(state_path),
         device=cfg.training.device,
         obs_shape=obs_shape,
         results=tuple(results),

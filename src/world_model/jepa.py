@@ -57,9 +57,14 @@ class LeWorldModel(nn.Module):
 
     def forward(self, obs: torch.Tensor, actions: torch.Tensor, next_obs: torch.Tensor) -> dict[str, torch.Tensor]:
         context_latents = self.encode_sequence(obs)
-        next_latents = self.encode_sequence(next_obs)
-        flat_next_latents = next_latents.reshape(-1, next_latents.size(-1))
-        target_latents = self.projector(flat_next_latents).reshape(next_latents.size(0), next_latents.size(1), -1).detach()
+        with torch.no_grad():
+            next_latents = self.encode_sequence(next_obs)
+            flat_next_latents = next_latents.reshape(-1, next_latents.size(-1))
+            target_latents = self.projector(flat_next_latents).reshape(
+                next_latents.size(0),
+                next_latents.size(1),
+                -1,
+            )
         action_cond = self._encode_actions(actions)
         pred_latents = self.predictor(context_latents, action_cond)
         flat_pred_latents = pred_latents.reshape(-1, pred_latents.size(-1))

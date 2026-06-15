@@ -18,6 +18,7 @@ def _render_overview(console: Console, summary) -> None:
         ("Observation Shape", str(summary.obs_shape) if summary.obs_shape is not None else "-"),
         ("JSON Results", summary.json_path),
         ("CSV Results", summary.csv_path),
+        ("State File", summary.state_path),
     ]
     for label, value in rows:
         table.add_row(label, str(value))
@@ -31,6 +32,9 @@ def _render_results(console: Console, summary) -> None:
     table.add_column("Status")
     table.add_column("Samples/s", justify="right")
     table.add_column("Tokens/s", justify="right")
+    table.add_column("Fetch ms", justify="right")
+    table.add_column("Transfer ms", justify="right")
+    table.add_column("Step ms", justify="right")
     table.add_column("Peak MB", justify="right")
     table.add_column("Last Loss", justify="right")
     table.add_column("Measured Batches", justify="right")
@@ -50,6 +54,9 @@ def _render_results(console: Console, summary) -> None:
             result.status,
             "-" if result.samples_per_second is None else f"{result.samples_per_second:.2f}",
             "-" if result.tokens_per_second is None else f"{result.tokens_per_second:.2f}",
+            "-" if result.avg_fetch_ms is None else f"{result.avg_fetch_ms:.1f}",
+            "-" if result.avg_transfer_ms is None else f"{result.avg_transfer_ms:.1f}",
+            "-" if result.avg_step_ms is None else f"{result.avg_step_ms:.1f}",
             "-" if result.peak_memory_mb is None else f"{result.peak_memory_mb:.1f}",
             "-" if result.last_loss is None else f"{result.last_loss:.4f}",
             str(result.measured_batches),
@@ -74,7 +81,11 @@ def _render_recommendation(console: Console, summary) -> None:
     console.print(
         "Best throughput candidate: "
         f"chunk_length={best.chunk_length} batch_size={best.batch_size} "
-        f"tokens/s={best.tokens_per_second:.2f} peak_mb={best.peak_memory_mb or 0.0:.1f}"
+        f"tokens/s={best.tokens_per_second:.2f} "
+        f"fetch_ms={best.avg_fetch_ms or 0.0:.1f} "
+        f"transfer_ms={best.avg_transfer_ms or 0.0:.1f} "
+        f"step_ms={best.avg_step_ms or 0.0:.1f} "
+        f"peak_mb={best.peak_memory_mb or 0.0:.1f}"
     )
 
 

@@ -118,3 +118,9 @@ def test_train_world_model_smoke(monkeypatch, tiny_cfg, tmp_workdir):
 
     history = json.loads((run_dir / "artifacts" / "history.json").read_text(encoding="utf-8"))
     assert history[0]["epoch"] == 1
+    assert "train_avg_fetch_ms" in history[0]
+    assert "train_avg_transfer_ms" in history[0]
+    assert "train_avg_step_ms" in history[0]
+    assert "val_avg_fetch_ms" in history[0]
+    assert "val_avg_transfer_ms" in history[0]
+    assert "val_avg_step_ms" in history[0]

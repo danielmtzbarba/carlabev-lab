@@ -80,10 +80,19 @@ def test_benchmark_world_model_smoke(monkeypatch, tiny_cfg, tmp_workdir):
     assert (run_dir / "benchmark_config.json").exists()
     assert (run_dir / "artifacts" / "benchmark_results.json").exists()
     assert (run_dir / "artifacts" / "benchmark_results.csv").exists()
+    assert (run_dir / "artifacts" / "benchmark_state.json").exists()
 
     payload = json.loads((run_dir / "artifacts" / "benchmark_results.json").read_text(encoding="utf-8"))
     assert payload["device"] == "cpu"
     assert len(payload["results"]) == 2
+    assert "avg_fetch_ms" in payload["results"][0]
+    assert "avg_transfer_ms" in payload["results"][0]
+    assert "avg_step_ms" in payload["results"][0]
+    state_payload = json.loads((run_dir / "artifacts" / "benchmark_state.json").read_text(encoding="utf-8"))
+    assert state_payload["status"] == "finished"
+    assert state_payload["current_candidate"] is None
+    assert len(state_payload["completed_results"]) == 2
+    assert summary.state_path.endswith("benchmark_state.json")
 
 
 @pytest.mark.unit
@@ -103,11 +112,12 @@ def test_benchmark_reuses_chunk_cache(monkeypatch, tmp_workdir):
         chunk_length,
         indexed,
         chunk_entry=None,
+        state_callback=None,
         progress=None,
         task_id=None,
         batch_task_id=None,
     ):
-        del cfg, indexed, progress, task_id, batch_task_id
+        del cfg, indexed, state_callback, progress, task_id, batch_task_id
         calls.append((chunk_length, batch_size, chunk_entry is None))
         built_chunk_entry = None
         if chunk_entry is None:
@@ -128,6 +138,9 @@ def test_benchmark_reuses_chunk_cache(monkeypatch, tmp_workdir):
                 batches_per_second=1.0,
                 samples_per_second=float(batch_size),
                 tokens_per_second=float(batch_size * chunk_length),
+                avg_fetch_ms=1.0,
+                avg_transfer_ms=2.0,
+                avg_step_ms=3.0,
                 peak_memory_mb=None,
                 last_loss=0.1,
             ),
@@ -168,3 +181,94 @@ def test_benchmark_reuses_chunk_cache(monkeypatch, tmp_workdir):
         ).read_text(encoding="utf-8")
     )
     assert len(payload["results"]) == 4
+
+
+@pytest.mark.unit
+def test_benchmark_persists_in_progress_state(monkeypatch, tmp_workdir):
+    monkeypatch.setenv("CARLABEV_RUNS_ROOT", str(tmp_workdir / "runs"))
+
+    def fake_build_index(_dataset_paths, *, progress=None, task_id=None):
+        del progress, task_id
+        return object()
+
+    captured_state: dict[str, object] = {}
+
+    def fake_run_single_benchmark(
+        cfg,
+        *,
+        batch_size,
+        chunk_length,
+        indexed,
+        chunk_entry=None,
+        state_callback=None,
+        progress=None,
+        task_id=None,
+        batch_task_id=None,
+    ):
+        del cfg, indexed, chunk_entry, progress, task_id, batch_task_id
+        assert state_callback is not None
+        state_callback(
+            {
+                "batch_size": batch_size,
+                "chunk_length": chunk_length,
+                "stage": "measuring",
+                "warmup_batches": 0,
+                "measure_batches": 1,
+                "warmup_completed": 0,
+                "measured_completed": 1,
+                "last_loss": 0.5,
+                "avg_fetch_ms": 1.0,
+                "avg_transfer_ms": 2.0,
+                "avg_step_ms": 3.0,
+                "error_message": None,
+            }
+        )
+        state_path = (
+            tmp_workdir
+            / "runs"
+            / "world_model"
+            / "wm-bench-state"
+            / "artifacts"
+            / "benchmark_state.json"
+        )
+        captured_state.update(json.loads(state_path.read_text(encoding="utf-8")))
+        return (
+            WorldModelBenchmarkResult(
+                batch_size=batch_size,
+                chunk_length=chunk_length,
+                status="ok",
+                warmup_batches=0,
+                measured_batches=1,
+                measured_samples=batch_size,
+                elapsed_seconds=1.0,
+                batches_per_second=1.0,
+                samples_per_second=float(batch_size),
+                tokens_per_second=float(batch_size * chunk_length),
+                avg_fetch_ms=1.0,
+                avg_transfer_ms=2.0,
+                avg_step_ms=3.0,
+                peak_memory_mb=None,
+                last_loss=0.1,
+            ),
+            (3, 8, 8),
+            None,
+        )
+
+    monkeypatch.setattr(benchmark_mod, "build_index", fake_build_index)
+    monkeypatch.setattr(benchmark_mod, "_run_single_benchmark", fake_run_single_benchmark)
+
+    benchmark_world_model(
+        WorldModelBenchmarkConfig(
+            run_name="wm-bench-state",
+            data=WorldModelDataConfig(dataset_paths=["datasets/world_model/demo"]),
+            batch_sizes=[1],
+            chunk_lengths=[2],
+            warmup_batches=0,
+            measure_batches=1,
+        ),
+        show_progress=False,
+    )
+
+    assert captured_state["status"] == "running"
+    assert captured_state["current_candidate"]["stage"] == "measuring"
+    assert captured_state["current_candidate"]["candidate_index"] == 1
