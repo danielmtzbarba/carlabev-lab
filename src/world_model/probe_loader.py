@@ -11,7 +11,7 @@ from typing import Any
 import torch
 from rich.progress import BarColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn
 
-from src.utils.common_logging import add_file_handler, build_progress, get_logger
+from src.utils.common_logging import add_file_handler, build_progress, get_logger, kv_message
 from src.world_model.config import WorldModelDataConfig
 from src.world_model.contracts import WorldModelSequenceConfig
 from src.world_model.data import (
@@ -267,11 +267,11 @@ def _run_single_probe(
     device = torch.device(cfg.device)
     try:
         if chunk_entry is None:
-            LOGGER.info("Building cached datasets for chunk_length=%d", chunk_length)
+            LOGGER.info(kv_message("Build chunk dataset", chunk_length=chunk_length))
             chunk_cfg = replace(cfg.data, chunk_length=chunk_length)
             chunk_entry = _build_chunk_dataset_entry(indexed, chunk_cfg)
         else:
-            LOGGER.info("Reusing cached datasets for chunk_length=%d", chunk_length)
+            LOGGER.info(kv_message("Reuse chunk dataset", chunk_length=chunk_length))
 
         loader = build_dataloader(
             chunk_entry.train_dataset,
@@ -284,12 +284,14 @@ def _run_single_probe(
             device=cfg.device if cfg.move_to_device else None,
         )
         LOGGER.info(
-            "Loader probe start %s persistent_workers=%s prefetch_factor=%s train_batches=%d move_to_device=%s",
-            candidate_label,
-            persistent_workers,
-            prefetch_factor,
-            len(loader),
-            cfg.move_to_device,
+            kv_message(
+                "Start loader probe",
+                candidate=candidate_label,
+                persistent_workers=persistent_workers,
+                prefetch_factor=prefetch_factor,
+                train_batches=len(loader),
+                move_to_device=cfg.move_to_device,
+            )
         )
 
         if progress is not None and task_id is not None:
@@ -370,10 +372,13 @@ def _run_single_probe(
             peak_memory_mb=peak_memory_mb,
         )
         LOGGER.info(
-            "Loader probe done %s status=ok samples_per_second=%.2f first_batch_seconds=%.3f",
-            candidate_label,
-            result.samples_per_second or 0.0,
-            result.first_batch_seconds or 0.0,
+            kv_message(
+                "Finish loader probe",
+                candidate=candidate_label,
+                status="ok",
+                samples_per_second=result.samples_per_second or 0.0,
+                first_batch_seconds=result.first_batch_seconds or 0.0,
+            )
         )
         return result, chunk_entry.obs_shape, chunk_entry
     except RuntimeError as exc:
@@ -431,14 +436,16 @@ def probe_world_model_loader(
     config_path.write_text(json.dumps(asdict(cfg), indent=2), encoding="utf-8")
 
     LOGGER.info(
-        "Initializing loader probe run_name=%s device=%s candidates=%d move_to_device=%s",
-        cfg.run_name,
-        cfg.device,
-        _candidate_count(cfg),
-        cfg.move_to_device,
+        kv_message(
+            "Init loader probe",
+            run_name=cfg.run_name,
+            device=cfg.device,
+            candidates=_candidate_count(cfg),
+            move_to_device=cfg.move_to_device,
+        )
     )
-    LOGGER.info("Dataset paths: %s", ", ".join(cfg.data.dataset_paths))
-    LOGGER.info("Building shared dataset index once for loader probe sweep")
+    LOGGER.info(kv_message("Dataset paths", paths=cfg.data.dataset_paths))
+    LOGGER.info(kv_message("Build shared index"))
     indexed = build_index(cfg.data.dataset_paths)
 
     results: list[WorldModelLoaderProbeResult] = []

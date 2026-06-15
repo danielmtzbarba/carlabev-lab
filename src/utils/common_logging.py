@@ -8,7 +8,7 @@ from rich.console import Console
 from rich.logging import RichHandler
 from rich.progress import Progress
 
-_FORMAT = "%(message)s"
+_FORMAT = "[%(levelname)s] %(asctime)s | %(message)s"
 _DATEFMT = "%H:%M:%S"
 _CONFIGURED = False
 _CONSOLE = Console(stderr=False, soft_wrap=True)
@@ -27,8 +27,8 @@ def configure_logging(*, level: int = logging.INFO) -> None:
 
     handler = RichHandler(
         console=_CONSOLE,
-        show_time=True,
-        show_level=True,
+        show_time=False,
+        show_level=False,
         show_path=False,
         markup=True,
         rich_tracebacks=True,
@@ -83,3 +83,20 @@ def add_file_handler(path: str | Path, *, level: int = logging.INFO) -> None:
     file_handler.setLevel(level)
     file_handler.setFormatter(logging.Formatter(_FORMAT, datefmt=_DATEFMT))
     logger.addHandler(file_handler)
+
+
+def kv_message(message: str, /, **kwargs: Any) -> str:
+    if not kwargs:
+        return message
+    serialized = " ".join(f"{key}={_format_value(value)}" for key, value in kwargs.items())
+    return f"{message} | {serialized}"
+
+
+def _format_value(value: Any) -> str:
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, float):
+        return f"{value:.3f}"
+    if isinstance(value, (list, tuple, set)):
+        return ",".join(str(item) for item in value)
+    return str(value)

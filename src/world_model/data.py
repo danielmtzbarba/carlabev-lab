@@ -11,7 +11,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset, Subset
 
-from src.utils.common_logging import get_logger
+from src.utils.common_logging import get_logger, kv_message
 from src.utils.storage_paths import resolve_artifact_path
 from src.world_model.config import WorldModelDataConfig
 from src.world_model.contracts import DatasetRootConfig, DatasetSummaryModel, WorldModelSequenceConfig
@@ -168,7 +168,7 @@ def build_index(
     progress=None,
     task_id: int | None = None,
 ) -> IndexedDataset:
-    LOGGER.info("Building world-model dataset index for %d dataset root(s)", len(dataset_roots))
+    LOGGER.info(kv_message("Build dataset index", roots=len(dataset_roots)))
     sources: list[DatasetSource] = []
     shard_records: list[ShardRecord] = []
     transitions: list[TransitionRef] = []
@@ -202,11 +202,13 @@ def build_index(
 
     for dataset_id, root_cfg, dataset_dir, summary, source_name in dataset_infos:
         LOGGER.info(
-            "Loading dataset root %s as source=%s transitions=%d shards=%d",
-            dataset_dir,
-            source_name,
-            summary.total_transitions,
-            summary.shard_count,
+            kv_message(
+                "Load dataset root",
+                path=dataset_dir,
+                source=source_name,
+                transitions=summary.total_transitions,
+                shards=summary.shard_count,
+            )
         )
         sources.append(
             DatasetSource(
@@ -272,10 +274,12 @@ def build_index(
         ordered = tuple(sorted(refs, key=lambda ref: (ref.step_in_episode, ref.shard_index, ref.row_index)))
         ordered_episodes[episode_key] = ordered
     LOGGER.info(
-        "Indexed %d transition(s) across %d episode(s) and %d shard(s)",
-        len(transitions),
-        len(ordered_episodes),
-        len(shard_records),
+        kv_message(
+            "Indexed dataset",
+            transitions=len(transitions),
+            episodes=len(ordered_episodes),
+            shards=len(shard_records),
+        )
     )
     if progress is not None and task_id is not None:
         progress.update(task_id, stage="index complete", visible=False)
@@ -516,11 +520,13 @@ def load_or_build_sequence_window_cache(
                 f"({cached_chunk_length}, {cached_stride}) != ({chunk_length}, {stride})"
             )
         LOGGER.info(
-            "Loaded cached sequence windows path=%s windows=%d chunk_length=%d stride=%d",
-            cache_path,
-            int(window_transition_indices.shape[0]),
-            chunk_length,
-            stride,
+            kv_message(
+                "Load sequence cache",
+                path=cache_path,
+                windows=int(window_transition_indices.shape[0]),
+                chunk_length=chunk_length,
+                stride=stride,
+            )
         )
         return SequenceWindowCache(
             window_transition_indices=window_transition_indices,
@@ -541,11 +547,13 @@ def load_or_build_sequence_window_cache(
         stride=np.asarray(stride, dtype=np.int64),
     )
     LOGGER.info(
-        "Saved sequence-window cache path=%s windows=%d chunk_length=%d stride=%d",
-        cache_path,
-        int(window_transition_indices.shape[0]),
-        chunk_length,
-        stride,
+        kv_message(
+            "Save sequence cache",
+            path=cache_path,
+            windows=int(window_transition_indices.shape[0]),
+            chunk_length=chunk_length,
+            stride=stride,
+        )
     )
     return SequenceWindowCache(
         window_transition_indices=window_transition_indices,
@@ -733,14 +741,16 @@ def build_world_model_data_from_indexed(
     device: str | None = None,
 ) -> WorldModelDataArtifacts:
     LOGGER.info(
-        "Preparing world-model dataloaders batch_size=%d chunk_length=%d stride=%d num_workers=%d pin_memory=%s persistent_workers=%s prefetch_factor=%s",
-        cfg.batch_size,
-        cfg.chunk_length,
-        cfg.stride,
-        cfg.num_workers,
-        cfg.pin_memory,
-        cfg.persistent_workers,
-        cfg.prefetch_factor,
+        kv_message(
+            "Prepare dataloaders",
+            batch_size=cfg.batch_size,
+            chunk_length=cfg.chunk_length,
+            stride=cfg.stride,
+            num_workers=cfg.num_workers,
+            pin_memory=cfg.pin_memory,
+            persistent_workers=cfg.persistent_workers,
+            prefetch_factor=cfg.prefetch_factor,
+        )
     )
     sequence_cfg = WorldModelSequenceConfig(
         chunk_length=cfg.chunk_length,
@@ -780,12 +790,14 @@ def build_world_model_data_from_indexed(
     sample = train_dataset[0]
     obs_shape = tuple(sample["obs"].shape[1:])
     LOGGER.info(
-        "Built world-model data train_windows=%d val_windows=%d train_batches=%d val_batches=%d obs_shape=%s",
-        len(train_dataset),
-        len(val_dataset),
-        len(train_loader),
-        len(val_loader),
-        obs_shape,
+        kv_message(
+            "Built world-model data",
+            train_windows=len(train_dataset),
+            val_windows=len(val_dataset),
+            train_batches=len(train_loader),
+            val_batches=len(val_loader),
+            obs_shape=obs_shape,
+        )
     )
     return WorldModelDataArtifacts(
         train_dataset=train_dataset,

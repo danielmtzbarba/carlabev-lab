@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import asdict, dataclass
 from statistics import mean
 from typing import Any
@@ -9,7 +10,7 @@ import torch
 from rich.progress import BarColumn, Progress, TextColumn, TimeElapsedColumn, TimeRemainingColumn
 from torch import nn
 
-from src.utils.common_logging import add_file_handler, build_progress, get_logger
+from src.utils.common_logging import add_file_handler, build_progress, get_logger, kv_message
 from src.world_model.config import WorldModelConfig
 from src.world_model.contracts import WorldModelSequenceConfig
 from src.world_model.data import WorldModelDataArtifacts, build_world_model_data
@@ -31,6 +32,11 @@ class TrainWorldModelResult:
     best_val_loss: float
     final_train_loss: float
     final_val_loss: float
+
+
+def _sync_device(device: torch.device) -> None:
+    if device.type == "cuda" and torch.cuda.is_available():
+        torch.cuda.synchronize(device)
 
 
 def _to_device(batch: dict[str, Any], device: torch.device) -> dict[str, Any]:
@@ -59,13 +65,26 @@ def _epoch_loop(
     losses: list[float] = []
     pred_losses: list[float] = []
     reg_losses: list[float] = []
+    fetch_times: list[float] = []
+    transfer_times: list[float] = []
+    step_times: list[float] = []
 
     if progress is not None and task_id is not None:
         progress.reset(task_id, total=max(len(loader), 1), completed=0, loss="-")
         progress.update(task_id, visible=True)
 
-    for batch in loader:
+    iterator = iter(loader)
+    for batch_index in range(len(loader)):
+        fetch_start = time.perf_counter()
+        batch = next(iterator)
+        fetch_time = time.perf_counter() - fetch_start
+
+        transfer_start = time.perf_counter()
         batch = _to_device(batch, device)
+        _sync_device(device)
+        transfer_time = time.perf_counter() - transfer_start
+
+        step_start = time.perf_counter()
         _loss, metrics = run_world_model_step(
             model,
             batch,
@@ -75,20 +94,51 @@ def _epoch_loop(
             training_cfg=cfg.training,
             optimizer_cfg=cfg.optimizer,
         )
+        _sync_device(device)
+        step_time = time.perf_counter() - step_start
+
         losses.append(metrics["loss"])
         pred_losses.append(metrics["pred_loss"])
         reg_losses.append(metrics["reg_loss"])
+        fetch_times.append(fetch_time)
+        transfer_times.append(transfer_time)
+        step_times.append(step_time)
         if progress is not None and task_id is not None:
             progress.update(task_id, advance=1, loss=f"{metrics['loss']:.4f}")
+        if (
+            cfg.training.timing_log_interval > 0
+            and ((batch_index + 1) % cfg.training.timing_log_interval == 0 or (batch_index + 1) == len(loader))
+        ):
+            recent_slice = slice(max(0, len(step_times) - cfg.training.timing_log_interval), len(step_times))
+            LOGGER.info(
+                kv_message(
+                    "Batch timing",
+                    phase="train" if train_mode else "val",
+                    batch=f"{batch_index + 1}/{len(loader)}",
+                    fetch_ms=mean(fetch_times[recent_slice]) * 1000.0,
+                    transfer_ms=mean(transfer_times[recent_slice]) * 1000.0,
+                    step_ms=mean(step_times[recent_slice]) * 1000.0,
+                )
+            )
 
     if not losses:
         if progress is not None and task_id is not None:
             progress.update(task_id, visible=False)
-        return {"loss": 0.0, "pred_loss": 0.0, "reg_loss": 0.0}
+        return {
+            "loss": 0.0,
+            "pred_loss": 0.0,
+            "reg_loss": 0.0,
+            "avg_fetch_ms": 0.0,
+            "avg_transfer_ms": 0.0,
+            "avg_step_ms": 0.0,
+        }
     epoch_metrics = {
         "loss": float(mean(losses)),
         "pred_loss": float(mean(pred_losses)),
         "reg_loss": float(mean(reg_losses)),
+        "avg_fetch_ms": float(mean(fetch_times) * 1000.0),
+        "avg_transfer_ms": float(mean(transfer_times) * 1000.0),
+        "avg_step_ms": float(mean(step_times) * 1000.0),
     }
     if progress is not None and task_id is not None:
         progress.update(task_id, loss=f"{epoch_metrics['loss']:.4f}", visible=False)
@@ -130,15 +180,18 @@ def train_world_model(
     run_paths.ensure_dirs()
     add_file_handler(run_paths.run_dir / "train_world_model.log")
     LOGGER.info(
-        "Initializing world-model training run_name=%s device=%s epochs=%d amp=%s amp_dtype=%s compile_model=%s",
-        cfg.run_name,
-        cfg.training.device,
-        cfg.training.epochs,
-        cfg.training.amp,
-        cfg.training.amp_dtype,
-        cfg.training.compile_model,
+        kv_message(
+            "Init training",
+            run_name=cfg.run_name,
+            device=cfg.training.device,
+            epochs=cfg.training.epochs,
+            amp=cfg.training.amp,
+            amp_dtype=cfg.training.amp_dtype,
+            compile_model=cfg.training.compile_model,
+            timing_log_interval=cfg.training.timing_log_interval,
+        )
     )
-    LOGGER.info("Validating dataset paths: %s", ", ".join(cfg.data.dataset_paths))
+    LOGGER.info(kv_message("Validate datasets", paths=cfg.data.dataset_paths))
     validation_report = validate_datasets(
         cfg.data.dataset_paths,
         cfg=WorldModelSequenceConfig(
@@ -170,14 +223,16 @@ def train_world_model(
     )
 
     LOGGER.info(
-        "Building world-model datasets and dataloaders num_workers=%d pin_memory=%s persistent_workers=%s prefetch_factor=%s",
-        cfg.data.num_workers,
-        cfg.data.pin_memory,
-        cfg.data.persistent_workers,
-        cfg.data.prefetch_factor,
+        kv_message(
+            "Build datasets",
+            num_workers=cfg.data.num_workers,
+            pin_memory=cfg.data.pin_memory,
+            persistent_workers=cfg.data.persistent_workers,
+            prefetch_factor=cfg.data.prefetch_factor,
+        )
     )
     data_artifacts = build_world_model_data(cfg.data, device=cfg.training.device)
-    LOGGER.info("Building world-model model and optimizer")
+    LOGGER.info(kv_message("Build model"))
     artifacts = build_world_model(
         cfg,
         obs_shape=data_artifacts.obs_shape,
@@ -193,9 +248,11 @@ def train_world_model(
     history: list[dict[str, float | int]] = []
     train_steps = 0
     LOGGER.info(
-        "Starting world-model optimization train_batches=%d val_batches=%d",
-        len(data_artifacts.train_loader),
-        len(data_artifacts.val_loader),
+        kv_message(
+            "Start optimization",
+            train_batches=len(data_artifacts.train_loader),
+            val_batches=len(data_artifacts.val_loader),
+        )
     )
 
     with build_progress(
@@ -227,7 +284,7 @@ def train_world_model(
         )
 
         for epoch in range(1, cfg.training.epochs + 1):
-            LOGGER.info("Epoch %d/%d started", epoch, cfg.training.epochs)
+            LOGGER.info(kv_message("Start epoch", epoch=epoch, total_epochs=cfg.training.epochs))
             progress.update(
                 train_task_id,
                 description=f"Train epoch {epoch}/{cfg.training.epochs}",
@@ -269,9 +326,15 @@ def train_world_model(
                     "train_loss": train_metrics["loss"],
                     "train_pred_loss": train_metrics["pred_loss"],
                     "train_reg_loss": train_metrics["reg_loss"],
+                    "train_avg_fetch_ms": train_metrics["avg_fetch_ms"],
+                    "train_avg_transfer_ms": train_metrics["avg_transfer_ms"],
+                    "train_avg_step_ms": train_metrics["avg_step_ms"],
                     "val_loss": val_metrics["loss"],
                     "val_pred_loss": val_metrics["pred_loss"],
                     "val_reg_loss": val_metrics["reg_loss"],
+                    "val_avg_fetch_ms": val_metrics["avg_fetch_ms"],
+                    "val_avg_transfer_ms": val_metrics["avg_transfer_ms"],
+                    "val_avg_step_ms": val_metrics["avg_step_ms"],
                 }
             )
 
@@ -300,11 +363,18 @@ def train_world_model(
                 loss=f"train={train_metrics['loss']:.4f} val={val_metrics['loss']:.4f}",
             )
             LOGGER.info(
-                "Epoch %d/%d finished train_loss=%.6f val_loss=%.6f",
-                epoch,
-                cfg.training.epochs,
-                train_metrics["loss"],
-                val_metrics["loss"],
+                kv_message(
+                    "Epoch complete",
+                    epoch=f"{epoch}/{cfg.training.epochs}",
+                    train_loss=train_metrics["loss"],
+                    val_loss=val_metrics["loss"],
+                    train_fetch_ms=train_metrics["avg_fetch_ms"],
+                    train_transfer_ms=train_metrics["avg_transfer_ms"],
+                    train_step_ms=train_metrics["avg_step_ms"],
+                    val_fetch_ms=val_metrics["avg_fetch_ms"],
+                    val_transfer_ms=val_metrics["avg_transfer_ms"],
+                    val_step_ms=val_metrics["avg_step_ms"],
+                )
             )
 
     _save_checkpoint(
@@ -320,10 +390,12 @@ def train_world_model(
         encoding="utf-8",
     )
     LOGGER.info(
-        "Finished world-model training best_val_loss=%.6f final_train_loss=%.6f final_val_loss=%.6f",
-        best_val_loss,
-        final_train_loss,
-        final_val_loss,
+        kv_message(
+            "Finish training",
+            best_val_loss=best_val_loss,
+            final_train_loss=final_train_loss,
+            final_val_loss=final_val_loss,
+        )
     )
 
     return TrainWorldModelResult(

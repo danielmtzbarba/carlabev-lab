@@ -11,7 +11,7 @@ from typing import Any
 import torch
 from rich.progress import BarColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn
 
-from src.utils.common_logging import add_file_handler, build_progress, get_logger
+from src.utils.common_logging import add_file_handler, build_progress, get_logger, kv_message
 from src.world_model.config import (
     WorldModelConfig,
     WorldModelDataConfig,
@@ -126,11 +126,7 @@ def _build_artifacts_from_cached_chunk(
     if chunk_entry is None:
         return build_world_model_data_from_indexed(indexed, cfg, device=device)
 
-    LOGGER.info(
-        "Reusing cached sequence windows for batch_size=%d chunk_length=%d",
-        cfg.batch_size,
-        cfg.chunk_length,
-    )
+    LOGGER.info(kv_message("Reuse chunk cache", batch_size=cfg.batch_size, chunk_length=cfg.chunk_length))
     train_loader = build_dataloader(
         chunk_entry.train_dataset,
         batch_size=cfg.batch_size,
@@ -152,12 +148,14 @@ def _build_artifacts_from_cached_chunk(
         device=device,
     )
     LOGGER.info(
-        "Built dataloaders from cached windows train_windows=%d val_windows=%d train_batches=%d val_batches=%d obs_shape=%s",
-        len(chunk_entry.train_dataset),
-        len(chunk_entry.val_dataset),
-        len(train_loader),
-        len(val_loader),
-        chunk_entry.obs_shape,
+        kv_message(
+            "Built cached loaders",
+            train_windows=len(chunk_entry.train_dataset),
+            val_windows=len(chunk_entry.val_dataset),
+            train_batches=len(train_loader),
+            val_batches=len(val_loader),
+            obs_shape=chunk_entry.obs_shape,
+        )
     )
     return WorldModelDataArtifacts(
         train_dataset=chunk_entry.train_dataset,
@@ -257,10 +255,12 @@ def _run_single_benchmark(
         training=cfg.training,
     )
     LOGGER.info(
-        "Benchmark start chunk_length=%d batch_size=%d device=%s",
-        chunk_length,
-        batch_size,
-        cfg.training.device,
+        kv_message(
+            "Start benchmark",
+            chunk_length=chunk_length,
+            batch_size=batch_size,
+            device=cfg.training.device,
+        )
     )
     if progress is not None and task_id is not None:
         progress.update(
@@ -279,7 +279,7 @@ def _run_single_benchmark(
                 stage="idle",
                 phase="-",
             )
-    LOGGER.info("Preparing datasets for benchmark candidate")
+    LOGGER.info(kv_message("Prepare datasets"))
     data_artifacts = _build_artifacts_from_cached_chunk(
         indexed,
         run_cfg.data,
@@ -289,9 +289,11 @@ def _run_single_benchmark(
     if progress is not None and task_id is not None:
         progress.update(task_id, stage="building model")
     LOGGER.info(
-        "Building model for benchmark candidate obs_shape=%s train_batches=%d",
-        data_artifacts.obs_shape,
-        len(data_artifacts.train_loader),
+        kv_message(
+            "Build model",
+            obs_shape=data_artifacts.obs_shape,
+            train_batches=len(data_artifacts.train_loader),
+        )
     )
     artifacts = build_world_model(
         run_cfg,
@@ -320,7 +322,7 @@ def _run_single_benchmark(
                         stage=f"warmup {cfg.warmup_batches} batches",
                         phase="warmup",
                     )
-            LOGGER.info("Running %d warmup batch(es)", cfg.warmup_batches)
+            LOGGER.info(kv_message("Warmup", batches=cfg.warmup_batches))
         for batch in _iter_batches(data_artifacts.train_loader, cfg.warmup_batches):
             batch = _to_device(batch, device)
             loss, _metrics = run_world_model_step(
@@ -353,7 +355,7 @@ def _run_single_benchmark(
                     stage=f"measuring {cfg.measure_batches} batches",
                     phase="measure",
                 )
-        LOGGER.info("Measuring %d batch(es)", cfg.measure_batches)
+        LOGGER.info(kv_message("Measure", batches=cfg.measure_batches))
         start = time.perf_counter()
         for batch in _iter_batches(data_artifacts.train_loader, cfg.measure_batches):
             batch = _to_device(batch, device)
@@ -393,12 +395,15 @@ def _run_single_benchmark(
             last_loss=last_loss,
         )
         LOGGER.info(
-            "Benchmark done chunk_length=%d batch_size=%d status=ok samples_per_second=%.2f tokens_per_second=%.2f peak_memory_mb=%s",
-            chunk_length,
-            batch_size,
-            samples_per_second or 0.0,
-            tokens_per_second or 0.0,
-            "-" if peak_memory_mb is None else f"{peak_memory_mb:.1f}",
+            kv_message(
+                "Finish benchmark",
+                chunk_length=chunk_length,
+                batch_size=batch_size,
+                status="ok",
+                samples_per_second=samples_per_second or 0.0,
+                tokens_per_second=tokens_per_second or 0.0,
+                peak_memory_mb="-" if peak_memory_mb is None else f"{peak_memory_mb:.1f}",
+            )
         )
         if progress is not None and task_id is not None:
             progress.update(task_id, stage="done")
