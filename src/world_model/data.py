@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from collections import OrderedDict, defaultdict
 from dataclasses import dataclass
@@ -77,6 +78,13 @@ class SequenceRef:
     source_name: str
     episode_key: tuple[int, int, int]
     transitions: tuple[TransitionRef, ...]
+
+
+@dataclass(frozen=True)
+class SequenceWindowCache:
+    window_transition_indices: np.ndarray
+    path: Path | None
+    cache_hit: bool
 
 
 @dataclass(frozen=True)
@@ -370,6 +378,182 @@ def build_sequence_refs(indexed: IndexedDataset, *, chunk_length: int, stride: i
     return windows
 
 
+def build_sequence_window_indices(
+    indexed: IndexedDataset,
+    *,
+    chunk_length: int,
+    stride: int = 1,
+) -> np.ndarray:
+    if chunk_length <= 0:
+        raise ValueError("chunk_length must be positive")
+    if stride <= 0:
+        raise ValueError("stride must be positive")
+
+    episode_indices: dict[tuple[int, int, int], list[int]] = defaultdict(list)
+    for transition_index, ref in enumerate(indexed.transitions):
+        episode_indices[ref.episode_key].append(transition_index)
+
+    windows: list[list[int]] = []
+    for episode_key, transition_indices in episode_indices.items():
+        ordered_indices = sorted(
+            transition_indices,
+            key=lambda idx: (
+                indexed.transitions[idx].step_in_episode,
+                indexed.transitions[idx].shard_index,
+                indexed.transitions[idx].row_index,
+            ),
+        )
+        if len(ordered_indices) < chunk_length:
+            continue
+        for start in range(0, len(ordered_indices) - chunk_length + 1, stride):
+            window_indices = ordered_indices[start : start + chunk_length]
+            refs = [indexed.transitions[idx] for idx in window_indices]
+            expected_steps = list(range(refs[0].step_in_episode, refs[0].step_in_episode + chunk_length))
+            actual_steps = [ref.step_in_episode for ref in refs]
+            if actual_steps != expected_steps:
+                continue
+            if any(ref.done for ref in refs[:-1]):
+                continue
+            windows.append(window_indices)
+
+    if not windows:
+        return np.empty((0, chunk_length), dtype=np.int64)
+    return np.asarray(windows, dtype=np.int64)
+
+
+def _sequence_cache_dir(indexed: IndexedDataset, explicit_cache_dir: str | None) -> Path:
+    if explicit_cache_dir:
+        return resolve_artifact_path(explicit_cache_dir)
+    if len(indexed.sources) == 1:
+        return indexed.sources[0].root_path / ".wm_cache"
+    return resolve_artifact_path("datasets/world_model/.wm_cache")
+
+
+def _sequence_cache_fingerprint(indexed: IndexedDataset) -> str:
+    payload = {
+        "sources": [
+            {
+                "dataset_id": source.dataset_id,
+                "root_path": str(source.root_path),
+                "source_name": source.source_name,
+                "study_id": source.summary.study_id,
+                "exp_id": source.summary.exp_id,
+                "seed": source.summary.seed,
+                "policy": source.summary.policy,
+                "split": source.summary.split,
+                "total_transitions": source.summary.total_transitions,
+                "shard_count": source.summary.shard_count,
+            }
+            for source in indexed.sources
+        ],
+        "shards": [
+            {
+                "dataset_id": shard.dataset_id,
+                "shard_index": shard.shard_index,
+                "path": str(shard.shard_path),
+                "row_count": shard.row_count,
+                "size": shard.shard_path.stat().st_size,
+                "mtime_ns": shard.shard_path.stat().st_mtime_ns,
+            }
+            for shard in indexed.shards
+        ],
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()[:16]
+
+
+def _sequence_cache_path(
+    indexed: IndexedDataset,
+    *,
+    chunk_length: int,
+    stride: int,
+    explicit_cache_dir: str | None,
+) -> Path:
+    cache_dir = _sequence_cache_dir(indexed, explicit_cache_dir)
+    fingerprint = _sequence_cache_fingerprint(indexed)
+    file_name = f"sequence_windows_chunk{chunk_length}_stride{stride}_{fingerprint}.npz"
+    return cache_dir / file_name
+
+
+def load_or_build_sequence_window_cache(
+    indexed: IndexedDataset,
+    *,
+    chunk_length: int,
+    stride: int = 1,
+    enabled: bool = True,
+    cache_dir: str | None = None,
+) -> SequenceWindowCache:
+    if not enabled:
+        return SequenceWindowCache(
+            window_transition_indices=build_sequence_window_indices(
+                indexed,
+                chunk_length=chunk_length,
+                stride=stride,
+            ),
+            path=None,
+            cache_hit=False,
+        )
+
+    cache_path = _sequence_cache_path(
+        indexed,
+        chunk_length=chunk_length,
+        stride=stride,
+        explicit_cache_dir=cache_dir,
+    )
+    if cache_path.exists():
+        with np.load(cache_path, allow_pickle=False) as payload:
+            window_transition_indices = np.asarray(payload["window_transition_indices"], dtype=np.int64)
+            cached_chunk_length = int(payload["chunk_length"])
+            cached_stride = int(payload["stride"])
+        if window_transition_indices.ndim != 2 or window_transition_indices.shape[1] != chunk_length:
+            raise ValueError(
+                f"Sequence cache {cache_path} has invalid shape {window_transition_indices.shape} "
+                f"for chunk_length={chunk_length}"
+            )
+        if cached_chunk_length != chunk_length or cached_stride != stride:
+            raise ValueError(
+                f"Sequence cache {cache_path} does not match requested chunk_length/stride "
+                f"({cached_chunk_length}, {cached_stride}) != ({chunk_length}, {stride})"
+            )
+        LOGGER.info(
+            "Loaded cached sequence windows path=%s windows=%d chunk_length=%d stride=%d",
+            cache_path,
+            int(window_transition_indices.shape[0]),
+            chunk_length,
+            stride,
+        )
+        return SequenceWindowCache(
+            window_transition_indices=window_transition_indices,
+            path=cache_path,
+            cache_hit=True,
+        )
+
+    window_transition_indices = build_sequence_window_indices(
+        indexed,
+        chunk_length=chunk_length,
+        stride=stride,
+    )
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(
+        cache_path,
+        window_transition_indices=window_transition_indices,
+        chunk_length=np.asarray(chunk_length, dtype=np.int64),
+        stride=np.asarray(stride, dtype=np.int64),
+    )
+    LOGGER.info(
+        "Saved sequence-window cache path=%s windows=%d chunk_length=%d stride=%d",
+        cache_path,
+        int(window_transition_indices.shape[0]),
+        chunk_length,
+        stride,
+    )
+    return SequenceWindowCache(
+        window_transition_indices=window_transition_indices,
+        path=cache_path,
+        cache_hit=False,
+    )
+
+
 class WorldModelSequenceDataset(Dataset):
     def __init__(
         self,
@@ -379,17 +563,27 @@ class WorldModelSequenceDataset(Dataset):
         stride: int = 1,
         include_metadata: bool = True,
         cache_size: int = 2,
+        window_transition_indices: np.ndarray | None = None,
     ) -> None:
         self.indexed = indexed
         self.include_metadata = include_metadata
         self.cache = ShardArrayCache(max_items=cache_size)
-        self.sequence_refs = build_sequence_refs(indexed, chunk_length=chunk_length, stride=stride)
+        if window_transition_indices is None:
+            window_transition_indices = build_sequence_window_indices(
+                indexed,
+                chunk_length=chunk_length,
+                stride=stride,
+            )
+        if window_transition_indices.ndim != 2:
+            raise ValueError("window_transition_indices must be a rank-2 array")
+        self.window_transition_indices = np.asarray(window_transition_indices, dtype=np.int64)
 
     def __len__(self) -> int:
-        return len(self.sequence_refs)
+        return int(self.window_transition_indices.shape[0])
 
     def __getitem__(self, index: int) -> dict[str, Any]:
-        seq_ref = self.sequence_refs[index]
+        transition_indices = self.window_transition_indices[index]
+        refs = [self.indexed.transitions[int(transition_index)] for transition_index in transition_indices]
         obs_seq = []
         action_seq = []
         next_obs_seq = []
@@ -397,7 +591,7 @@ class WorldModelSequenceDataset(Dataset):
         done_seq = []
         terminated_seq = []
         truncated_seq = []
-        for ref in seq_ref.transitions:
+        for ref in refs:
             arrays = self.cache.get(ref.shard_path)
             row = _row_to_transition_sample(arrays, ref)
             obs_seq.append(row["obs"])
@@ -416,15 +610,15 @@ class WorldModelSequenceDataset(Dataset):
             "done": torch.stack(done_seq, dim=0),
             "terminated": torch.stack(terminated_seq, dim=0),
             "truncated": torch.stack(truncated_seq, dim=0),
-            "mask": torch.ones((len(seq_ref.transitions),), dtype=torch.bool),
+            "mask": torch.ones((len(refs),), dtype=torch.bool),
         }
         if self.include_metadata:
             payload["metadata"] = {
-                "episode_key": seq_ref.episode_key,
-                "source_dataset": seq_ref.source_name,
-                "route_signatures": [ref.route_signature for ref in seq_ref.transitions],
-                "scene_signatures": [ref.scene_signature for ref in seq_ref.transitions],
-                "step_in_episode": [ref.step_in_episode for ref in seq_ref.transitions],
+                "episode_key": refs[0].episode_key,
+                "source_dataset": refs[0].source_name,
+                "route_signatures": [ref.route_signature for ref in refs],
+                "scene_signatures": [ref.scene_signature for ref in refs],
+                "step_in_episode": [ref.step_in_episode for ref in refs],
             }
         return payload
 
@@ -492,12 +686,16 @@ def build_sequence_datasets(
     *,
     cfg: WorldModelSequenceConfig,
     include_metadata: bool = True,
+    cache_sequence_indices: bool = True,
+    sequence_cache_dir: str | None = None,
 ) -> tuple[Dataset, Dataset, IndexedDataset]:
     indexed = build_index(dataset_roots)
     train_dataset, val_dataset = build_sequence_datasets_from_indexed(
         indexed,
         cfg=cfg,
         include_metadata=include_metadata,
+        cache_sequence_indices=cache_sequence_indices,
+        sequence_cache_dir=sequence_cache_dir,
     )
     return train_dataset, val_dataset, indexed
 
@@ -507,12 +705,22 @@ def build_sequence_datasets_from_indexed(
     *,
     cfg: WorldModelSequenceConfig,
     include_metadata: bool = True,
+    cache_sequence_indices: bool = True,
+    sequence_cache_dir: str | None = None,
 ) -> tuple[Dataset, Dataset]:
+    sequence_window_cache = load_or_build_sequence_window_cache(
+        indexed,
+        chunk_length=cfg.chunk_length,
+        stride=cfg.stride,
+        enabled=cache_sequence_indices,
+        cache_dir=sequence_cache_dir,
+    )
     dataset = WorldModelSequenceDataset(
         indexed,
         chunk_length=cfg.chunk_length,
         stride=cfg.stride,
         include_metadata=include_metadata,
+        window_transition_indices=sequence_window_cache.window_transition_indices,
     )
     train_dataset, val_dataset = build_train_val_subsets(dataset, val_ratio=cfg.val_ratio)
     return train_dataset, val_dataset
@@ -544,6 +752,8 @@ def build_world_model_data_from_indexed(
         indexed,
         cfg=sequence_cfg,
         include_metadata=cfg.include_metadata,
+        cache_sequence_indices=cfg.cache_sequence_indices,
+        sequence_cache_dir=cfg.sequence_cache_dir,
     )
     if len(train_dataset) == 0:
         raise ValueError("Training dataset is empty after sequence-window construction.")

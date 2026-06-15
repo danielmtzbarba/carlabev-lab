@@ -334,6 +334,17 @@ The benchmark now writes partial `benchmark_results.json` and
 sweep is interrupted part-way through, the finished candidates are still
 available for inspection instead of being lost at the end of the run.
 
+Sequence-window indices are now cached on disk and reused across benchmark and
+training runs. By default the cache is written to:
+
+- `<dataset_root>/.wm_cache/` for a single dataset root
+- `datasets/world_model/.wm_cache/` when mixing multiple roots
+
+These cache artifacts store only the valid sequence-window index map, not the
+observations themselves, so they speed up startup without duplicating dataset
+payloads. You can disable them with `--data.no-cache-sequence-indices` or
+redirect them with `--data.sequence-cache-dir <path>`.
+
 On CUDA, the world-model runtime now supports:
 
 - AMP with `training.amp` and `training.amp-dtype`
@@ -452,6 +463,7 @@ more structured runtime patterns:
 
 - `data.*`: dataset roots, chunking, batching, action-space expectations
   - includes loader tuning such as `num-workers`, `pin-memory`, and `prefetch-factor`
+  - includes sequence-index caching via `cache-sequence-indices` and `sequence-cache-dir`
 - `model.*`: ViT encoder and latent-predictor dimensions
 - `optimizer.*`: optimizer and gradient-clip settings
 - `training.*`: epochs, device, checkpoint cadence, regularization weight

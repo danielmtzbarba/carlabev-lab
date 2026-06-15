@@ -15,8 +15,10 @@ from src.world_model.data import (
     WorldModelTransitionDataset,
     build_dataloader,
     build_index,
+    build_sequence_window_indices,
     build_sequence_datasets,
     build_transition_datasets,
+    load_or_build_sequence_window_cache,
 )
 from src.world_model.validate import validate_datasets
 
@@ -100,6 +102,57 @@ def test_sequence_dataset_exposes_fixed_windows(monkeypatch, tiny_cfg, tmp_path)
 
 
 @pytest.mark.integration
+def test_sequence_window_cache_is_saved_and_reused(monkeypatch, tiny_cfg, tmp_path):
+    output_dir = _collect_sample_dataset(monkeypatch, tiny_cfg, tmp_path, total_transitions=6)
+    indexed = build_index([str(output_dir)])
+
+    first_cache = load_or_build_sequence_window_cache(
+        indexed,
+        chunk_length=2,
+        stride=1,
+        enabled=True,
+    )
+
+    assert first_cache.cache_hit is False
+    assert first_cache.path is not None
+    assert first_cache.path.exists()
+    assert tuple(first_cache.window_transition_indices.shape) == (4, 2)
+
+    second_cache = load_or_build_sequence_window_cache(
+        indexed,
+        chunk_length=2,
+        stride=1,
+        enabled=True,
+    )
+
+    assert second_cache.cache_hit is True
+    assert second_cache.path == first_cache.path
+    np.testing.assert_array_equal(
+        first_cache.window_transition_indices,
+        second_cache.window_transition_indices,
+    )
+
+
+@pytest.mark.integration
+def test_sequence_dataset_can_use_cached_window_indices(monkeypatch, tiny_cfg, tmp_path):
+    output_dir = _collect_sample_dataset(monkeypatch, tiny_cfg, tmp_path, total_transitions=6)
+    indexed = build_index([str(output_dir)])
+    window_transition_indices = build_sequence_window_indices(indexed, chunk_length=2, stride=1)
+
+    dataset = WorldModelSequenceDataset(
+        indexed,
+        chunk_length=2,
+        stride=1,
+        include_metadata=True,
+        window_transition_indices=window_transition_indices,
+    )
+
+    assert len(dataset) == 4
+    sample = dataset[0]
+    assert sample["metadata"]["step_in_episode"] == [0, 1]
+
+
+@pytest.mark.integration
 def test_dataset_builders_support_train_val_and_dataloader(monkeypatch, tiny_cfg, tmp_path):
     output_dir = _collect_sample_dataset(monkeypatch, tiny_cfg, tmp_path, total_transitions=6)
 
@@ -119,8 +172,10 @@ def test_dataset_builders_support_train_val_and_dataloader(monkeypatch, tiny_cfg
         [str(output_dir)],
         cfg=WorldModelSequenceConfig(chunk_length=2, stride=1, val_ratio=0.25),
         include_metadata=False,
+        sequence_cache_dir=str(tmp_path / "wm-cache"),
     )
     assert len(train_seq) + len(val_seq) == 4
+    assert list((tmp_path / "wm-cache").glob("sequence_windows_chunk2_stride1_*.npz"))
 
 
 @pytest.mark.integration

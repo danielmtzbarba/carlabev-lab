@@ -17,6 +17,8 @@ class WorldModelDataConfig:
     val_ratio: float = 0.1
     expected_num_actions: int = 9
     include_metadata: bool = False
+    cache_sequence_indices: bool = True
+    sequence_cache_dir: str | None = None
 
 
 @dataclass
