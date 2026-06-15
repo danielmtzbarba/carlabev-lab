@@ -321,7 +321,7 @@ uv run drl world-model probe-loader \
   --persistent-workers-options false true \
   --prefetch-factors 2 4 \
   --warmup-batches 1 \
-  --measure-batches 10 \
+  --measure-batches 3 \
   --move-to-device \
   --device cuda
 ```
@@ -337,6 +337,12 @@ reports:
 
 Use it to find a safe loader configuration first, then feed those settings into
 `drl world-model benchmark` or `drl world-model train`.
+
+The probe defaults are intentionally short. For a first pass on HPC, prefer
+`measure_batches=3` and only increase it after you narrow the candidate grid.
+The probe now defaults to log-first output instead of Rich progress bars, with
+per-batch lines such as `phase=measure batch=01/03 ...` so HPC stdout remains
+easy to follow in real time and in log files.
 
 The benchmark runs real train steps for each `(batch_size, chunk_length)` pair and
 reports:

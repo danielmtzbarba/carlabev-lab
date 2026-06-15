@@ -87,7 +87,7 @@ def main() -> None:
     cfg = tyro.cli(WorldModelLoaderProbeConfig)
     if not cfg.data.dataset_paths:
         raise SystemExit("Provide at least one dataset path via --data.dataset-paths.")
-    summary = probe_world_model_loader(cfg)
+    summary = probe_world_model_loader(cfg, show_progress=False)
     console = Console()
     _render_overview(console, summary)
     _render_results(console, summary)

@@ -36,7 +36,7 @@ class WorldModelLoaderProbeConfig:
     persistent_workers_options: list[bool] = field(default_factory=lambda: [False, True])
     prefetch_factors: list[int] = field(default_factory=lambda: [2])
     warmup_batches: int = 1
-    measure_batches: int = 10
+    measure_batches: int = 3
     move_to_device: bool = False
     device: str = "cuda"
 
@@ -127,6 +127,11 @@ def _iter_batches(loader, count: int):
             batch = next(iterator)
         yield batch
         produced += 1
+
+
+def _batch_position(index: int, total: int) -> str:
+    width = max(2, len(str(max(total, 1))))
+    return f"{index:0{width}d}/{total:0{width}d}"
 
 
 def _is_oom_error(exc: RuntimeError) -> bool:
@@ -317,6 +322,16 @@ def _run_single_probe(
                 elapsed = time.perf_counter() - start
                 if batch_index == 0:
                     first_batch_seconds = elapsed
+                LOGGER.info(
+                    kv_message(
+                        "Probe batch",
+                        candidate=candidate_label,
+                        phase="warmup",
+                        batch=_batch_position(batch_index + 1, cfg.warmup_batches),
+                        batch_size=int(batch["obs"].shape[0]),
+                        transfer_ms=elapsed * 1000.0,
+                    )
+                )
                 if progress is not None and batch_task_id is not None:
                     progress.update(batch_task_id, advance=1)
         else:
@@ -327,6 +342,16 @@ def _run_single_probe(
                 batch = _to_device(batch, device)
                 _sync_device(device)
             first_batch_seconds = time.perf_counter() - start
+            LOGGER.info(
+                kv_message(
+                    "Probe batch",
+                    candidate=candidate_label,
+                    phase="warmup",
+                    batch=_batch_position(1, 1),
+                    batch_size=int(batch["obs"].shape[0]),
+                    transfer_ms=first_batch_seconds * 1000.0,
+                )
+            )
             del batch
 
         _cleanup_device(device)
@@ -344,10 +369,23 @@ def _run_single_probe(
                     phase="measure",
                 )
         start = time.perf_counter()
-        for batch in _iter_batches(loader, cfg.measure_batches):
+        for batch_index, batch in enumerate(_iter_batches(loader, cfg.measure_batches)):
+            batch_start = time.perf_counter()
             if cfg.move_to_device:
                 batch = _to_device(batch, device)
+                _sync_device(device)
+            batch_elapsed = time.perf_counter() - batch_start
             measured_samples += int(batch["obs"].shape[0])
+            LOGGER.info(
+                kv_message(
+                    "Probe batch",
+                    candidate=candidate_label,
+                    phase="measure",
+                    batch=_batch_position(batch_index + 1, cfg.measure_batches),
+                    batch_size=int(batch["obs"].shape[0]),
+                    transfer_ms=batch_elapsed * 1000.0,
+                )
+            )
             if progress is not None and batch_task_id is not None:
                 progress.update(batch_task_id, advance=1)
         _sync_device(device)
@@ -418,7 +456,7 @@ def _run_single_probe(
 def probe_world_model_loader(
     cfg: WorldModelLoaderProbeConfig,
     *,
-    show_progress: bool = True,
+    show_progress: bool = False,
 ) -> WorldModelLoaderProbeSummary:
     if not cfg.data.dataset_paths:
         raise ValueError("Provide at least one dataset path.")
