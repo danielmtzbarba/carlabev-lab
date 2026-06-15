@@ -10,8 +10,9 @@ from typing import Any
 
 import torch
 from rich.progress import BarColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn
+from rich.table import Table
 
-from src.utils.common_logging import add_file_handler, build_progress, get_logger, kv_message
+from src.utils.common_logging import add_file_handler, build_progress, get_console, get_logger, kv_message
 from src.world_model.config import WorldModelDataConfig
 from src.world_model.contracts import WorldModelSequenceConfig
 from src.world_model.data import (
@@ -59,6 +60,14 @@ class WorldModelLoaderProbeResult:
     first_batch_seconds: float | None
     host_to_device: bool
     peak_memory_mb: float | None
+    chunk_build_ms: float | None
+    loader_build_ms: float | None
+    avg_warmup_fetch_ms: float | None
+    avg_warmup_transfer_ms: float | None
+    avg_warmup_batch_total_ms: float | None
+    avg_measure_fetch_ms: float | None
+    avg_measure_transfer_ms: float | None
+    avg_measure_batch_total_ms: float | None
     error_message: str | None = None
 
 
@@ -132,6 +141,69 @@ def _iter_batches(loader, count: int):
 def _batch_position(index: int, total: int) -> str:
     width = max(2, len(str(max(total, 1))))
     return f"{index:0{width}d}/{total:0{width}d}"
+
+
+def _mean_or_none(values: list[float]) -> float | None:
+    if not values:
+        return None
+    return float(sum(values) / len(values))
+
+
+def _separator(label: str) -> None:
+    LOGGER.info("=" * 104)
+    LOGGER.info(f"{label}")
+    LOGGER.info("=" * 104)
+
+
+def _log_table(table: Table) -> None:
+    console = get_console()
+    with console.capture() as capture:
+        console.print(table)
+    for line in capture.get().rstrip().splitlines():
+        LOGGER.info(line)
+
+
+def _log_candidate_timing_table(candidate_label: str, result: WorldModelLoaderProbeResult) -> None:
+    table = Table(title=f"Loader Probe Timing: {candidate_label}", header_style="bold magenta")
+    table.add_column("Stage", style="bold")
+    table.add_column("Avg ms", justify="right")
+    table.add_column("Details")
+    rows = [
+        ("Chunk Build", result.chunk_build_ms, "sequence dataset + cache load/build"),
+        ("Loader Build", result.loader_build_ms, "DataLoader construction"),
+        ("Warmup Fetch", result.avg_warmup_fetch_ms, f"avg over {result.warmup_batches} batch(es)"),
+        ("Warmup Transfer", result.avg_warmup_transfer_ms, "host to device + sync"),
+        ("Warmup Total", result.avg_warmup_batch_total_ms, "fetch + transfer"),
+        ("Measure Fetch", result.avg_measure_fetch_ms, f"avg over {result.measured_batches} batch(es)"),
+        ("Measure Transfer", result.avg_measure_transfer_ms, "host to device + sync"),
+        ("Measure Total", result.avg_measure_batch_total_ms, "fetch + transfer"),
+    ]
+    for stage, avg_ms, details in rows:
+        table.add_row(stage, "-" if avg_ms is None else f"{avg_ms:.3f}", details)
+    _log_table(table)
+
+
+def _log_final_summary_table(results: list[WorldModelLoaderProbeResult]) -> None:
+    table = Table(title="Loader Probe Summary", header_style="bold magenta")
+    table.add_column("Candidate", style="bold")
+    table.add_column("Status")
+    table.add_column("Measure Fetch", justify="right")
+    table.add_column("Measure Transfer", justify="right")
+    table.add_column("Measure Total", justify="right")
+    table.add_column("Samples/s", justify="right")
+    for result in results:
+        candidate = (
+            f"c{result.chunk_length}-b{result.batch_size}-w{result.num_workers}-p{int(result.pin_memory)}"
+        )
+        table.add_row(
+            candidate,
+            result.status,
+            "-" if result.avg_measure_fetch_ms is None else f"{result.avg_measure_fetch_ms:.3f}",
+            "-" if result.avg_measure_transfer_ms is None else f"{result.avg_measure_transfer_ms:.3f}",
+            "-" if result.avg_measure_batch_total_ms is None else f"{result.avg_measure_batch_total_ms:.3f}",
+            "-" if result.samples_per_second is None else f"{result.samples_per_second:.3f}",
+        )
+    _log_table(table)
 
 
 def _is_oom_error(exc: RuntimeError) -> bool:
@@ -270,14 +342,36 @@ def _run_single_probe(
             )
 
     device = torch.device(cfg.device)
+    chunk_build_ms: float | None = None
+    loader_build_ms: float | None = None
+    warmup_fetch_ms_values: list[float] = []
+    warmup_transfer_ms_values: list[float] = []
+    warmup_total_ms_values: list[float] = []
+    measure_fetch_ms_values: list[float] = []
+    measure_transfer_ms_values: list[float] = []
+    measure_total_ms_values: list[float] = []
     try:
+        _separator(f"START {candidate_label}")
         if chunk_entry is None:
             LOGGER.info(kv_message("Build chunk dataset", chunk_length=chunk_length))
             chunk_cfg = replace(cfg.data, chunk_length=chunk_length)
+            chunk_build_start = time.perf_counter()
             chunk_entry = _build_chunk_dataset_entry(indexed, chunk_cfg)
+            chunk_build_ms = (time.perf_counter() - chunk_build_start) * 1000.0
+            LOGGER.info(
+                kv_message(
+                    "Built chunk dataset",
+                    chunk_length=chunk_length,
+                    train_windows=len(chunk_entry.train_dataset),
+                    val_windows=len(chunk_entry.val_dataset),
+                    obs_shape=chunk_entry.obs_shape,
+                    build_ms=chunk_build_ms,
+                )
+            )
         else:
             LOGGER.info(kv_message("Reuse chunk dataset", chunk_length=chunk_length))
 
+        loader_build_start = time.perf_counter()
         loader = build_dataloader(
             chunk_entry.train_dataset,
             batch_size=batch_size,
@@ -288,6 +382,7 @@ def _run_single_probe(
             prefetch_factor=prefetch_factor,
             device=cfg.device if cfg.move_to_device else None,
         )
+        loader_build_ms = (time.perf_counter() - loader_build_start) * 1000.0
         LOGGER.info(
             kv_message(
                 "Start loader probe",
@@ -296,6 +391,7 @@ def _run_single_probe(
                 prefetch_factor=prefetch_factor,
                 train_batches=len(loader),
                 move_to_device=cfg.move_to_device,
+                loader_build_ms=loader_build_ms,
             )
         )
 
@@ -314,14 +410,22 @@ def _run_single_probe(
 
         first_batch_seconds: float | None = None
         if cfg.warmup_batches > 0:
-            for batch_index, batch in enumerate(_iter_batches(loader, cfg.warmup_batches)):
-                start = time.perf_counter()
+            iterator = iter(loader)
+            for batch_index in range(cfg.warmup_batches):
+                fetch_start = time.perf_counter()
+                batch = next(iterator)
+                fetch_ms = (time.perf_counter() - fetch_start) * 1000.0
+                transfer_start = time.perf_counter()
                 if cfg.move_to_device:
                     batch = _to_device(batch, device)
                     _sync_device(device)
-                elapsed = time.perf_counter() - start
+                transfer_ms = (time.perf_counter() - transfer_start) * 1000.0
+                batch_total_ms = fetch_ms + transfer_ms
+                warmup_fetch_ms_values.append(fetch_ms)
+                warmup_transfer_ms_values.append(transfer_ms)
+                warmup_total_ms_values.append(batch_total_ms)
                 if batch_index == 0:
-                    first_batch_seconds = elapsed
+                    first_batch_seconds = batch_total_ms / 1000.0
                 LOGGER.info(
                     kv_message(
                         "Probe batch",
@@ -329,19 +433,28 @@ def _run_single_probe(
                         phase="warmup",
                         batch=_batch_position(batch_index + 1, cfg.warmup_batches),
                         batch_size=int(batch["obs"].shape[0]),
-                        transfer_ms=elapsed * 1000.0,
+                        fetch_ms=fetch_ms,
+                        transfer_ms=transfer_ms,
+                        batch_total_ms=batch_total_ms,
                     )
                 )
                 if progress is not None and batch_task_id is not None:
                     progress.update(batch_task_id, advance=1)
         else:
             iterator = iter(loader)
-            start = time.perf_counter()
+            fetch_start = time.perf_counter()
             batch = next(iterator)
+            fetch_ms = (time.perf_counter() - fetch_start) * 1000.0
+            transfer_start = time.perf_counter()
             if cfg.move_to_device:
                 batch = _to_device(batch, device)
                 _sync_device(device)
-            first_batch_seconds = time.perf_counter() - start
+            transfer_ms = (time.perf_counter() - transfer_start) * 1000.0
+            batch_total_ms = fetch_ms + transfer_ms
+            warmup_fetch_ms_values.append(fetch_ms)
+            warmup_transfer_ms_values.append(transfer_ms)
+            warmup_total_ms_values.append(batch_total_ms)
+            first_batch_seconds = batch_total_ms / 1000.0
             LOGGER.info(
                 kv_message(
                     "Probe batch",
@@ -349,7 +462,9 @@ def _run_single_probe(
                     phase="warmup",
                     batch=_batch_position(1, 1),
                     batch_size=int(batch["obs"].shape[0]),
-                    transfer_ms=first_batch_seconds * 1000.0,
+                    fetch_ms=fetch_ms,
+                    transfer_ms=transfer_ms,
+                    batch_total_ms=batch_total_ms,
                 )
             )
             del batch
@@ -369,12 +484,20 @@ def _run_single_probe(
                     phase="measure",
                 )
         start = time.perf_counter()
-        for batch_index, batch in enumerate(_iter_batches(loader, cfg.measure_batches)):
-            batch_start = time.perf_counter()
+        iterator = iter(loader)
+        for batch_index in range(cfg.measure_batches):
+            fetch_start = time.perf_counter()
+            batch = next(iterator)
+            fetch_ms = (time.perf_counter() - fetch_start) * 1000.0
+            transfer_start = time.perf_counter()
             if cfg.move_to_device:
                 batch = _to_device(batch, device)
                 _sync_device(device)
-            batch_elapsed = time.perf_counter() - batch_start
+            transfer_ms = (time.perf_counter() - transfer_start) * 1000.0
+            batch_total_ms = fetch_ms + transfer_ms
+            measure_fetch_ms_values.append(fetch_ms)
+            measure_transfer_ms_values.append(transfer_ms)
+            measure_total_ms_values.append(batch_total_ms)
             measured_samples += int(batch["obs"].shape[0])
             LOGGER.info(
                 kv_message(
@@ -383,7 +506,9 @@ def _run_single_probe(
                     phase="measure",
                     batch=_batch_position(batch_index + 1, cfg.measure_batches),
                     batch_size=int(batch["obs"].shape[0]),
-                    transfer_ms=batch_elapsed * 1000.0,
+                    fetch_ms=fetch_ms,
+                    transfer_ms=transfer_ms,
+                    batch_total_ms=batch_total_ms,
                 )
             )
             if progress is not None and batch_task_id is not None:
@@ -408,6 +533,14 @@ def _run_single_probe(
             first_batch_seconds=first_batch_seconds,
             host_to_device=cfg.move_to_device,
             peak_memory_mb=peak_memory_mb,
+            chunk_build_ms=chunk_build_ms,
+            loader_build_ms=loader_build_ms,
+            avg_warmup_fetch_ms=_mean_or_none(warmup_fetch_ms_values),
+            avg_warmup_transfer_ms=_mean_or_none(warmup_transfer_ms_values),
+            avg_warmup_batch_total_ms=_mean_or_none(warmup_total_ms_values),
+            avg_measure_fetch_ms=_mean_or_none(measure_fetch_ms_values),
+            avg_measure_transfer_ms=_mean_or_none(measure_transfer_ms_values),
+            avg_measure_batch_total_ms=_mean_or_none(measure_total_ms_values),
         )
         LOGGER.info(
             kv_message(
@@ -418,12 +551,13 @@ def _run_single_probe(
                 first_batch_seconds=result.first_batch_seconds or 0.0,
             )
         )
+        _log_candidate_timing_table(candidate_label, result)
+        _separator(f"END {candidate_label}")
         return result, chunk_entry.obs_shape, chunk_entry
     except RuntimeError as exc:
         status = "worker_crash" if _is_worker_crash(exc) else "oom" if _is_oom_error(exc) else "error"
         LOGGER.exception("Loader probe failed %s status=%s", candidate_label, status)
-        return (
-            WorldModelLoaderProbeResult(
+        result = WorldModelLoaderProbeResult(
                 batch_size=batch_size,
                 chunk_length=chunk_length,
                 num_workers=num_workers,
@@ -440,11 +574,19 @@ def _run_single_probe(
                 first_batch_seconds=None,
                 host_to_device=cfg.move_to_device,
                 peak_memory_mb=None,
+                chunk_build_ms=chunk_build_ms,
+                loader_build_ms=loader_build_ms,
+                avg_warmup_fetch_ms=_mean_or_none(warmup_fetch_ms_values),
+                avg_warmup_transfer_ms=_mean_or_none(warmup_transfer_ms_values),
+                avg_warmup_batch_total_ms=_mean_or_none(warmup_total_ms_values),
+                avg_measure_fetch_ms=_mean_or_none(measure_fetch_ms_values),
+                avg_measure_transfer_ms=_mean_or_none(measure_transfer_ms_values),
+                avg_measure_batch_total_ms=_mean_or_none(measure_total_ms_values),
                 error_message=str(exc),
-            ),
-            chunk_entry.obs_shape if chunk_entry is not None else None,
-            chunk_entry,
         )
+        _log_candidate_timing_table(candidate_label, result)
+        _separator(f"END {candidate_label}")
+        return (result, chunk_entry.obs_shape if chunk_entry is not None else None, chunk_entry)
     finally:
         if progress is not None and task_id is not None:
             progress.update(task_id, stage="done")
@@ -484,7 +626,17 @@ def probe_world_model_loader(
     )
     LOGGER.info(kv_message("Dataset paths", paths=cfg.data.dataset_paths))
     LOGGER.info(kv_message("Build shared index"))
+    index_build_start = time.perf_counter()
     indexed = build_index(cfg.data.dataset_paths)
+    LOGGER.info(
+        kv_message(
+            "Built shared index",
+            transitions=len(indexed.transitions),
+            episodes=len(indexed.episodes),
+            shards=len(indexed.shards),
+            build_ms=(time.perf_counter() - index_build_start) * 1000.0,
+        )
+    )
 
     results: list[WorldModelLoaderProbeResult] = []
     obs_shape: tuple[int, int, int] | None = None
@@ -551,6 +703,10 @@ def probe_world_model_loader(
                                     results=results,
                                 )
                                 progress.advance(task_id)
+
+    _separator("FINAL SUMMARY")
+    _log_final_summary_table(results)
+    _separator("END SUMMARY")
 
     return WorldModelLoaderProbeSummary(
         run_dir=str(run_paths.run_dir),

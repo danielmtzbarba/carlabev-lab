@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from collections import OrderedDict, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -156,9 +157,19 @@ def _validate_shard_arrays(data: dict[str, np.ndarray], shard_path: Path) -> int
 
 
 def _load_shard_arrays(shard_path: Path) -> dict[str, np.ndarray]:
+    start = time.perf_counter()
     with np.load(shard_path, allow_pickle=False) as shard:
         arrays = {name: shard[name] for name in shard.files}
     _validate_shard_arrays(arrays, shard_path)
+    load_ms = (time.perf_counter() - start) * 1000.0
+    LOGGER.info(
+        kv_message(
+            "Load shard",
+            path=shard_path,
+            rows=int(arrays["obs"].shape[0]),
+            load_ms=load_ms,
+        )
+    )
     return arrays
 
 
