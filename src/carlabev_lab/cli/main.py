@@ -26,6 +26,7 @@ USAGE = """Usage:
   drl world-model collect exp [ARGS...]
   drl world-model stage [ARGS...]
   drl world-model benchmark [ARGS...]
+  drl world-model probe-loader [ARGS...]
   drl world-model inspect [ARGS...]
   drl world-model summary [ARGS...]
   drl world-model train [ARGS...]
@@ -224,6 +225,10 @@ def run_world_model_benchmark_command(argv: Sequence[str]) -> object:
     return _invoke_module_main("src.carlabev_lab.world_model.benchmark", argv)
 
 
+def run_world_model_probe_loader_command(argv: Sequence[str]) -> object:
+    return _invoke_module_main("src.carlabev_lab.world_model.probe_loader", argv)
+
+
 def run_world_model_inspect_command(argv: Sequence[str]) -> object:
     return _invoke_module_main("src.carlabev_lab.world_model.inspect", argv)
 
@@ -314,6 +319,8 @@ def main(argv: Sequence[str] | None = None) -> object:
             return run_world_model_stage_command(args)
         if command == "benchmark":
             return run_world_model_benchmark_command(args)
+        if command == "probe-loader":
+            return run_world_model_probe_loader_command(args)
         if command == "inspect":
             return run_world_model_inspect_command(args)
         if command == "summary":

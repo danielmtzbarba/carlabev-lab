@@ -305,6 +305,39 @@ uv run drl world-model benchmark \
   --training.device cuda
 ```
 
+Probe only the dataset/DataLoader path before running the full world-model
+benchmark. This is useful on HPC when you want to tune `num_workers`,
+`pin_memory`, `prefetch_factor`, `batch_size`, and `chunk_length` without
+paying for ViT forward/backward passes:
+
+```bash
+uv run drl world-model probe-loader \
+  --run-name lewm-loader-probe \
+  --data.dataset-paths /tmp/$SLURM_JOB_ID/carlabev-world-model/seed_2 \
+  --batch-sizes 16 32 64 \
+  --chunk-lengths 4 8 \
+  --num-workers-options 0 2 4 \
+  --pin-memory-options false true \
+  --persistent-workers-options false true \
+  --prefetch-factors 2 4 \
+  --warmup-batches 1 \
+  --measure-batches 10 \
+  --move-to-device \
+  --device cuda
+```
+
+The loader probe saves results under
+`runs/world_model/<run_name>/artifacts/loader_probe_results.{json,csv}` and
+reports:
+
+- loader-only `samples/s`
+- first-batch latency
+- worker crash / OOM status
+- optional host-to-device transfer cost when `--move-to-device` is enabled
+
+Use it to find a safe loader configuration first, then feed those settings into
+`drl world-model benchmark` or `drl world-model train`.
+
 The benchmark runs real train steps for each `(batch_size, chunk_length)` pair and
 reports:
 

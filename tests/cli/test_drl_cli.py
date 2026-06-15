@@ -144,6 +144,24 @@ def test_main_dispatches_world_model_benchmark_command(monkeypatch):
 
 
 @pytest.mark.unit
+def test_main_dispatches_world_model_probe_loader_command(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_probe(argv):
+        captured["argv"] = list(argv)
+        return "probed"
+
+    monkeypatch.setattr(drl_cli, "run_world_model_probe_loader_command", fake_probe)
+
+    result = drl_cli.main(
+        ["world-model", "probe-loader", "--data.dataset-paths", "datasets/world_model/demo"]
+    )
+
+    assert result == "probed"
+    assert captured["argv"] == ["--data.dataset-paths", "datasets/world_model/demo"]
+
+
+@pytest.mark.unit
 def test_main_dispatches_world_model_inspect_command(monkeypatch):
     captured: dict[str, object] = {}
 
