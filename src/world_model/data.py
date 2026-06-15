@@ -36,6 +36,7 @@ REQUIRED_ARRAYS = (
     "left_turn_fraction",
     "right_turn_fraction",
 )
+PREPARED_SHARDS_DIRNAME = "prepared_shards"
 
 LOGGER = get_logger("world_model.data")
 
@@ -156,7 +157,32 @@ def _validate_shard_arrays(data: dict[str, np.ndarray], shard_path: Path) -> int
     return row_count
 
 
-def _load_shard_arrays(shard_path: Path) -> dict[str, np.ndarray]:
+def _prepared_shards_root(dataset_dir: Path) -> Path:
+    return dataset_dir / ".wm_cache" / PREPARED_SHARDS_DIRNAME
+
+
+def _prepared_shard_dir(shard_path: Path) -> Path:
+    return _prepared_shards_root(shard_path.parent) / shard_path.stem
+
+
+def _prepared_manifest_path(shard_path: Path) -> Path:
+    return _prepared_shard_dir(shard_path) / "manifest.json"
+
+
+def _prepared_array_path(shard_path: Path, array_name: str) -> Path:
+    return _prepared_shard_dir(shard_path) / f"{array_name}.npy"
+
+
+def _source_stat_payload(shard_path: Path) -> dict[str, int | str]:
+    stat = shard_path.stat()
+    return {
+        "source_name": shard_path.name,
+        "source_size": stat.st_size,
+        "source_mtime_ns": stat.st_mtime_ns,
+    }
+
+
+def _load_shard_arrays_from_npz(shard_path: Path) -> dict[str, np.ndarray]:
     start = time.perf_counter()
     with np.load(shard_path, allow_pickle=False) as shard:
         arrays = {name: shard[name] for name in shard.files}
@@ -164,6 +190,59 @@ def _load_shard_arrays(shard_path: Path) -> dict[str, np.ndarray]:
     load_ms = (time.perf_counter() - start) * 1000.0
     LOGGER.info(event_message("DATA", "SHARD_LOAD", path=shard_path, rows=int(arrays["obs"].shape[0]), load_ms=load_ms))
     return arrays
+
+
+def _load_prepared_shard_arrays(shard_path: Path) -> dict[str, np.ndarray] | None:
+    manifest_path = _prepared_manifest_path(shard_path)
+    if not manifest_path.exists():
+        return None
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    expected = _source_stat_payload(shard_path)
+    if any(manifest.get(key) != value for key, value in expected.items()):
+        return None
+    arrays: dict[str, np.ndarray] = {}
+    for name in REQUIRED_ARRAYS:
+        array_path = _prepared_array_path(shard_path, name)
+        if not array_path.exists():
+            return None
+        arrays[name] = np.load(array_path, mmap_mode="r", allow_pickle=False)
+    _validate_shard_arrays(arrays, shard_path)
+    LOGGER.info(event_message("DATA", "SHARD_PREPARED_LOAD", path=shard_path, rows=int(arrays["obs"].shape[0])))
+    return arrays
+
+
+def _load_shard_arrays(shard_path: Path) -> dict[str, np.ndarray]:
+    prepared = _load_prepared_shard_arrays(shard_path)
+    if prepared is not None:
+        return prepared
+    return _load_shard_arrays_from_npz(shard_path)
+
+
+def prepare_shard_cache(shard_path: Path) -> Path:
+    arrays = _load_shard_arrays_from_npz(shard_path)
+    prepared_dir = _prepared_shard_dir(shard_path)
+    prepared_dir.mkdir(parents=True, exist_ok=True)
+    for name in REQUIRED_ARRAYS:
+        np.save(_prepared_array_path(shard_path, name), arrays[name], allow_pickle=False)
+    manifest = {
+        **_source_stat_payload(shard_path),
+        "row_count": int(arrays["obs"].shape[0]),
+        "arrays": list(REQUIRED_ARRAYS),
+    }
+    _prepared_manifest_path(shard_path).write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    LOGGER.info(
+        event_message(
+            "DATA",
+            "SHARD_PREPARED_SAVE",
+            path=shard_path,
+            rows=int(arrays["obs"].shape[0]),
+            prepared_dir=prepared_dir,
+        )
+    )
+    return prepared_dir
 
 
 def build_index(

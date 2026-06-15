@@ -13,12 +13,14 @@ from src.world_model.contracts import WorldModelSequenceConfig
 from src.world_model.data import (
     WorldModelSequenceDataset,
     WorldModelTransitionDataset,
+    _load_prepared_shard_arrays,
     build_dataloader,
     build_index,
     build_sequence_window_indices,
     build_sequence_datasets,
     build_transition_datasets,
     load_or_build_sequence_window_cache,
+    prepare_shard_cache,
 )
 from src.world_model.validate import validate_datasets
 
@@ -150,6 +152,21 @@ def test_sequence_dataset_can_use_cached_window_indices(monkeypatch, tiny_cfg, t
     assert len(dataset) == 4
     sample = dataset[0]
     assert sample["metadata"]["step_in_episode"] == [0, 1]
+
+
+@pytest.mark.integration
+def test_prepared_shard_cache_is_built_and_loaded(monkeypatch, tiny_cfg, tmp_path):
+    output_dir = _collect_sample_dataset(monkeypatch, tiny_cfg, tmp_path, total_transitions=6)
+    shard_path = output_dir / "shard_000000.npz"
+
+    prepared_dir = prepare_shard_cache(shard_path)
+    prepared_arrays = _load_prepared_shard_arrays(shard_path)
+
+    assert prepared_dir.exists()
+    assert (prepared_dir / "obs.npy").exists()
+    assert prepared_arrays is not None
+    assert tuple(prepared_arrays["obs"].shape) == (2, 3, 8, 8)
+    assert tuple(prepared_arrays["next_obs"].shape) == (2, 3, 8, 8)
 
 
 @pytest.mark.integration

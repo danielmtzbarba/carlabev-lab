@@ -6,8 +6,9 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-from src.utils.common_logging import get_logger
+from src.utils.common_logging import event_message, get_logger
 from src.utils.storage_paths import resolve_artifact_path
+from src.world_model.data import prepare_shard_cache
 
 LOGGER = get_logger("world_model.staging")
 
@@ -18,6 +19,7 @@ class StagedDatasetResult:
     staged_dir: str
     shard_count: int
     total_bytes: int
+    prepared_shards: int
 
 
 def _summary_file(dataset_dir: Path) -> Path:
@@ -58,6 +60,7 @@ def stage_dataset_to_tmp(
     tmp_root: str | Path | None = None,
     dest_name: str | None = None,
     overwrite: bool = True,
+    prepare_shards: bool = True,
 ) -> StagedDatasetResult:
     source_dir = _coerce_dataset_dir(path)
     if not source_dir.exists():
@@ -72,7 +75,7 @@ def stage_dataset_to_tmp(
     destination_name = dest_name or source_dir.name
     staged_dir = tmp_base / destination_name
 
-    LOGGER.info("Staging dataset source=%s destination=%s", source_dir, staged_dir)
+    LOGGER.info(event_message("STAGE", "COPY_START", source=source_dir, destination=staged_dir))
     staged_dir.parent.mkdir(parents=True, exist_ok=True)
     if staged_dir.exists():
         if not overwrite:
@@ -87,16 +90,29 @@ def stage_dataset_to_tmp(
             f"Staged shard-count mismatch for {staged_dir}: expected {shard_count} got {len(staged_shards)}"
         )
 
+    prepared_shards = 0
+    if prepare_shards:
+        LOGGER.info(event_message("STAGE", "PREPARE_START", shards=shard_count))
+        for shard_meta in staged_shards:
+            prepare_shard_cache(staged_dir / Path(shard_meta["path"]).name)
+            prepared_shards += 1
+        LOGGER.info(event_message("STAGE", "PREPARE_DONE", prepared_shards=prepared_shards))
+
     total_bytes = _dataset_size_bytes(staged_dir)
     LOGGER.info(
-        "Finished staging dataset shard_count=%d total_bytes=%d staged_dir=%s",
-        shard_count,
-        total_bytes,
-        staged_dir,
+        event_message(
+            "STAGE",
+            "DONE",
+            shard_count=shard_count,
+            prepared_shards=prepared_shards,
+            total_bytes=total_bytes,
+            staged_dir=staged_dir,
+        )
     )
     return StagedDatasetResult(
         source_dir=str(source_dir),
         staged_dir=str(staged_dir),
         shard_count=shard_count,
         total_bytes=total_bytes,
+        prepared_shards=prepared_shards,
     )

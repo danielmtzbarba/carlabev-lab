@@ -17,7 +17,10 @@ def test_stage_dataset_to_tmp_copies_dataset(monkeypatch, tiny_cfg, tmp_workdir)
     assert result.source_dir == str(output_dir)
     assert result.staged_dir == str(staged_dir)
     assert result.shard_count == 2
+    assert result.prepared_shards == 2
     assert result.total_bytes > 0
     assert (staged_dir / "summary.json").exists()
     assert (staged_dir / "shard_000000.npz").exists()
     assert (staged_dir / "shard_000001.npz").exists()
+    assert (staged_dir / ".wm_cache" / "prepared_shards" / "shard_000000" / "obs.npy").exists()
+    assert (staged_dir / ".wm_cache" / "prepared_shards" / "shard_000001" / "manifest.json").exists()

@@ -291,6 +291,13 @@ This copies the dataset directory, verifies the staged `summary.json`, and print
 the resolved staged path. Use that staged path as `--data.dataset-paths` for the
 benchmark or training command on the same node.
 
+By default, staging now also prepares a shard cache under
+`<staged_dataset>/.wm_cache/prepared_shards/` using uncompressed `.npy` arrays.
+The world-model data loader automatically prefers these prepared shard caches
+over the original `.npz` shards when they are present, which is much better for
+repeated random-access training and probing on HPC nodes. Disable this with
+`--no-prepare-shards` if you only want the raw copy.
+
 Benchmark candidate batch sizes and chunk lengths on your current device:
 
 ```bash
