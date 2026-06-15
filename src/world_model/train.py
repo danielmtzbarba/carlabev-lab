@@ -7,10 +7,9 @@ from statistics import mean
 from typing import Any
 
 import torch
-from rich.progress import BarColumn, Progress, TextColumn, TimeElapsedColumn, TimeRemainingColumn
 from torch import nn
 
-from src.utils.common_logging import add_file_handler, build_progress, event_message, get_logger
+from src.utils.common_logging import add_file_handler, event_message, get_logger
 from src.world_model.config import WorldModelConfig
 from src.world_model.contracts import WorldModelSequenceConfig
 from src.world_model.data import WorldModelDataArtifacts, build_world_model_data
@@ -49,6 +48,11 @@ def _to_device(batch: dict[str, Any], device: torch.device) -> dict[str, Any]:
     return out
 
 
+def _batch_position(index: int, total: int) -> str:
+    width = max(2, len(str(max(total, 1))))
+    return f"{index:0{width}d}/{total:0{width}d}"
+
+
 def _epoch_loop(
     model: nn.Module,
     loader,
@@ -57,8 +61,8 @@ def _epoch_loop(
     scaler: torch.amp.GradScaler,
     device: torch.device,
     cfg: WorldModelConfig,
-    progress: Progress | None = None,
-    task_id: int | None = None,
+    epoch: int,
+    total_epochs: int,
 ) -> dict[str, float]:
     train_mode = optimizer is not None
     model.train(train_mode)
@@ -69,11 +73,8 @@ def _epoch_loop(
     transfer_times: list[float] = []
     step_times: list[float] = []
 
-    if progress is not None and task_id is not None:
-        progress.reset(task_id, total=max(len(loader), 1), completed=0, loss="-")
-        progress.update(task_id, visible=True)
-
     iterator = iter(loader)
+    phase = "TRAIN_BATCH" if train_mode else "VAL_BATCH"
     for batch_index in range(len(loader)):
         fetch_start = time.perf_counter()
         batch = next(iterator)
@@ -103,8 +104,6 @@ def _epoch_loop(
         fetch_times.append(fetch_time)
         transfer_times.append(transfer_time)
         step_times.append(step_time)
-        if progress is not None and task_id is not None:
-            progress.update(task_id, advance=1, loss=f"{metrics['loss']:.4f}")
         if (
             cfg.training.timing_log_interval > 0
             and ((batch_index + 1) % cfg.training.timing_log_interval == 0 or (batch_index + 1) == len(loader))
@@ -113,8 +112,12 @@ def _epoch_loop(
             LOGGER.info(
                 event_message(
                     "TRAIN",
-                    "BATCH_TIMING" if train_mode else "VAL_BATCH_TIMING",
-                    batch=f"{batch_index + 1}/{len(loader)}",
+                    phase,
+                    epoch=f"{epoch}/{total_epochs}",
+                    batch=_batch_position(batch_index + 1, len(loader)),
+                    loss=metrics["loss"],
+                    pred_loss=metrics["pred_loss"],
+                    reg_loss=metrics["reg_loss"],
                     fetch_ms=mean(fetch_times[recent_slice]) * 1000.0,
                     transfer_ms=mean(transfer_times[recent_slice]) * 1000.0,
                     step_ms=mean(step_times[recent_slice]) * 1000.0,
@@ -122,8 +125,6 @@ def _epoch_loop(
             )
 
     if not losses:
-        if progress is not None and task_id is not None:
-            progress.update(task_id, visible=False)
         return {
             "loss": 0.0,
             "pred_loss": 0.0,
@@ -140,8 +141,6 @@ def _epoch_loop(
         "avg_transfer_ms": float(mean(transfer_times) * 1000.0),
         "avg_step_ms": float(mean(step_times) * 1000.0),
     }
-    if progress is not None and task_id is not None:
-        progress.update(task_id, loss=f"{epoch_metrics['loss']:.4f}", visible=False)
     return epoch_metrics
 
 
@@ -258,128 +257,90 @@ def train_world_model(
         )
     )
 
-    with build_progress(
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TextColumn("{task.completed}/{task.total}"),
-        TextColumn("loss={task.fields[loss]}"),
-        TimeElapsedColumn(),
-        TimeRemainingColumn(),
-        disable=not show_progress,
-        refresh_per_second=4,
-    ) as progress:
-        epoch_task_id = progress.add_task(
-            "World-model epochs",
-            total=cfg.training.epochs,
-            loss="-",
-        )
-        train_task_id = progress.add_task(
-            "Train batches",
-            total=max(len(data_artifacts.train_loader), 1),
-            loss="-",
-            visible=False,
-        )
-        val_task_id = progress.add_task(
-            "Val batches",
-            total=max(len(data_artifacts.val_loader), 1),
-            loss="-",
-            visible=False,
-        )
+    if show_progress:
+        LOGGER.debug(event_message("TRAIN", "PROGRESS_DISABLED", reason="log_first_training_output"))
 
-        for epoch in range(1, cfg.training.epochs + 1):
-            LOGGER.info(event_message("TRAIN", "EPOCH_START", epoch=epoch, total_epochs=cfg.training.epochs))
-            progress.update(
-                train_task_id,
-                description=f"Train epoch {epoch}/{cfg.training.epochs}",
-            )
-            train_metrics = _epoch_loop(
+    for epoch in range(1, cfg.training.epochs + 1):
+        LOGGER.info(event_message("TRAIN", "EPOCH_START", epoch=f"{epoch}/{cfg.training.epochs}"))
+        train_metrics = _epoch_loop(
+            artifacts.model,
+            data_artifacts.train_loader,
+            optimizer=artifacts.optimizer,
+            scaler=grad_scaler,
+            device=torch_device,
+            cfg=cfg,
+            epoch=epoch,
+            total_epochs=cfg.training.epochs,
+        )
+        if len(data_artifacts.val_dataset) > 0:
+            val_metrics = _epoch_loop(
                 artifacts.model,
-                data_artifacts.train_loader,
-                optimizer=artifacts.optimizer,
+                data_artifacts.val_loader,
+                optimizer=None,
                 scaler=grad_scaler,
                 device=torch_device,
                 cfg=cfg,
-                progress=progress,
-                task_id=train_task_id,
+                epoch=epoch,
+                total_epochs=cfg.training.epochs,
             )
-            if len(data_artifacts.val_dataset) > 0:
-                progress.update(
-                    val_task_id,
-                    description=f"Val epoch {epoch}/{cfg.training.epochs}",
-                )
-                val_metrics = _epoch_loop(
-                    artifacts.model,
-                    data_artifacts.val_loader,
-                    optimizer=None,
-                    scaler=grad_scaler,
-                    device=torch_device,
-                    cfg=cfg,
-                    progress=progress,
-                    task_id=val_task_id,
-                )
-            else:
-                val_metrics = dict(train_metrics)
+        else:
+            val_metrics = dict(train_metrics)
 
-            final_train_loss = train_metrics["loss"]
-            final_val_loss = val_metrics["loss"]
-            train_steps += len(data_artifacts.train_loader)
-            history.append(
-                {
-                    "epoch": epoch,
-                    "train_loss": train_metrics["loss"],
-                    "train_pred_loss": train_metrics["pred_loss"],
-                    "train_reg_loss": train_metrics["reg_loss"],
-                    "train_avg_fetch_ms": train_metrics["avg_fetch_ms"],
-                    "train_avg_transfer_ms": train_metrics["avg_transfer_ms"],
-                    "train_avg_step_ms": train_metrics["avg_step_ms"],
-                    "val_loss": val_metrics["loss"],
-                    "val_pred_loss": val_metrics["pred_loss"],
-                    "val_reg_loss": val_metrics["reg_loss"],
-                    "val_avg_fetch_ms": val_metrics["avg_fetch_ms"],
-                    "val_avg_transfer_ms": val_metrics["avg_transfer_ms"],
-                    "val_avg_step_ms": val_metrics["avg_step_ms"],
-                }
-            )
+        final_train_loss = train_metrics["loss"]
+        final_val_loss = val_metrics["loss"]
+        train_steps += len(data_artifacts.train_loader)
+        history.append(
+            {
+                "epoch": epoch,
+                "train_loss": train_metrics["loss"],
+                "train_pred_loss": train_metrics["pred_loss"],
+                "train_reg_loss": train_metrics["reg_loss"],
+                "train_avg_fetch_ms": train_metrics["avg_fetch_ms"],
+                "train_avg_transfer_ms": train_metrics["avg_transfer_ms"],
+                "train_avg_step_ms": train_metrics["avg_step_ms"],
+                "val_loss": val_metrics["loss"],
+                "val_pred_loss": val_metrics["pred_loss"],
+                "val_reg_loss": val_metrics["reg_loss"],
+                "val_avg_fetch_ms": val_metrics["avg_fetch_ms"],
+                "val_avg_transfer_ms": val_metrics["avg_transfer_ms"],
+                "val_avg_step_ms": val_metrics["avg_step_ms"],
+            }
+        )
 
-            if val_metrics["loss"] < best_val_loss:
-                best_val_loss = val_metrics["loss"]
-                _save_checkpoint(
-                    run_paths.checkpoints_dir / "world_model_best.pt",
-                    artifacts=artifacts,
-                    epoch=epoch,
-                    best_val_loss=best_val_loss,
-                    cfg=cfg,
-                    data_artifacts=data_artifacts,
-                )
-            if epoch % cfg.training.save_every == 0:
-                _save_checkpoint(
-                    run_paths.checkpoints_dir / f"world_model_epoch_{epoch:03d}.pt",
-                    artifacts=artifacts,
-                    epoch=epoch,
-                    best_val_loss=best_val_loss,
-                    cfg=cfg,
-                    data_artifacts=data_artifacts,
-                )
-            progress.update(
-                epoch_task_id,
-                advance=1,
-                loss=f"train={train_metrics['loss']:.4f} val={val_metrics['loss']:.4f}",
+        if val_metrics["loss"] < best_val_loss:
+            best_val_loss = val_metrics["loss"]
+            _save_checkpoint(
+                run_paths.checkpoints_dir / "world_model_best.pt",
+                artifacts=artifacts,
+                epoch=epoch,
+                best_val_loss=best_val_loss,
+                cfg=cfg,
+                data_artifacts=data_artifacts,
             )
-            LOGGER.info(
-                event_message(
-                    "TRAIN",
-                    "EPOCH_DONE",
-                    epoch=f"{epoch}/{cfg.training.epochs}",
-                    train_loss=train_metrics["loss"],
-                    val_loss=val_metrics["loss"],
-                    train_fetch_ms=train_metrics["avg_fetch_ms"],
-                    train_transfer_ms=train_metrics["avg_transfer_ms"],
-                    train_step_ms=train_metrics["avg_step_ms"],
-                    val_fetch_ms=val_metrics["avg_fetch_ms"],
-                    val_transfer_ms=val_metrics["avg_transfer_ms"],
-                    val_step_ms=val_metrics["avg_step_ms"],
-                )
+        if epoch % cfg.training.save_every == 0:
+            _save_checkpoint(
+                run_paths.checkpoints_dir / f"world_model_epoch_{epoch:03d}.pt",
+                artifacts=artifacts,
+                epoch=epoch,
+                best_val_loss=best_val_loss,
+                cfg=cfg,
+                data_artifacts=data_artifacts,
             )
+        LOGGER.info(
+            event_message(
+                "TRAIN",
+                "EPOCH_DONE",
+                epoch=f"{epoch}/{cfg.training.epochs}",
+                train_loss=train_metrics["loss"],
+                val_loss=val_metrics["loss"],
+                train_fetch_ms=train_metrics["avg_fetch_ms"],
+                train_transfer_ms=train_metrics["avg_transfer_ms"],
+                train_step_ms=train_metrics["avg_step_ms"],
+                val_fetch_ms=val_metrics["avg_fetch_ms"],
+                val_transfer_ms=val_metrics["avg_transfer_ms"],
+                val_step_ms=val_metrics["avg_step_ms"],
+            )
+        )
 
     _save_checkpoint(
         run_paths.checkpoints_dir / "world_model_final.pt",

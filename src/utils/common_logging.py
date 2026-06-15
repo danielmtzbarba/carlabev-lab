@@ -2,37 +2,17 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
 from rich.console import Console
-from rich.highlighter import RegexHighlighter
-from rich.logging import RichHandler
 from rich.progress import Progress
-from rich.theme import Theme
 
 _FORMAT = "[%(levelname)s] %(asctime)s | %(message)s"
 _DATEFMT = "%H:%M:%S"
 _CONFIGURED = False
-_THEME = Theme(
-    {
-        "level_info": "blue",
-        "level_debug": "yellow",
-        "level_warning": "yellow",
-        "level_error": "bold red",
-        "level_critical": "bold white on red",
-    }
-)
 
-
-class _LevelPrefixHighlighter(RegexHighlighter):
-    highlights = [
-        r"^\[(?P<level_info>INFO)\]",
-        r"^\[(?P<level_debug>DEBUG)\]",
-        r"^\[(?P<level_warning>WARNING)\]",
-        r"^\[(?P<level_error>ERROR)\]",
-        r"^\[(?P<level_critical>CRITICAL)\]",
-    ]
 
 def _env_flag(name: str) -> bool:
     value = os.environ.get(name)
@@ -41,19 +21,51 @@ def _env_flag(name: str) -> bool:
     return value.strip().lower() not in {"", "0", "false", "no"}
 
 
+def _stream_supports_color() -> bool:
+    if _env_flag("NO_COLOR"):
+        return False
+    if _env_flag("FORCE_COLOR") or _env_flag("CLICOLOR_FORCE") or _env_flag("PY_COLORS"):
+        return True
+    return bool(getattr(sys.stdout, "isatty", lambda: False)())
+
+
 def _build_console() -> Console:
-    force_terminal = _env_flag("FORCE_COLOR") or _env_flag("CLICOLOR_FORCE") or _env_flag("PY_COLORS")
-    no_color = _env_flag("NO_COLOR")
     return Console(
         stderr=False,
         soft_wrap=True,
-        theme=_THEME,
-        force_terminal=force_terminal,
-        no_color=no_color,
+        force_terminal=_stream_supports_color(),
+        no_color=not _stream_supports_color(),
     )
 
 
 _CONSOLE = _build_console()
+
+
+class _ColorFormatter(logging.Formatter):
+    _RESET = "\033[0m"
+    _LEVEL_COLORS = {
+        logging.DEBUG: "\033[33m",
+        logging.INFO: "\033[34m",
+        logging.WARNING: "\033[33m",
+        logging.ERROR: "\033[31m",
+        logging.CRITICAL: "\033[1;37;41m",
+    }
+
+    def __init__(self, fmt: str, datefmt: str | None = None, *, use_color: bool) -> None:
+        super().__init__(fmt=fmt, datefmt=datefmt)
+        self.use_color = use_color
+
+    def format(self, record: logging.LogRecord) -> str:
+        rendered = super().format(record)
+        if not self.use_color:
+            return rendered
+        color = self._LEVEL_COLORS.get(record.levelno)
+        if color is None:
+            return rendered
+        prefix = f"[{record.levelname}]"
+        return rendered.replace(prefix, f"{color}{prefix}{self._RESET}", 1)
+
+
 def configure_logging(*, level: int = logging.INFO) -> None:
     global _CONFIGURED
     if _CONFIGURED:
@@ -65,18 +77,9 @@ def configure_logging(*, level: int = logging.INFO) -> None:
     root_logger.setLevel(level)
     root_logger.handlers.clear()
 
-    handler = RichHandler(
-        console=_CONSOLE,
-        show_time=False,
-        show_level=False,
-        show_path=False,
-        markup=False,
-        rich_tracebacks=True,
-        log_time_format=_DATEFMT,
-        highlighter=_LevelPrefixHighlighter(),
-    )
+    handler = logging.StreamHandler(sys.stdout)
     handler.setLevel(level)
-    handler.setFormatter(logging.Formatter(_FORMAT, datefmt=_DATEFMT))
+    handler.setFormatter(_ColorFormatter(_FORMAT, datefmt=_DATEFMT, use_color=_stream_supports_color()))
     root_logger.addHandler(handler)
 
     logger = logging.getLogger("carlabev_lab")
