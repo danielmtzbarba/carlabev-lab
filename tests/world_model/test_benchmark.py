@@ -19,6 +19,13 @@ from src.world_model.config import (
 from tests.world_model.test_train import _collect_train_dataset
 
 
+@pytest.mark.unit
+def test_worker_crash_detection_matches_dataloader_failure():
+    exc = RuntimeError("DataLoader worker (pid 123) exited unexpectedly")
+
+    assert benchmark_mod._is_worker_crash(exc) is True
+
+
 @pytest.mark.integration
 def test_benchmark_world_model_smoke(monkeypatch, tiny_cfg, tmp_workdir):
     output_dir = _collect_train_dataset(monkeypatch, tiny_cfg, tmp_workdir, total_transitions=8)
@@ -150,3 +157,14 @@ def test_benchmark_reuses_chunk_cache(monkeypatch, tmp_workdir):
         (4, 1, True),
         (4, 2, False),
     ]
+    payload = json.loads(
+        (
+            tmp_workdir
+            / "runs"
+            / "world_model"
+            / "wm-bench-cache"
+            / "artifacts"
+            / "benchmark_results.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert len(payload["results"]) == 4

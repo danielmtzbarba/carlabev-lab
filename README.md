@@ -308,7 +308,7 @@ uv run drl world-model benchmark \
 The benchmark runs real train steps for each `(batch_size, chunk_length)` pair and
 reports:
 
-- `status`: `ok` or `oom`
+- `status`: `ok`, `oom`, or `worker_crash`
 - `samples/s`
 - `tokens/s` where `tokens = batch_size * chunk_length`
 - peak allocated CUDA memory in MB when running on GPU
@@ -328,6 +328,11 @@ progress views:
 
 Because the logs and progress bars now share the same Rich console, stage updates
 and INFO lines render much more cleanly during long HPC runs.
+
+The benchmark now writes partial `benchmark_results.json` and
+`benchmark_results.csv` artifacts after every completed candidate. If a long HPC
+sweep is interrupted part-way through, the finished candidates are still
+available for inspection instead of being lost at the end of the run.
 
 On CUDA, the world-model runtime now supports:
 
@@ -367,6 +372,60 @@ sbatch \
 The launcher requests `horse`, copies the dataset root into node-local storage,
 runs the benchmark against that staged copy, and keeps results under
 `runs/world_model/<run_name>/` on the workspace.
+
+### H100 Findings
+
+On the TU Dresden `horse` workflow, the most informative benchmark so far used:
+
+- GPU: `NVIDIA H100 96GB`
+- dataset:
+  `PPO_NAVIGATION_DIFFICULTY / exp_1 / train / seed_2`
+- staged dataset root:
+  `/tmp/$SLURM_JOB_ID/carlabev-world-model/seed_2`
+- observation shape: `(16, 96, 96)`
+- encoder backend: `stable_pretraining_vit_hf`
+- encoder size: `small`
+- ViT config:
+  `hidden_size=384`, `num_hidden_layers=12`, `num_attention_heads=6`,
+  `intermediate_size=1536`, `patch_size=8`, `image_size=96`
+- runtime:
+  `training.amp=True`, `training.amp-dtype=bfloat16`,
+  `data.num-workers=0`, `data.pin-memory=False`
+
+The key benchmark outcomes were:
+
+- `chunk_length=4, batch_size=16`
+  - `samples/s=0.08`
+  - `tokens/s=0.33`
+  - `peak_memory_mb=3864.3`
+- `chunk_length=4, batch_size=32`
+  - `samples/s=0.07`
+  - `tokens/s=0.30`
+  - `peak_memory_mb=7797.9`
+
+The main takeaways are:
+
+- `chunk_length=4` is substantially more practical than `8` for Phase 1 smoke training
+- `batch_size=16` outperformed `32` even on the H100
+- larger batches increased memory without improving throughput
+- the benchmark is currently model-step bound, not GPU-VRAM bound
+- `num_workers > 0` triggered loader instability or host-memory pressure on the tested node
+
+The current recommended H100 smoke-training setup is:
+
+```bash
+uv run drl world-model train \
+  --run-name lewm-train-smoke \
+  --data.dataset-paths /tmp/$SLURM_JOB_ID/carlabev-world-model/seed_2 \
+  --data.batch-size 16 \
+  --data.chunk-length 4 \
+  --data.num-workers 0 \
+  --data.pin-memory False \
+  --training.amp \
+  --training.amp-dtype bfloat16 \
+  --training.epochs 1 \
+  --training.device cuda
+```
 
 Train the Phase 1 latent world model:
 

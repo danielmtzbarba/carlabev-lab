@@ -81,6 +81,41 @@ class _ChunkDataCacheEntry:
     obs_shape: tuple[int, int, int]
 
 
+def _build_results_payload(
+    *,
+    cfg: WorldModelBenchmarkConfig,
+    run_paths: WorldModelRunPaths,
+    obs_shape: tuple[int, int, int] | None,
+    results: list[WorldModelBenchmarkResult],
+) -> dict[str, Any]:
+    return {
+        "run_name": cfg.run_name,
+        "run_dir": str(run_paths.run_dir),
+        "device": cfg.training.device,
+        "obs_shape": list(obs_shape) if obs_shape is not None else None,
+        "results": [asdict(result) for result in results],
+    }
+
+
+def _persist_results(
+    *,
+    cfg: WorldModelBenchmarkConfig,
+    run_paths: WorldModelRunPaths,
+    json_path: Path,
+    csv_path: Path,
+    obs_shape: tuple[int, int, int] | None,
+    results: list[WorldModelBenchmarkResult],
+) -> None:
+    payload = _build_results_payload(
+        cfg=cfg,
+        run_paths=run_paths,
+        obs_shape=obs_shape,
+        results=results,
+    )
+    _write_json(json_path, payload)
+    _write_csv(csv_path, results)
+
+
 def _build_artifacts_from_cached_chunk(
     indexed: IndexedDataset,
     cfg: WorldModelDataConfig,
@@ -187,6 +222,11 @@ def _iter_batches(loader, count: int):
 def _is_oom_error(exc: RuntimeError) -> bool:
     message = str(exc).lower()
     return "out of memory" in message or "cuda error" in message and "memory" in message
+
+
+def _is_worker_crash(exc: RuntimeError) -> bool:
+    message = str(exc).lower()
+    return "dataloader worker" in message or "exited unexpectedly" in message
 
 
 def _run_single_benchmark(
@@ -421,6 +461,49 @@ def _run_single_benchmark(
                 obs_shape=data_artifacts.obs_shape,
             )
         return result, data_artifacts.obs_shape, built_chunk_entry
+    except RuntimeError as exc:
+        if not _is_worker_crash(exc):
+            raise
+        _cleanup_device(device)
+        result = WorldModelBenchmarkResult(
+            batch_size=batch_size,
+            chunk_length=chunk_length,
+            status="worker_crash",
+            warmup_batches=cfg.warmup_batches,
+            measured_batches=0,
+            measured_samples=0,
+            elapsed_seconds=None,
+            batches_per_second=None,
+            samples_per_second=None,
+            tokens_per_second=None,
+            peak_memory_mb=_peak_memory_mb(device),
+            last_loss=last_loss,
+            error_message=str(exc),
+        )
+        LOGGER.warning(
+            "Benchmark worker crash chunk_length=%d batch_size=%d error=%s",
+            chunk_length,
+            batch_size,
+            exc,
+        )
+        if progress is not None and task_id is not None:
+            progress.update(task_id, stage="worker crash")
+            if batch_task_id is not None:
+                progress.update(
+                    batch_task_id,
+                    visible=False,
+                    candidate=f"chunk={chunk_length} batch={batch_size}",
+                    stage="worker crash",
+                    phase="worker_crash",
+                )
+        built_chunk_entry = None
+        if chunk_entry is None:
+            built_chunk_entry = _ChunkDataCacheEntry(
+                train_dataset=data_artifacts.train_dataset,
+                val_dataset=data_artifacts.val_dataset,
+                obs_shape=data_artifacts.obs_shape,
+            )
+        return result, data_artifacts.obs_shape, built_chunk_entry
     finally:
         del model
         del optimizer
@@ -490,6 +573,14 @@ def benchmark_world_model(
     obs_shape: tuple[int, int, int] | None = None
     total_candidates = len(cfg.chunk_lengths) * len(cfg.batch_sizes)
     LOGGER.info("Building shared dataset index once for benchmark sweep")
+    _persist_results(
+        cfg=cfg,
+        run_paths=run_paths,
+        json_path=json_path,
+        csv_path=csv_path,
+        obs_shape=obs_shape,
+        results=results,
+    )
     with build_progress(
         TextColumn("[progress.description]{task.description}"),
         BarColumn(),
@@ -527,8 +618,17 @@ def benchmark_world_model(
             task_id=index_task_id,
         )
         chunk_cache: dict[int, _ChunkDataCacheEntry] = {}
+        candidate_index = 0
         for chunk_length in cfg.chunk_lengths:
             for batch_size in cfg.batch_sizes:
+                candidate_index += 1
+                LOGGER.info(
+                    "Candidate %d/%d chunk_length=%d batch_size=%d",
+                    candidate_index,
+                    total_candidates,
+                    chunk_length,
+                    batch_size,
+                )
                 chunk_entry = chunk_cache.get(chunk_length)
                 result, current_obs_shape, built_chunk_entry = _run_single_benchmark(
                     cfg,
@@ -545,17 +645,16 @@ def benchmark_world_model(
                 if chunk_entry is None and built_chunk_entry is not None:
                     chunk_cache[chunk_length] = built_chunk_entry
                 results.append(result)
+                _persist_results(
+                    cfg=cfg,
+                    run_paths=run_paths,
+                    json_path=json_path,
+                    csv_path=csv_path,
+                    obs_shape=obs_shape,
+                    results=results,
+                )
                 progress.advance(task_id)
 
-    payload = {
-        "run_name": cfg.run_name,
-        "run_dir": str(run_paths.run_dir),
-        "device": cfg.training.device,
-        "obs_shape": list(obs_shape) if obs_shape is not None else None,
-        "results": [asdict(result) for result in results],
-    }
-    _write_json(json_path, payload)
-    _write_csv(csv_path, results)
     ok_results = [result for result in results if result.status == "ok"]
     LOGGER.info(
         "Finished world-model benchmark successful=%d total=%d results_json=%s",
