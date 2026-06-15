@@ -43,6 +43,7 @@ _CONSOLE = _build_console()
 
 class _ColorFormatter(logging.Formatter):
     _RESET = "\033[0m"
+    _DIM = "\033[2m"
     _LEVEL_COLORS = {
         logging.DEBUG: "\033[33m",
         logging.INFO: "\033[34m",
@@ -50,6 +51,11 @@ class _ColorFormatter(logging.Formatter):
         logging.ERROR: "\033[31m",
         logging.CRITICAL: "\033[1;37;41m",
     }
+    _STAGE_COLOR = "\033[36m"
+    _PHASE_COLOR = "\033[35m"
+    _KEY_COLOR = "\033[94m"
+    _VALUE_COLOR = "\033[92m"
+    _SEPARATOR_COLOR = "\033[90m"
 
     def __init__(self, fmt: str, datefmt: str | None = None, *, use_color: bool) -> None:
         super().__init__(fmt=fmt, datefmt=datefmt)
@@ -59,11 +65,58 @@ class _ColorFormatter(logging.Formatter):
         rendered = super().format(record)
         if not self.use_color:
             return rendered
-        color = self._LEVEL_COLORS.get(record.levelno)
+        rendered = self._color_level_prefix(rendered, record.levelno)
+        return self._color_event_payload(rendered)
+
+    def _color_level_prefix(self, rendered: str, levelno: int) -> str:
+        color = self._LEVEL_COLORS.get(levelno)
         if color is None:
             return rendered
-        prefix = f"[{record.levelname}]"
+        prefix = f"[{logging.getLevelName(levelno)}]"
         return rendered.replace(prefix, f"{color}{prefix}{self._RESET}", 1)
+
+    def _color_event_payload(self, rendered: str) -> str:
+        parts = rendered.split(" | ", 2)
+        if len(parts) < 2:
+            return rendered
+        if len(parts) == 2:
+            left, event = parts
+            return f"{left} {self._SEPARATOR_COLOR}|{self._RESET} {self._color_event(event)}"
+        left, event, payload = parts
+        return (
+            f"{left} {self._SEPARATOR_COLOR}|{self._RESET} "
+            f"{self._color_event(event)} {self._SEPARATOR_COLOR}|{self._RESET} "
+            f"{self._color_payload(payload)}"
+        )
+
+    def _color_event(self, event: str) -> str:
+        if " - " not in event:
+            return event
+        stage, phase = event.split(" - ", 1)
+        return f"{self._STAGE_COLOR}{stage}{self._RESET} {self._SEPARATOR_COLOR}-{self._RESET} {self._PHASE_COLOR}{phase}{self._RESET}"
+
+    def _color_payload(self, payload: str) -> str:
+        if payload == "-":
+            return f"{self._DIM}-{self._RESET}"
+        tokens = []
+        for token in payload.split(" "):
+            if "=" not in token:
+                tokens.append(token)
+                continue
+            key, value = token.split("=", 1)
+            tokens.append(f"{self._KEY_COLOR}{key}{self._RESET}={self._VALUE_COLOR}{value}{self._RESET}")
+        return " ".join(tokens)
+
+
+class _LoguruToLogging:
+    def write(self, message: str) -> None:
+        text = message.rstrip()
+        if not text:
+            return
+        logging.getLogger("carlabev_lab.external.loguru").info(text)
+
+    def flush(self) -> None:
+        return None
 
 
 def configure_logging(*, level: int = logging.INFO) -> None:
@@ -85,7 +138,22 @@ def configure_logging(*, level: int = logging.INFO) -> None:
     logger = logging.getLogger("carlabev_lab")
     logger.setLevel(level)
     logger.propagate = True
+    logging.getLogger("matplotlib.font_manager").setLevel(logging.WARNING)
+    _configure_loguru_bridge()
     _CONFIGURED = True
+
+
+def _configure_loguru_bridge() -> None:
+    try:
+        from loguru import logger as loguru_logger
+    except ImportError:
+        return
+    try:
+        loguru_logger.remove()
+    except ValueError:
+        pass
+    level_name = logging.getLevelName(logging.getLogger().level)
+    loguru_logger.add(_LoguruToLogging(), level=level_name, colorize=False, format="{message}")
 
 
 def get_logger(name: str) -> logging.Logger:
