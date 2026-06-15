@@ -12,7 +12,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset, Subset
 
-from src.utils.common_logging import get_logger, kv_message
+from src.utils.common_logging import event_message, get_logger
 from src.utils.storage_paths import resolve_artifact_path
 from src.world_model.config import WorldModelDataConfig
 from src.world_model.contracts import DatasetRootConfig, DatasetSummaryModel, WorldModelSequenceConfig
@@ -162,14 +162,7 @@ def _load_shard_arrays(shard_path: Path) -> dict[str, np.ndarray]:
         arrays = {name: shard[name] for name in shard.files}
     _validate_shard_arrays(arrays, shard_path)
     load_ms = (time.perf_counter() - start) * 1000.0
-    LOGGER.info(
-        kv_message(
-            "Load shard",
-            path=shard_path,
-            rows=int(arrays["obs"].shape[0]),
-            load_ms=load_ms,
-        )
-    )
+    LOGGER.info(event_message("DATA", "SHARD_LOAD", path=shard_path, rows=int(arrays["obs"].shape[0]), load_ms=load_ms))
     return arrays
 
 
@@ -179,7 +172,7 @@ def build_index(
     progress=None,
     task_id: int | None = None,
 ) -> IndexedDataset:
-    LOGGER.info(kv_message("Build dataset index", roots=len(dataset_roots)))
+    LOGGER.info(event_message("DATA", "INDEX_START", roots=len(dataset_roots)))
     sources: list[DatasetSource] = []
     shard_records: list[ShardRecord] = []
     transitions: list[TransitionRef] = []
@@ -213,8 +206,9 @@ def build_index(
 
     for dataset_id, root_cfg, dataset_dir, summary, source_name in dataset_infos:
         LOGGER.info(
-            kv_message(
-                "Load dataset root",
+            event_message(
+                "DATA",
+                "ROOT_LOAD",
                 path=dataset_dir,
                 source=source_name,
                 transitions=summary.total_transitions,
@@ -285,8 +279,9 @@ def build_index(
         ordered = tuple(sorted(refs, key=lambda ref: (ref.step_in_episode, ref.shard_index, ref.row_index)))
         ordered_episodes[episode_key] = ordered
     LOGGER.info(
-        kv_message(
-            "Indexed dataset",
+        event_message(
+            "DATA",
+            "INDEX_DONE",
             transitions=len(transitions),
             episodes=len(ordered_episodes),
             shards=len(shard_records),
@@ -531,8 +526,9 @@ def load_or_build_sequence_window_cache(
                 f"({cached_chunk_length}, {cached_stride}) != ({chunk_length}, {stride})"
             )
         LOGGER.info(
-            kv_message(
-                "Load sequence cache",
+            event_message(
+                "DATA",
+                "SEQ_CACHE_LOAD",
                 path=cache_path,
                 windows=int(window_transition_indices.shape[0]),
                 chunk_length=chunk_length,
@@ -558,8 +554,9 @@ def load_or_build_sequence_window_cache(
         stride=np.asarray(stride, dtype=np.int64),
     )
     LOGGER.info(
-        kv_message(
-            "Save sequence cache",
+        event_message(
+            "DATA",
+            "SEQ_CACHE_SAVE",
             path=cache_path,
             windows=int(window_transition_indices.shape[0]),
             chunk_length=chunk_length,
@@ -752,8 +749,9 @@ def build_world_model_data_from_indexed(
     device: str | None = None,
 ) -> WorldModelDataArtifacts:
     LOGGER.info(
-        kv_message(
-            "Prepare dataloaders",
+        event_message(
+            "DATA",
+            "DATALOADER_PREP",
             batch_size=cfg.batch_size,
             chunk_length=cfg.chunk_length,
             stride=cfg.stride,
@@ -801,8 +799,9 @@ def build_world_model_data_from_indexed(
     sample = train_dataset[0]
     obs_shape = tuple(sample["obs"].shape[1:])
     LOGGER.info(
-        kv_message(
-            "Built world-model data",
+        event_message(
+            "DATA",
+            "DATALOADER_READY",
             train_windows=len(train_dataset),
             val_windows=len(val_dataset),
             train_batches=len(train_loader),

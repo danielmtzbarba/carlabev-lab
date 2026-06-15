@@ -12,7 +12,7 @@ from typing import Any
 import torch
 from rich.progress import BarColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn
 
-from src.utils.common_logging import add_file_handler, build_progress, get_logger, kv_message
+from src.utils.common_logging import add_file_handler, build_progress, event_message, get_logger
 from src.world_model.config import (
     WorldModelConfig,
     WorldModelDataConfig,
@@ -172,7 +172,7 @@ def _build_artifacts_from_cached_chunk(
     if chunk_entry is None:
         return build_world_model_data_from_indexed(indexed, cfg, device=device)
 
-    LOGGER.info(kv_message("Reuse chunk cache", batch_size=cfg.batch_size, chunk_length=cfg.chunk_length))
+    LOGGER.info(event_message("BENCH", "CHUNK_CACHE_REUSE", batch_size=cfg.batch_size, chunk_length=cfg.chunk_length))
     train_loader = build_dataloader(
         chunk_entry.train_dataset,
         batch_size=cfg.batch_size,
@@ -194,8 +194,9 @@ def _build_artifacts_from_cached_chunk(
         device=device,
     )
     LOGGER.info(
-        kv_message(
-            "Built cached loaders",
+        event_message(
+            "BENCH",
+            "CACHED_LOADERS_READY",
             train_windows=len(chunk_entry.train_dataset),
             val_windows=len(chunk_entry.val_dataset),
             train_batches=len(train_loader),
@@ -340,14 +341,7 @@ def _run_single_benchmark(
         optimizer=cfg.optimizer,
         training=cfg.training,
     )
-    LOGGER.info(
-        kv_message(
-            "Start benchmark",
-            chunk_length=chunk_length,
-            batch_size=batch_size,
-            device=cfg.training.device,
-        )
-    )
+    LOGGER.info(event_message("BENCH", "START", chunk_length=chunk_length, batch_size=batch_size, device=cfg.training.device))
     if state_callback is not None:
         state_callback(
             _candidate_state(
@@ -375,7 +369,7 @@ def _run_single_benchmark(
                 stage="idle",
                 phase="-",
             )
-    LOGGER.info(kv_message("Prepare datasets"))
+    LOGGER.info(event_message("BENCH", "PREPARE_DATASETS"))
     data_artifacts = _build_artifacts_from_cached_chunk(
         indexed,
         run_cfg.data,
@@ -394,13 +388,7 @@ def _run_single_benchmark(
                 measure_batches=cfg.measure_batches,
             )
         )
-    LOGGER.info(
-        kv_message(
-            "Build model",
-            obs_shape=data_artifacts.obs_shape,
-            train_batches=len(data_artifacts.train_loader),
-        )
-    )
+    LOGGER.info(event_message("BENCH", "BUILD_MODEL", obs_shape=data_artifacts.obs_shape, train_batches=len(data_artifacts.train_loader)))
     artifacts = build_world_model(
         run_cfg,
         obs_shape=data_artifacts.obs_shape,
@@ -428,7 +416,7 @@ def _run_single_benchmark(
                         stage=f"warmup {cfg.warmup_batches} batches",
                         phase="warmup",
                     )
-            LOGGER.info(kv_message("Warmup", batches=cfg.warmup_batches))
+            LOGGER.info(event_message("BENCH", "WARMUP", batches=cfg.warmup_batches))
             if state_callback is not None:
                 state_callback(
                     _candidate_state(
@@ -488,7 +476,7 @@ def _run_single_benchmark(
                     stage=f"measuring {cfg.measure_batches} batches",
                     phase="measure",
                 )
-        LOGGER.info(kv_message("Measure", batches=cfg.measure_batches))
+        LOGGER.info(event_message("BENCH", "MEASURE", batches=cfg.measure_batches))
         if state_callback is not None:
             state_callback(
                 _candidate_state(
@@ -532,8 +520,9 @@ def _run_single_benchmark(
             if progress is not None and batch_task_id is not None:
                 progress.update(batch_task_id, advance=1)
             LOGGER.info(
-                kv_message(
-                    "Benchmark batch",
+                event_message(
+                    "BENCH",
+                    "BATCH",
                     chunk_length=chunk_length,
                     batch_size=batch_size,
                     batch=batch_index + 1,
@@ -588,8 +577,9 @@ def _run_single_benchmark(
             last_loss=last_loss,
         )
         LOGGER.info(
-            kv_message(
-                "Finish benchmark",
+            event_message(
+                "BENCH",
+                "DONE",
                 chunk_length=chunk_length,
                 batch_size=batch_size,
                 status="ok",
@@ -657,14 +647,7 @@ def _run_single_benchmark(
             last_loss=last_loss,
             error_message=str(exc),
         )
-        LOGGER.warning(
-            kv_message(
-                "Benchmark OOM",
-                chunk_length=chunk_length,
-                batch_size=batch_size,
-                error=str(exc),
-            )
-        )
+        LOGGER.warning(event_message("BENCH", "OOM", chunk_length=chunk_length, batch_size=batch_size, error=str(exc)))
         if state_callback is not None:
             state_callback(
                 _candidate_state(
@@ -717,14 +700,7 @@ def _run_single_benchmark(
             last_loss=last_loss,
             error_message=str(exc),
         )
-        LOGGER.warning(
-            kv_message(
-                "Benchmark worker crash",
-                chunk_length=chunk_length,
-                batch_size=batch_size,
-                error=str(exc),
-            )
-        )
+        LOGGER.warning(event_message("BENCH", "WORKER_CRASH", chunk_length=chunk_length, batch_size=batch_size, error=str(exc)))
         if state_callback is not None:
             state_callback(
                 _candidate_state(
@@ -813,8 +789,9 @@ def benchmark_world_model(
     csv_path = run_paths.artifacts_dir / "benchmark_results.csv"
     state_path = run_paths.artifacts_dir / "benchmark_state.json"
     LOGGER.info(
-        kv_message(
-            "Initialize benchmark",
+        event_message(
+            "BENCH",
+            "INIT",
             run_name=cfg.run_name,
             device=cfg.training.device,
             candidates=len(cfg.chunk_lengths) * len(cfg.batch_sizes),
@@ -823,13 +800,13 @@ def benchmark_world_model(
             compile_model=cfg.training.compile_model,
         )
     )
-    LOGGER.info(kv_message("Dataset paths", paths=cfg.data.dataset_paths))
+    LOGGER.info(event_message("BENCH", "DATASET_PATHS", paths=cfg.data.dataset_paths))
     _write_json(config_path, asdict(cfg))
 
     results: list[WorldModelBenchmarkResult] = []
     obs_shape: tuple[int, int, int] | None = None
     total_candidates = len(cfg.chunk_lengths) * len(cfg.batch_sizes)
-    LOGGER.info(kv_message("Build shared dataset index"))
+    LOGGER.info(event_message("BENCH", "INDEX_BUILD"))
     _persist_results(
         cfg=cfg,
         run_paths=run_paths,
@@ -898,8 +875,9 @@ def benchmark_world_model(
             for batch_size in cfg.batch_sizes:
                 candidate_index += 1
                 LOGGER.info(
-                    kv_message(
-                        "Benchmark candidate",
+                    event_message(
+                        "BENCH",
+                        "CANDIDATE",
                         candidate_index=candidate_index,
                         total_candidates=total_candidates,
                         chunk_length=chunk_length,
@@ -959,8 +937,9 @@ def benchmark_world_model(
 
     ok_results = [result for result in results if result.status == "ok"]
     LOGGER.info(
-        kv_message(
-            "Finish benchmark sweep",
+        event_message(
+            "BENCH",
+            "SWEEP_DONE",
             successful=len(ok_results),
             total=len(results),
             results_json=json_path,

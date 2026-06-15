@@ -12,7 +12,7 @@ import torch
 from rich.progress import BarColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn
 from rich.table import Table
 
-from src.utils.common_logging import add_file_handler, build_progress, get_console, get_logger, kv_message
+from src.utils.common_logging import add_file_handler, build_progress, event_message, get_console, get_logger
 from src.world_model.config import WorldModelDataConfig
 from src.world_model.contracts import WorldModelSequenceConfig
 from src.world_model.data import (
@@ -151,7 +151,7 @@ def _mean_or_none(values: list[float]) -> float | None:
 
 def _separator(label: str) -> None:
     LOGGER.info("=" * 104)
-    LOGGER.info(f"{label}")
+    LOGGER.info(event_message("PROBE", label))
     LOGGER.info("=" * 104)
 
 
@@ -353,14 +353,15 @@ def _run_single_probe(
     try:
         _separator(f"START {candidate_label}")
         if chunk_entry is None:
-            LOGGER.info(kv_message("Build chunk dataset", chunk_length=chunk_length))
+            LOGGER.info(event_message("PROBE", "CHUNK_BUILD", chunk_length=chunk_length))
             chunk_cfg = replace(cfg.data, chunk_length=chunk_length)
             chunk_build_start = time.perf_counter()
             chunk_entry = _build_chunk_dataset_entry(indexed, chunk_cfg)
             chunk_build_ms = (time.perf_counter() - chunk_build_start) * 1000.0
             LOGGER.info(
-                kv_message(
-                    "Built chunk dataset",
+                event_message(
+                    "PROBE",
+                    "CHUNK_READY",
                     chunk_length=chunk_length,
                     train_windows=len(chunk_entry.train_dataset),
                     val_windows=len(chunk_entry.val_dataset),
@@ -369,7 +370,7 @@ def _run_single_probe(
                 )
             )
         else:
-            LOGGER.info(kv_message("Reuse chunk dataset", chunk_length=chunk_length))
+            LOGGER.info(event_message("PROBE", "CHUNK_REUSE", chunk_length=chunk_length))
 
         loader_build_start = time.perf_counter()
         loader = build_dataloader(
@@ -384,8 +385,9 @@ def _run_single_probe(
         )
         loader_build_ms = (time.perf_counter() - loader_build_start) * 1000.0
         LOGGER.info(
-            kv_message(
-                "Start loader probe",
+            event_message(
+                "PROBE",
+                "START",
                 candidate=candidate_label,
                 persistent_workers=persistent_workers,
                 prefetch_factor=prefetch_factor,
@@ -427,10 +429,10 @@ def _run_single_probe(
                 if batch_index == 0:
                     first_batch_seconds = batch_total_ms / 1000.0
                 LOGGER.info(
-                    kv_message(
-                        "Probe batch",
+                    event_message(
+                        "PROBE",
+                        "WARMUP_BATCH",
                         candidate=candidate_label,
-                        phase="warmup",
                         batch=_batch_position(batch_index + 1, cfg.warmup_batches),
                         batch_size=int(batch["obs"].shape[0]),
                         fetch_ms=fetch_ms,
@@ -456,10 +458,10 @@ def _run_single_probe(
             warmup_total_ms_values.append(batch_total_ms)
             first_batch_seconds = batch_total_ms / 1000.0
             LOGGER.info(
-                kv_message(
-                    "Probe batch",
+                event_message(
+                    "PROBE",
+                    "WARMUP_BATCH",
                     candidate=candidate_label,
-                    phase="warmup",
                     batch=_batch_position(1, 1),
                     batch_size=int(batch["obs"].shape[0]),
                     fetch_ms=fetch_ms,
@@ -500,10 +502,10 @@ def _run_single_probe(
             measure_total_ms_values.append(batch_total_ms)
             measured_samples += int(batch["obs"].shape[0])
             LOGGER.info(
-                kv_message(
-                    "Probe batch",
+                event_message(
+                    "PROBE",
+                    "MEASURE_BATCH",
                     candidate=candidate_label,
-                    phase="measure",
                     batch=_batch_position(batch_index + 1, cfg.measure_batches),
                     batch_size=int(batch["obs"].shape[0]),
                     fetch_ms=fetch_ms,
@@ -543,8 +545,9 @@ def _run_single_probe(
             avg_measure_batch_total_ms=_mean_or_none(measure_total_ms_values),
         )
         LOGGER.info(
-            kv_message(
-                "Finish loader probe",
+            event_message(
+                "PROBE",
+                "DONE",
                 candidate=candidate_label,
                 status="ok",
                 samples_per_second=result.samples_per_second or 0.0,
@@ -616,21 +619,23 @@ def probe_world_model_loader(
     config_path.write_text(json.dumps(asdict(cfg), indent=2), encoding="utf-8")
 
     LOGGER.info(
-        kv_message(
-            "Init loader probe",
+        event_message(
+            "PROBE",
+            "INIT",
             run_name=cfg.run_name,
             device=cfg.device,
             candidates=_candidate_count(cfg),
             move_to_device=cfg.move_to_device,
         )
     )
-    LOGGER.info(kv_message("Dataset paths", paths=cfg.data.dataset_paths))
-    LOGGER.info(kv_message("Build shared index"))
+    LOGGER.info(event_message("PROBE", "DATASET_PATHS", paths=cfg.data.dataset_paths))
+    LOGGER.info(event_message("PROBE", "INDEX_BUILD"))
     index_build_start = time.perf_counter()
     indexed = build_index(cfg.data.dataset_paths)
     LOGGER.info(
-        kv_message(
-            "Built shared index",
+        event_message(
+            "PROBE",
+            "INDEX_READY",
             transitions=len(indexed.transitions),
             episodes=len(indexed.episodes),
             shards=len(indexed.shards),

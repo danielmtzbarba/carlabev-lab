@@ -92,6 +92,13 @@ def kv_message(message: str, /, **kwargs: Any) -> str:
     return f"{message} | {serialized}"
 
 
+def event_message(stage: str, phase: str | None = None, /, **kwargs: Any) -> str:
+    stage_label = stage.upper()
+    phase_label = "-" if phase is None else phase.upper()
+    serialized = "-" if not kwargs else " ".join(f"{key}={_format_value(value)}" for key, value in kwargs.items())
+    return f"{stage_label} - {phase_label} | {serialized}"
+
+
 def _format_value(value: Any) -> str:
     if isinstance(value, Path):
         return str(value)

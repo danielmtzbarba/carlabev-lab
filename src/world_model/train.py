@@ -10,7 +10,7 @@ import torch
 from rich.progress import BarColumn, Progress, TextColumn, TimeElapsedColumn, TimeRemainingColumn
 from torch import nn
 
-from src.utils.common_logging import add_file_handler, build_progress, get_logger, kv_message
+from src.utils.common_logging import add_file_handler, build_progress, event_message, get_logger
 from src.world_model.config import WorldModelConfig
 from src.world_model.contracts import WorldModelSequenceConfig
 from src.world_model.data import WorldModelDataArtifacts, build_world_model_data
@@ -111,9 +111,9 @@ def _epoch_loop(
         ):
             recent_slice = slice(max(0, len(step_times) - cfg.training.timing_log_interval), len(step_times))
             LOGGER.info(
-                kv_message(
-                    "Batch timing",
-                    phase="train" if train_mode else "val",
+                event_message(
+                    "TRAIN",
+                    "BATCH_TIMING" if train_mode else "VAL_BATCH_TIMING",
                     batch=f"{batch_index + 1}/{len(loader)}",
                     fetch_ms=mean(fetch_times[recent_slice]) * 1000.0,
                     transfer_ms=mean(transfer_times[recent_slice]) * 1000.0,
@@ -180,8 +180,9 @@ def train_world_model(
     run_paths.ensure_dirs()
     add_file_handler(run_paths.run_dir / "train_world_model.log")
     LOGGER.info(
-        kv_message(
-            "Init training",
+        event_message(
+            "TRAIN",
+            "INIT",
             run_name=cfg.run_name,
             device=cfg.training.device,
             epochs=cfg.training.epochs,
@@ -191,7 +192,7 @@ def train_world_model(
             timing_log_interval=cfg.training.timing_log_interval,
         )
     )
-    LOGGER.info(kv_message("Validate datasets", paths=cfg.data.dataset_paths))
+    LOGGER.info(event_message("TRAIN", "VALIDATE_DATASETS", paths=cfg.data.dataset_paths))
     validation_report = validate_datasets(
         cfg.data.dataset_paths,
         cfg=WorldModelSequenceConfig(
@@ -223,8 +224,9 @@ def train_world_model(
     )
 
     LOGGER.info(
-        kv_message(
-            "Build datasets",
+        event_message(
+            "TRAIN",
+            "BUILD_DATASETS",
             num_workers=cfg.data.num_workers,
             pin_memory=cfg.data.pin_memory,
             persistent_workers=cfg.data.persistent_workers,
@@ -232,7 +234,7 @@ def train_world_model(
         )
     )
     data_artifacts = build_world_model_data(cfg.data, device=cfg.training.device)
-    LOGGER.info(kv_message("Build model"))
+    LOGGER.info(event_message("TRAIN", "BUILD_MODEL"))
     artifacts = build_world_model(
         cfg,
         obs_shape=data_artifacts.obs_shape,
@@ -248,8 +250,9 @@ def train_world_model(
     history: list[dict[str, float | int]] = []
     train_steps = 0
     LOGGER.info(
-        kv_message(
-            "Start optimization",
+        event_message(
+            "TRAIN",
+            "OPTIMIZE_START",
             train_batches=len(data_artifacts.train_loader),
             val_batches=len(data_artifacts.val_loader),
         )
@@ -284,7 +287,7 @@ def train_world_model(
         )
 
         for epoch in range(1, cfg.training.epochs + 1):
-            LOGGER.info(kv_message("Start epoch", epoch=epoch, total_epochs=cfg.training.epochs))
+            LOGGER.info(event_message("TRAIN", "EPOCH_START", epoch=epoch, total_epochs=cfg.training.epochs))
             progress.update(
                 train_task_id,
                 description=f"Train epoch {epoch}/{cfg.training.epochs}",
@@ -363,8 +366,9 @@ def train_world_model(
                 loss=f"train={train_metrics['loss']:.4f} val={val_metrics['loss']:.4f}",
             )
             LOGGER.info(
-                kv_message(
-                    "Epoch complete",
+                event_message(
+                    "TRAIN",
+                    "EPOCH_DONE",
                     epoch=f"{epoch}/{cfg.training.epochs}",
                     train_loss=train_metrics["loss"],
                     val_loss=val_metrics["loss"],
@@ -390,8 +394,9 @@ def train_world_model(
         encoding="utf-8",
     )
     LOGGER.info(
-        kv_message(
-            "Finish training",
+        event_message(
+            "TRAIN",
+            "DONE",
             best_val_loss=best_val_loss,
             final_train_loss=final_train_loss,
             final_val_loss=final_val_loss,
