@@ -166,6 +166,34 @@ def test_world_model_train_cli_supports_exp_subcommand(monkeypatch):
     assert cfg.training.device == "cuda"
 
 
+@pytest.mark.unit
+def test_ensure_tmp_prepared_dataset_caches_builds_missing_cache(monkeypatch):
+    import src.world_model.train as train_mod
+
+    calls: list[str] = []
+    monkeypatch.setattr(train_mod, "is_tmp_dataset_path", lambda path: path == "/tmp/demo")
+    monkeypatch.setattr(train_mod, "has_complete_prepared_shard_cache", lambda _path: False)
+    monkeypatch.setattr(train_mod, "prepare_dataset_shard_cache", lambda path: calls.append(path))
+
+    train_mod._ensure_tmp_prepared_dataset_caches(["/tmp/demo", "/data/horse/ws/demo"])
+
+    assert calls == ["/tmp/demo"]
+
+
+@pytest.mark.unit
+def test_ensure_tmp_prepared_dataset_caches_skips_ready_cache(monkeypatch):
+    import src.world_model.train as train_mod
+
+    calls: list[str] = []
+    monkeypatch.setattr(train_mod, "is_tmp_dataset_path", lambda _path: True)
+    monkeypatch.setattr(train_mod, "has_complete_prepared_shard_cache", lambda _path: True)
+    monkeypatch.setattr(train_mod, "prepare_dataset_shard_cache", lambda path: calls.append(path))
+
+    train_mod._ensure_tmp_prepared_dataset_caches(["/tmp/demo"])
+
+    assert calls == []
+
+
 @pytest.mark.integration
 def test_train_world_model_records_study_results_in_sqlite(monkeypatch, tiny_cfg, tmp_workdir):
     output_dir = _collect_train_dataset(monkeypatch, tiny_cfg, tmp_workdir, total_transitions=8)

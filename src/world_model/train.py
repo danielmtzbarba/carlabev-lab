@@ -18,6 +18,7 @@ from src.world_model.factory import WorldModelArtifacts, build_world_model
 from src.world_model.results_db import record_world_model_study_run
 from src.world_model.runtime import build_grad_scaler, maybe_compile_model, run_world_model_step
 from src.world_model.run_paths import WorldModelRunPaths
+from src.world_model.staging import has_complete_prepared_shard_cache, is_tmp_dataset_path, prepare_dataset_shard_cache
 from src.world_model.validate import validate_datasets
 
 LOGGER = get_logger("world_model.train")
@@ -53,6 +54,17 @@ def _to_device(batch: dict[str, Any], device: torch.device) -> dict[str, Any]:
 def _batch_position(index: int, total: int) -> str:
     width = max(2, len(str(max(total, 1))))
     return f"{index:0{width}d}/{total:0{width}d}"
+
+
+def _ensure_tmp_prepared_dataset_caches(dataset_paths: list[str]) -> None:
+    for dataset_path in dataset_paths:
+        if not is_tmp_dataset_path(dataset_path):
+            continue
+        if has_complete_prepared_shard_cache(dataset_path):
+            LOGGER.info(event_message("TRAIN", "PREPARED_CACHE_READY", dataset_path=dataset_path))
+            continue
+        LOGGER.info(event_message("TRAIN", "PREPARED_CACHE_BUILD", dataset_path=dataset_path))
+        prepare_dataset_shard_cache(dataset_path)
 
 
 def _epoch_loop(
@@ -193,6 +205,7 @@ def train_world_model(
             timing_log_interval=cfg.training.timing_log_interval,
         )
     )
+    _ensure_tmp_prepared_dataset_caches(cfg.data.dataset_paths)
     LOGGER.info(event_message("TRAIN", "VALIDATE_DATASETS", paths=cfg.data.dataset_paths))
     validation_report = validate_datasets(
         cfg.data.dataset_paths,

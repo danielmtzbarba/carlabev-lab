@@ -3,12 +3,13 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
 from src.utils.common_logging import event_message, get_logger
 from src.utils.storage_paths import resolve_artifact_path
-from src.world_model.data import prepare_shard_cache
+from src.world_model.data import PREPARED_SHARDS_DIRNAME, REQUIRED_ARRAYS, prepare_shard_cache
 
 LOGGER = get_logger("world_model.staging")
 
@@ -72,6 +73,42 @@ def _dataset_size_bytes(dataset_dir: Path) -> int:
         if path.is_file():
             total += path.stat().st_size
     return total
+
+
+def _prepared_shard_complete(dataset_dir: Path, shard_name: str) -> bool:
+    prepared_dir = dataset_dir / ".wm_cache" / PREPARED_SHARDS_DIRNAME / Path(shard_name).stem
+    manifest_path = prepared_dir / "manifest.json"
+    if not manifest_path.exists():
+        return False
+    return all((prepared_dir / f"{array_name}.npy").exists() for array_name in REQUIRED_ARRAYS)
+
+
+def has_complete_prepared_shard_cache(path: str | Path) -> bool:
+    dataset_dir = _coerce_dataset_dir(path)
+    summary = _load_summary(dataset_dir)
+    shards = summary.get("shards", [])
+    if not shards:
+        return False
+    return all(_prepared_shard_complete(dataset_dir, Path(str(shard_meta["path"])).name) for shard_meta in shards)
+
+
+def is_tmp_dataset_path(path: str | Path) -> bool:
+    dataset_dir = _coerce_dataset_dir(path)
+    resolved = dataset_dir.resolve()
+    tmp_root = Path(tempfile.gettempdir()).resolve()
+    try:
+        resolved.relative_to(tmp_root)
+        return True
+    except ValueError:
+        pass
+    tmpdir_env = os.environ.get("TMPDIR")
+    if tmpdir_env:
+        try:
+            resolved.relative_to(Path(tmpdir_env).expanduser().resolve())
+            return True
+        except ValueError:
+            pass
+    return False
 
 
 def prepare_dataset_shard_cache(path: str | Path) -> PreparedDatasetResult:
