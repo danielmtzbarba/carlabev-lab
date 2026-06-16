@@ -62,6 +62,11 @@ class WorldModelTrainLoopConfig:
 @dataclass
 class WorldModelConfig:
     run_name: str = "lewm-phase1"
+    study_id: str | None = None
+    exp_id: int | None = None
+    seed: int | None = None
+    experiment_name: str | None = None
+    results_db_path: str | None = None
     data: WorldModelDataConfig = field(default_factory=WorldModelDataConfig)
     model: WorldModelModelConfig = field(default_factory=WorldModelModelConfig)
     optimizer: WorldModelOptimizerConfig = field(default_factory=WorldModelOptimizerConfig)

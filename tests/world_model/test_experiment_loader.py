@@ -32,6 +32,7 @@ def test_build_world_model_train_config_from_experiment_uses_difficulty_preset()
     assert cfg.training.amp is True
     assert cfg.training.amp_dtype == "bfloat16"
     assert cfg.training.epochs == 5
+    assert cfg.results_db_path is None
 
 
 @pytest.mark.unit
@@ -90,6 +91,8 @@ def test_build_world_model_train_config_from_world_model_study_supports_mixed_so
     assert cfg.data.pin_memory is True
     assert cfg.training.device == "cuda"
     assert cfg.training.epochs == 5
+    assert cfg.experiment_name == "WM_DATA_PPO_EASY_RANDOM"
+    assert cfg.results_db_path == "results/world_model/wm_data_phase1_runs.db"
 
 
 @pytest.mark.unit

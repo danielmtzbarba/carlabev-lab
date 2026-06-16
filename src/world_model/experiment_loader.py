@@ -8,6 +8,7 @@ from src.config.base_config import ArgsCarlaBEV, to_carlabev_run_config
 from src.config.experiment_loader import apply_experiment_config
 from src.world_model.collector import default_output_dir
 from src.world_model.config import WorldModelConfig
+from src.world_model.results_db import default_world_model_results_db_path
 
 
 @dataclass(frozen=True)
@@ -309,6 +310,7 @@ def _build_from_legacy_source_study(args: WorldModelTrainExperimentArgs) -> Worl
         run_name=args.run_name
         or _default_run_name(study_id=args.study_id, exp_id=args.exp_id, seed=args.seed, experiment_name=dataset_name),
     )
+    world_cfg.experiment_name = dataset_name
     return world_cfg
 
 
@@ -366,6 +368,8 @@ def _build_from_world_model_study(args: WorldModelTrainExperimentArgs) -> WorldM
             experiment_name=experiment.name,
         ),
     )
+    world_cfg.experiment_name = experiment.name
+    world_cfg.results_db_path = default_world_model_results_db_path(args.study_id)
     return world_cfg
 
 
@@ -384,6 +388,9 @@ def _apply_shared_overrides(
     run_name: str,
 ) -> WorldModelConfig:
     world_cfg = WorldModelConfig(run_name=run_name)
+    world_cfg.study_id = args.study_id
+    world_cfg.exp_id = args.exp_id
+    world_cfg.seed = args.seed
     world_cfg.data.dataset_paths = resolved_dataset_paths
     world_cfg.data.batch_size = args.batch_size if args.batch_size is not None else preset.batch_size
     world_cfg.data.chunk_length = args.chunk_length if args.chunk_length is not None else preset.chunk_length

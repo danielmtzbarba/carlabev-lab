@@ -13,7 +13,9 @@ from src.utils.common_logging import add_file_handler, event_message, get_logger
 from src.world_model.config import WorldModelConfig
 from src.world_model.contracts import WorldModelSequenceConfig
 from src.world_model.data import WorldModelDataArtifacts, build_world_model_data
+from src.world_model.evaluate import WorldModelCheckpointEvalConfig, evaluate_world_model_checkpoint
 from src.world_model.factory import WorldModelArtifacts, build_world_model
+from src.world_model.results_db import record_world_model_study_run
 from src.world_model.runtime import build_grad_scaler, maybe_compile_model, run_world_model_step
 from src.world_model.run_paths import WorldModelRunPaths
 from src.world_model.validate import validate_datasets
@@ -364,7 +366,7 @@ def train_world_model(
         )
     )
 
-    return TrainWorldModelResult(
+    result = TrainWorldModelResult(
         run_dir=str(run_paths.run_dir),
         checkpoint_path=str(run_paths.checkpoints_dir / "world_model_final.pt"),
         best_checkpoint_path=str(run_paths.checkpoints_dir / "world_model_best.pt"),
@@ -374,3 +376,27 @@ def train_world_model(
         final_train_loss=float(final_train_loss),
         final_val_loss=float(final_val_loss),
     )
+    if cfg.results_db_path and cfg.study_id is not None and cfg.exp_id is not None:
+        LOGGER.info(event_message("TRAIN", "STUDY_EVAL_START", checkpoint=result.best_checkpoint_path))
+        eval_result = evaluate_world_model_checkpoint(
+            WorldModelCheckpointEvalConfig(
+                checkpoint_path=result.best_checkpoint_path,
+                dataset_paths=list(cfg.data.dataset_paths),
+                device=cfg.training.device,
+                batch_size=cfg.data.batch_size,
+                include_train_split=True,
+                output_path=str(run_paths.artifacts_dir / "eval_checkpoint.json"),
+            )
+        )
+        db_path = record_world_model_study_run(
+            db_path=cfg.results_db_path,
+            study_id=cfg.study_id,
+            exp_id=cfg.exp_id,
+            seed=cfg.seed,
+            experiment_name=cfg.experiment_name,
+            run_name=cfg.run_name,
+            train_result=result,
+            eval_result=eval_result,
+        )
+        LOGGER.info(event_message("TRAIN", "STUDY_DB_WRITE", db_path=str(db_path)))
+    return result
