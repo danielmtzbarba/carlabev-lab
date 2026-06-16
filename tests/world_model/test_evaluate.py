@@ -72,8 +72,16 @@ def test_evaluate_world_model_checkpoint_smoke(monkeypatch, tiny_cfg, tmp_workdi
     assert result.val_metrics.loss >= 0.0
     assert result.val_metrics.pred_loss >= 0.0
     assert result.val_metrics.reg_loss >= 0.0
+    assert -1.0 <= result.val_metrics.cosine_similarity <= 1.0
+    assert result.val_metrics.latent_rmse >= 0.0
+    assert 0.0 <= result.val_metrics.top1_retrieval <= 1.0
+    assert 0.0 <= result.val_metrics.top5_retrieval <= 1.0
+    assert "action_0" in result.val_metrics.action_metrics
+    assert "straight" in result.val_metrics.route_metrics
     assert result.train_metrics is not None
     assert result.train_metrics.loss >= 0.0
     assert Path(result.output_path).exists()
     payload = json.loads(Path(result.output_path).read_text(encoding="utf-8"))
     assert payload["checkpoint_path"].endswith("world_model_best.pt")
+    assert "cosine_similarity" in payload["val_metrics"]
+    assert "action_metrics" in payload["val_metrics"]

@@ -410,6 +410,9 @@ def _row_to_transition_sample(arrays: dict[str, np.ndarray], ref: TransitionRef)
         "done": torch.tensor(bool(arrays["dones"][idx]), dtype=torch.bool),
         "terminated": torch.tensor(bool(arrays["terminated"][idx]), dtype=torch.bool),
         "truncated": torch.tensor(bool(arrays["truncated"][idx]), dtype=torch.bool),
+        "straight_fraction": torch.tensor(float(arrays["straight_fraction"][idx]), dtype=torch.float32),
+        "left_turn_fraction": torch.tensor(float(arrays["left_turn_fraction"][idx]), dtype=torch.float32),
+        "right_turn_fraction": torch.tensor(float(arrays["right_turn_fraction"][idx]), dtype=torch.float32),
         "metadata": {
             "episode_key": ref.episode_key,
             "step_in_episode": ref.step_in_episode,
@@ -693,6 +696,9 @@ class WorldModelSequenceDataset(Dataset):
         done_seq = []
         terminated_seq = []
         truncated_seq = []
+        straight_fraction_seq = []
+        left_turn_fraction_seq = []
+        right_turn_fraction_seq = []
         for ref in refs:
             arrays = self.cache.get(ref.shard_path)
             row = _row_to_transition_sample(arrays, ref)
@@ -703,6 +709,9 @@ class WorldModelSequenceDataset(Dataset):
             done_seq.append(row["done"])
             terminated_seq.append(row["terminated"])
             truncated_seq.append(row["truncated"])
+            straight_fraction_seq.append(row["straight_fraction"])
+            left_turn_fraction_seq.append(row["left_turn_fraction"])
+            right_turn_fraction_seq.append(row["right_turn_fraction"])
 
         payload: dict[str, Any] = {
             "obs": torch.stack(obs_seq, dim=0),
@@ -712,6 +721,9 @@ class WorldModelSequenceDataset(Dataset):
             "done": torch.stack(done_seq, dim=0),
             "terminated": torch.stack(terminated_seq, dim=0),
             "truncated": torch.stack(truncated_seq, dim=0),
+            "straight_fraction": torch.stack(straight_fraction_seq, dim=0),
+            "left_turn_fraction": torch.stack(left_turn_fraction_seq, dim=0),
+            "right_turn_fraction": torch.stack(right_turn_fraction_seq, dim=0),
             "mask": torch.ones((len(refs),), dtype=torch.bool),
         }
         if self.include_metadata:
@@ -721,6 +733,9 @@ class WorldModelSequenceDataset(Dataset):
                 "route_signatures": [ref.route_signature for ref in refs],
                 "scene_signatures": [ref.scene_signature for ref in refs],
                 "step_in_episode": [ref.step_in_episode for ref in refs],
+                "straight_fraction": [float(value) for value in payload["straight_fraction"].tolist()],
+                "left_turn_fraction": [float(value) for value in payload["left_turn_fraction"].tolist()],
+                "right_turn_fraction": [float(value) for value in payload["right_turn_fraction"].tolist()],
             }
         return payload
 
