@@ -1,4 +1,13 @@
-# Medium Scene Visual Assets
+# Docs Index
+
+## World Model
+
+- [world-model.md](/Users/danielmtz/Data/projects/reinforcement/carlabev-lab/docs/world-model.md)
+  - LeWM PoC workflow, dataset format, collection, validation, training, and checkpoint evaluation
+- [world-model-hpc.md](/Users/danielmtz/Data/projects/reinforcement/carlabev-lab/docs/world-model-hpc.md)
+  - staging, prepared shard cache, loader probe, benchmarking, and H100 notes
+
+## Medium Scene Visual Assets
 
 These assets were generated from a representative `rt_medium_v1` simulator scene with visible vehicles. They are intended to support the medium-difficulty report set:
 

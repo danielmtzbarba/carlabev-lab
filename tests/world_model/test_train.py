@@ -8,6 +8,7 @@ import pytest
 
 from tests.conftest import FakeVectorEnv
 
+import src.carlabev_lab.world_model.train as train_cli_mod
 from src.world_model.collector import collect_dataset
 from src.world_model.config import (
     WorldModelConfig,
@@ -124,3 +125,40 @@ def test_train_world_model_smoke(monkeypatch, tiny_cfg, tmp_workdir):
     assert "val_avg_fetch_ms" in history[0]
     assert "val_avg_transfer_ms" in history[0]
     assert "val_avg_step_ms" in history[0]
+
+
+@pytest.mark.unit
+def test_world_model_train_cli_supports_exp_subcommand(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_train_world_model(cfg, *, show_progress=True):
+        captured["cfg"] = cfg
+        captured["show_progress"] = show_progress
+        return SimpleNamespace(
+            run_dir="runs/world_model/demo",
+            best_checkpoint_path="runs/world_model/demo/checkpoints/world_model_best.pt",
+            final_train_loss=0.1,
+            final_val_loss=0.2,
+        )
+
+    monkeypatch.setattr(train_cli_mod, "train_world_model", fake_train_world_model)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "src.carlabev_lab.world_model.train",
+            "exp",
+            "--study-id",
+            "PPO_NAVIGATION_DIFFICULTY",
+            "--exp-id",
+            "1",
+            "--seed",
+            "2",
+        ],
+    )
+
+    train_cli_mod.main()
+
+    cfg = captured["cfg"]
+    assert cfg.data.batch_size == 32
+    assert cfg.data.chunk_length == 4
+    assert cfg.training.device == "cuda"
