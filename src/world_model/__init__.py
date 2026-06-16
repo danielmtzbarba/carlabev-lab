@@ -16,6 +16,12 @@ from .data import (
     build_transition_datasets,
     build_world_model_data,
 )
+from .evaluate import (
+    WorldModelCheckpointEvalConfig,
+    WorldModelCheckpointEvalResult,
+    WorldModelEvalMetrics,
+    evaluate_world_model_checkpoint,
+)
 from .factory import WorldModelArtifacts, build_world_model
 from .model import LeWorldModel
 from .probe_loader import (
@@ -30,7 +36,10 @@ from .validate import validate_datasets
 
 __all__ = [
     "LeWorldModel",
+    "WorldModelCheckpointEvalConfig",
+    "WorldModelCheckpointEvalResult",
     "TrainWorldModelResult",
+    "WorldModelEvalMetrics",
     "WorldModelArtifacts",
     "WorldModelConfig",
     "WorldModelDataArtifacts",
@@ -51,6 +60,7 @@ __all__ = [
     "build_world_model",
     "build_world_model_data",
     "collect_dataset",
+    "evaluate_world_model_checkpoint",
     "probe_world_model_loader",
     "train_world_model",
     "validate_datasets",

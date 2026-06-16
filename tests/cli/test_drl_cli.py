@@ -212,6 +212,24 @@ def test_main_dispatches_world_model_train_command(monkeypatch):
 
 
 @pytest.mark.unit
+def test_main_dispatches_world_model_eval_checkpoint_command(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_eval_checkpoint(argv):
+        captured["argv"] = list(argv)
+        return "evaluated-wm"
+
+    monkeypatch.setattr(drl_cli, "run_world_model_eval_checkpoint_command", fake_eval_checkpoint)
+
+    result = drl_cli.main(
+        ["world-model", "eval-checkpoint", "--checkpoint-path", "runs/world_model/demo/checkpoints/world_model_best.pt"]
+    )
+
+    assert result == "evaluated-wm"
+    assert captured["argv"] == ["--checkpoint-path", "runs/world_model/demo/checkpoints/world_model_best.pt"]
+
+
+@pytest.mark.unit
 def test_main_dispatches_world_model_validate_command(monkeypatch):
     captured: dict[str, object] = {}
 
