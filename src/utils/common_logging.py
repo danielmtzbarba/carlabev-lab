@@ -81,17 +81,16 @@ def kv_message(message: str, /, **kwargs: Any) -> str:
 
 
 def event_message(stage: str, phase: str | None = None, /, **kwargs: Any) -> str:
-    stage_label = stage.upper()
+    del stage
     phase_label = "-" if phase is None else phase.upper()
     serialized = "-" if not kwargs else " ".join(f"{key}={_format_value(value)}" for key, value in kwargs.items())
-    return f"{stage_label} - {phase_label} | {serialized}"
+    return f"{phase_label} | {serialized}"
 
 
 def _colorize_stage_phase(stage_phase: str, *, color: bool) -> str:
-    if not color or " - " not in stage_phase:
+    if not color:
         return stage_phase
-    stage, phase = stage_phase.split(" - ", 1)
-    return f"\033[94m{stage}\033[0m \033[90m-\033[0m \033[97m{phase}\033[0m"
+    return f"\033[93m{stage_phase}\033[0m"
 
 
 def _colorize_payload(payload: str, *, color: bool) -> str:
@@ -105,8 +104,12 @@ def _colorize_payload(payload: str, *, color: bool) -> str:
             tokens.append(token)
             continue
         key, value = token.split("=", 1)
-        tokens.append(f"\033[94m{key}\033[0m=\033[97m{value}\033[0m")
+        tokens.append(f"\033[92m{key}\033[0m=\033[97m{value}\033[0m")
     return " ".join(tokens)
+
+
+def _escape_loguru_braces(text: str) -> str:
+    return text.replace("{", "{{").replace("}", "}}")
 
 
 def _render_message(record: dict[str, Any], *, color: bool) -> str:
@@ -117,8 +120,8 @@ def _render_message(record: dict[str, Any], *, color: bool) -> str:
 
     timestamp = record["time"].strftime("%H:%M:%S")
     if color:
-        timestamp = f"\033[92m{timestamp}\033[0m"
-    message = record["message"]
+        timestamp = f"\033[97m{timestamp}\033[0m"
+    message = _escape_loguru_braces(record["message"])
     parts = message.split(" | ", 1)
     sep = "\033[90m|\033[0m" if color else "|"
     if len(parts) == 1:
