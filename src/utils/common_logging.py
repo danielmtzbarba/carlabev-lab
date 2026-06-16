@@ -6,12 +6,13 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from loguru import logger as _loguru_logger
 from rich.console import Console
 from rich.progress import Progress
 
-_FORMAT = "[%(levelname)s] %(asctime)s | %(message)s"
-_DATEFMT = "%H:%M:%S"
 _CONFIGURED = False
+_CONSOLE: Console | None = None
+_FILE_SINKS: set[Path] = set()
 
 
 def _env_flag(name: str) -> bool:
@@ -30,171 +31,46 @@ def _stream_supports_color() -> bool:
 
 
 def _build_console() -> Console:
+    color_enabled = _stream_supports_color()
     return Console(
         stderr=False,
         soft_wrap=True,
-        force_terminal=_stream_supports_color(),
-        no_color=not _stream_supports_color(),
+        force_terminal=color_enabled,
+        no_color=not color_enabled,
     )
 
 
-_CONSOLE = _build_console()
-
-
-class _ColorFormatter(logging.Formatter):
-    _RESET = "\033[0m"
-    _DIM = "\033[2m"
-    _LEVEL_COLORS = {
-        logging.DEBUG: "\033[33m",
-        logging.INFO: "\033[34m",
-        logging.WARNING: "\033[33m",
-        logging.ERROR: "\033[31m",
-        logging.CRITICAL: "\033[1;37;41m",
-    }
-    _STAGE_COLOR = "\033[36m"
-    _PHASE_COLOR = "\033[35m"
-    _KEY_COLOR = "\033[94m"
-    _VALUE_COLOR = "\033[92m"
-    _SEPARATOR_COLOR = "\033[90m"
-
-    def __init__(self, fmt: str, datefmt: str | None = None, *, use_color: bool) -> None:
-        super().__init__(fmt=fmt, datefmt=datefmt)
-        self.use_color = use_color
-
-    def format(self, record: logging.LogRecord) -> str:
-        rendered = super().format(record)
-        if not self.use_color:
-            return rendered
-        rendered = self._color_level_prefix(rendered, record.levelno)
-        return self._color_event_payload(rendered)
-
-    def _color_level_prefix(self, rendered: str, levelno: int) -> str:
-        color = self._LEVEL_COLORS.get(levelno)
-        if color is None:
-            return rendered
-        prefix = f"[{logging.getLevelName(levelno)}]"
-        return rendered.replace(prefix, f"{color}{prefix}{self._RESET}", 1)
-
-    def _color_event_payload(self, rendered: str) -> str:
-        parts = rendered.split(" | ", 2)
-        if len(parts) < 2:
-            return rendered
-        if len(parts) == 2:
-            left, event = parts
-            return f"{left} {self._SEPARATOR_COLOR}|{self._RESET} {self._color_event(event)}"
-        left, event, payload = parts
-        return (
-            f"{left} {self._SEPARATOR_COLOR}|{self._RESET} "
-            f"{self._color_event(event)} {self._SEPARATOR_COLOR}|{self._RESET} "
-            f"{self._color_payload(payload)}"
-        )
-
-    def _color_event(self, event: str) -> str:
-        if " - " not in event:
-            return event
-        stage, phase = event.split(" - ", 1)
-        return f"{self._STAGE_COLOR}{stage}{self._RESET} {self._SEPARATOR_COLOR}-{self._RESET} {self._PHASE_COLOR}{phase}{self._RESET}"
-
-    def _color_payload(self, payload: str) -> str:
-        if payload == "-":
-            return f"{self._DIM}-{self._RESET}"
-        tokens = []
-        for token in payload.split(" "):
-            if "=" not in token:
-                tokens.append(token)
-                continue
-            key, value = token.split("=", 1)
-            tokens.append(f"{self._KEY_COLOR}{key}{self._RESET}={self._VALUE_COLOR}{value}{self._RESET}")
-        return " ".join(tokens)
-
-
-class _LoguruToLogging:
-    def write(self, message: str) -> None:
-        text = message.rstrip()
-        if not text:
-            return
-        logging.getLogger("carlabev_lab.external.loguru").info(text)
-
-    def flush(self) -> None:
-        return None
-
-
-def configure_logging(*, level: int = logging.INFO) -> None:
-    global _CONFIGURED
-    if _CONFIGURED:
-        logging.getLogger().setLevel(level)
-        logging.getLogger("carlabev_lab").setLevel(level)
-        return
-
-    root_logger = logging.getLogger()
-    root_logger.setLevel(level)
-    root_logger.handlers.clear()
-
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setLevel(level)
-    handler.setFormatter(_ColorFormatter(_FORMAT, datefmt=_DATEFMT, use_color=_stream_supports_color()))
-    root_logger.addHandler(handler)
-
-    logger = logging.getLogger("carlabev_lab")
-    logger.setLevel(level)
-    logger.propagate = True
-    logging.getLogger("matplotlib.font_manager").setLevel(logging.WARNING)
-    _configure_loguru_bridge()
-    _CONFIGURED = True
-
-
-def _configure_loguru_bridge() -> None:
+def _shorten_path(path_value: Path) -> str:
+    expanded = path_value.expanduser()
     try:
-        from loguru import logger as loguru_logger
-    except ImportError:
-        return
+        resolved = expanded.resolve(strict=False)
+    except OSError:
+        resolved = expanded
+
+    cwd = Path.cwd()
+    home = Path.home()
     try:
-        loguru_logger.remove()
+        return str(resolved.relative_to(cwd))
     except ValueError:
         pass
-    level_name = logging.getLevelName(logging.getLogger().level)
-    loguru_logger.add(_LoguruToLogging(), level=level_name, colorize=False, format="{message}")
+    try:
+        return f"~/{resolved.relative_to(home)}"
+    except ValueError:
+        return str(resolved)
 
 
-def get_logger(name: str) -> logging.Logger:
-    if not _CONFIGURED:
-        configure_logging()
-    namespace = name if name.startswith("carlabev_lab") else f"carlabev_lab.{name}"
-    return logging.getLogger(namespace)
-
-
-def get_console() -> Console:
-    if not _CONFIGURED:
-        configure_logging()
-    return _CONSOLE
-
-
-def build_progress(*columns: Any, **kwargs: Any) -> Progress:
-    if not _CONFIGURED:
-        configure_logging()
-    return Progress(
-        *columns,
-        console=_CONSOLE,
-        expand=True,
-        redirect_stdout=False,
-        redirect_stderr=False,
-        **kwargs,
-    )
-
-
-def add_file_handler(path: str | Path, *, level: int = logging.INFO) -> None:
-    if not _CONFIGURED:
-        configure_logging(level=level)
-    logger = logging.getLogger("carlabev_lab")
-    resolved = Path(path)
-    resolved.parent.mkdir(parents=True, exist_ok=True)
-    for handler in logger.handlers:
-        if isinstance(handler, logging.FileHandler) and Path(handler.baseFilename) == resolved:
-            return
-    file_handler = logging.FileHandler(resolved, encoding="utf-8")
-    file_handler.setLevel(level)
-    file_handler.setFormatter(logging.Formatter(_FORMAT, datefmt=_DATEFMT))
-    logger.addHandler(file_handler)
+def _format_value(value: Any) -> str:
+    if isinstance(value, Path):
+        return _shorten_path(value)
+    if isinstance(value, float):
+        return f"{value:.3f}"
+    if isinstance(value, (list, tuple, set)):
+        return ",".join(_format_value(item) for item in value)
+    if isinstance(value, str):
+        if value.startswith("/") or value.startswith("~"):
+            return _shorten_path(Path(value))
+        return value
+    return str(value)
 
 
 def kv_message(message: str, /, **kwargs: Any) -> str:
@@ -211,11 +87,131 @@ def event_message(stage: str, phase: str | None = None, /, **kwargs: Any) -> str
     return f"{stage_label} - {phase_label} | {serialized}"
 
 
-def _format_value(value: Any) -> str:
-    if isinstance(value, Path):
-        return str(value)
-    if isinstance(value, float):
-        return f"{value:.3f}"
-    if isinstance(value, (list, tuple, set)):
-        return ",".join(str(item) for item in value)
-    return str(value)
+def _colorize_stage_phase(stage_phase: str, *, color: bool) -> str:
+    if not color or " - " not in stage_phase:
+        return stage_phase
+    stage, phase = stage_phase.split(" - ", 1)
+    return f"\033[36m{stage}\033[0m \033[90m-\033[0m \033[35m{phase}\033[0m"
+
+
+def _colorize_payload(payload: str, *, color: bool) -> str:
+    if not color:
+        return payload
+    if payload == "-":
+        return "\033[2m-\033[0m"
+    tokens: list[str] = []
+    for token in payload.split(" "):
+        if "=" not in token:
+            tokens.append(token)
+            continue
+        key, value = token.split("=", 1)
+        tokens.append(f"\033[94m{key}\033[0m=\033[92m{value}\033[0m")
+    return " ".join(tokens)
+
+
+def _render_message(record: dict[str, Any], *, color: bool) -> str:
+    level_name = record["level"].name
+    level_colors = {
+        "DEBUG": "\033[33m",
+        "INFO": "\033[34m",
+        "WARNING": "\033[33m",
+        "ERROR": "\033[31m",
+        "CRITICAL": "\033[1;37;41m",
+    }
+    prefix = f"[{level_name}]"
+    if color and level_name in level_colors:
+        prefix = f"{level_colors[level_name]}{prefix}\033[0m"
+
+    timestamp = record["time"].strftime("%H:%M:%S")
+    message = record["message"]
+    parts = message.split(" | ", 1)
+    sep = "\033[90m|\033[0m" if color else "|"
+    if len(parts) == 1:
+        return f"{prefix} {timestamp} {sep} {message}\n"
+    stage_phase, payload = parts
+    stage_phase = _colorize_stage_phase(stage_phase, color=color)
+    payload = _colorize_payload(payload, color=color)
+    return f"{prefix} {timestamp} {sep} {stage_phase} {sep} {payload}\n"
+
+
+class _InterceptHandler(logging.Handler):
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            level = _loguru_logger.level(record.levelname).name
+        except ValueError:
+            level = record.levelno
+        message = record.getMessage()
+        _loguru_logger.bind(external_logger=record.name).opt(depth=6, exception=record.exc_info).log(level, message)
+
+
+def _reset_root_logging(level: int) -> None:
+    root_logger = logging.getLogger()
+    root_logger.handlers.clear()
+    root_logger.setLevel(level)
+    root_logger.addHandler(_InterceptHandler())
+    logging.getLogger("matplotlib.font_manager").setLevel(logging.WARNING)
+
+
+def configure_logging(*, level: int = logging.INFO) -> None:
+    global _CONFIGURED, _CONSOLE
+    color_enabled = _stream_supports_color()
+    if _CONFIGURED:
+        _loguru_logger.remove()
+        _FILE_SINKS.clear()
+    _loguru_logger.remove()
+    _FILE_SINKS.clear()
+    _CONSOLE = _build_console()
+    _loguru_logger.add(
+        sys.stdout,
+        level=logging.getLevelName(level),
+        format=lambda record: _render_message(record, color=color_enabled),
+        colorize=False,
+        backtrace=False,
+        diagnose=False,
+    )
+    _reset_root_logging(level)
+    _CONFIGURED = True
+
+
+def get_logger(name: str):
+    if not _CONFIGURED:
+        configure_logging()
+    namespace = name if name.startswith("carlabev_lab") else f"carlabev_lab.{name}"
+    return _loguru_logger.bind(logger_name=namespace)
+
+
+def get_console() -> Console:
+    global _CONSOLE
+    if not _CONFIGURED or _CONSOLE is None:
+        configure_logging()
+    assert _CONSOLE is not None
+    return _CONSOLE
+
+
+def build_progress(*columns: Any, **kwargs: Any) -> Progress:
+    return Progress(
+        *columns,
+        console=get_console(),
+        expand=True,
+        redirect_stdout=False,
+        redirect_stderr=False,
+        **kwargs,
+    )
+
+
+def add_file_handler(path: str | Path, *, level: int = logging.INFO) -> None:
+    if not _CONFIGURED:
+        configure_logging(level=level)
+    resolved = Path(path)
+    resolved.parent.mkdir(parents=True, exist_ok=True)
+    if resolved in _FILE_SINKS:
+        return
+    _loguru_logger.add(
+        resolved,
+        level=logging.getLevelName(level),
+        format=lambda record: _render_message(record, color=False),
+        colorize=False,
+        backtrace=False,
+        diagnose=False,
+    )
+    _FILE_SINKS.add(resolved)

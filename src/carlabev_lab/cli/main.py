@@ -6,6 +6,8 @@ import os
 import sys
 from collections.abc import Sequence
 
+from src.utils.common_logging import configure_logging
+
 USAGE = """Usage:
   drl train exp [ARGS...]
   drl eval exp [ARGS...]
@@ -124,6 +126,7 @@ def run_train_command(argv: Sequence[str]) -> object:
 
 
 def run_eval_command(argv: Sequence[str]) -> dict[str, object]:
+    configure_logging()
     evaluate = _get_evaluate_ppo()
     logger_cls = _get_dr_logger()
     run_paths_cls = _get_run_paths()

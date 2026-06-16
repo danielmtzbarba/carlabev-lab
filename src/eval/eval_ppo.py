@@ -3,16 +3,16 @@ from copy import deepcopy
 
 import numpy as np
 import torch
-from rich.console import Console
-from rich.progress import Progress
-from rich.table import Table
 
 from CarlaBEV.envs import make_env
 from src.agents import build_agent
 from src.config.base_config import to_carlabev_run_config
 from src.config.reset_protocol import build_eval_protocol_samplers
+from src.utils.common_logging import event_message, get_logger
 from src.utils.storage_paths import resolve_artifact_path
 from src.eval.scoring import compute_comfort_score, compute_eval_score
+
+LOGGER = get_logger("eval.ppo")
 
 
 def _initial_reset_seeds(sampler, num_envs: int):
@@ -114,71 +114,83 @@ def _run_eval_protocol(eval_env, agent, cfg_eval, protocol_id, sampler, num_epis
 
     episodes_finished = 0
 
-    with Progress() as progress:
-        task = progress.add_task(f"[green]Evaluating {protocol_id}...", total=num_episodes)
-        while episodes_finished < num_episodes:
-            with torch.no_grad():
-                out = agent.get_action_and_value(obs_t)
-                if agent.is_continuous:
-                    _, action, _, _, _ = out
-                else:
-                    action, _, _, _ = out
+    log_interval = max(1, min(50, num_episodes))
+    LOGGER.info(event_message("EVAL", "PROTOCOL_START", protocol_id=protocol_id, episodes=num_episodes, envs=num_envs))
+    while episodes_finished < num_episodes:
+        with torch.no_grad():
+            out = agent.get_action_and_value(obs_t)
+            if agent.is_continuous:
+                _, action, _, _, _ = out
+            else:
+                action, _, _, _ = out
 
-            next_obs, reward, terminated, truncated, info = eval_env.step(
-                action.cpu().numpy()
-            )
+        next_obs, reward, terminated, truncated, info = eval_env.step(
+            action.cpu().numpy()
+        )
 
-            reward = np.array(reward, dtype=np.float32)
-            terminated = np.array(terminated, dtype=bool)
-            truncated = np.array(truncated, dtype=bool)
-            done = np.logical_or(terminated, truncated)
+        reward = np.array(reward, dtype=np.float32)
+        terminated = np.array(terminated, dtype=bool)
+        truncated = np.array(truncated, dtype=bool)
+        done = np.logical_or(terminated, truncated)
 
-            ep_returns += reward
-            ep_lengths += 1
+        ep_returns += reward
+        ep_lengths += 1
 
-            if render:
-                eval_env.render()
+        if render:
+            eval_env.render()
 
-            ep_info = info["episode_info"] if "episode_info" in info else None
+        ep_info = info["episode_info"] if "episode_info" in info else None
 
-            for i, d in enumerate(done):
-                if not d or episodes_finished >= num_episodes:
-                    continue
+        for i, d in enumerate(done):
+            if not d or episodes_finished >= num_episodes:
+                continue
 
-                cause_i = None
-                if ep_info is not None and "termination" in ep_info:
-                    cause_i = ep_info["termination"][i]
-                if cause_i is None:
-                    cause_i = "unknown"
+            cause_i = None
+            if ep_info is not None and "termination" in ep_info:
+                cause_i = ep_info["termination"][i]
+            if cause_i is None:
+                cause_i = "unknown"
 
-                if cause_i == "success":
-                    success_count += 1
-                elif cause_i == "collision":
-                    collision_count += 1
-                else:
-                    unfinished_count += 1
+            if cause_i == "success":
+                success_count += 1
+            elif cause_i == "collision":
+                collision_count += 1
+            else:
+                unfinished_count += 1
 
-                all_returns.append(float(ep_returns[i]))
-                all_lengths.append(int(ep_lengths[i]))
-                if ep_info is not None:
-                    for key in route_direction_metrics:
-                        route_direction_metrics[key].append(float(ep_info.get(key, [0.0] * num_envs)[i]))
-                    for key in comfort_metrics:
-                        comfort_metrics[key].append(float(ep_info.get(key, [0.0] * num_envs)[i]))
-                episodes_finished += 1
-                progress.update(task, advance=1)
+            all_returns.append(float(ep_returns[i]))
+            all_lengths.append(int(ep_lengths[i]))
+            if ep_info is not None:
+                for key in route_direction_metrics:
+                    route_direction_metrics[key].append(float(ep_info.get(key, [0.0] * num_envs)[i]))
+                for key in comfort_metrics:
+                    comfort_metrics[key].append(float(ep_info.get(key, [0.0] * num_envs)[i]))
+            episodes_finished += 1
 
-                ep_returns[i] = 0.0
-                ep_lengths[i] = 0
-
-            if np.any(done) and episodes_finished < num_episodes:
-                next_obs, _ = eval_env.reset(
-                    seed=_next_reset_seeds(sampler, done.copy()),
-                    options=sampler.next_options(reset_mask=done.copy()),
+            if episodes_finished % log_interval == 0 or episodes_finished == num_episodes:
+                LOGGER.info(
+                    event_message(
+                        "EVAL",
+                        "PROTOCOL_PROGRESS",
+                        protocol_id=protocol_id,
+                        episodes=f"{episodes_finished}/{num_episodes}",
+                        mean_return=float(np.mean(all_returns)) if all_returns else 0.0,
+                        success_rate=success_count / max(episodes_finished, 1),
+                        collision_rate=collision_count / max(episodes_finished, 1),
+                    )
                 )
 
-            obs = next_obs
-            obs_t = torch.tensor(obs, dtype=torch.float32, device=device)
+            ep_returns[i] = 0.0
+            ep_lengths[i] = 0
+
+        if np.any(done) and episodes_finished < num_episodes:
+            next_obs, _ = eval_env.reset(
+                seed=_next_reset_seeds(sampler, done.copy()),
+                options=sampler.next_options(reset_mask=done.copy()),
+            )
+
+        obs = next_obs
+        obs_t = torch.tensor(obs, dtype=torch.float32, device=device)
 
     all_returns = np.array(all_returns, dtype=np.float32)
     all_lengths = np.array(all_lengths, dtype=np.float32)
@@ -197,6 +209,18 @@ def _run_eval_protocol(eval_env, agent, cfg_eval, protocol_id, sampler, num_epis
         results[key] = float(np.mean(values)) if values else 0.0
     for key, values in comfort_metrics.items():
         results[key] = float(np.mean(values)) if values else 0.0
+    LOGGER.info(
+        event_message(
+            "EVAL",
+            "PROTOCOL_DONE",
+            protocol_id=protocol_id,
+            mean_return=results["mean_return"],
+            success_rate=results["success_rate"],
+            collision_rate=results["collision_rate"],
+            unfinished_rate=results["unfinished_rate"],
+            normalized_direction=f"{results['straight_fraction']:.3f}/{results['left_turn_fraction']:.3f}/{results['right_turn_fraction']:.3f}",
+        )
+    )
     return results
 
 
@@ -272,8 +296,6 @@ def evaluate_ppo(
     """
     Evaluate a trained PPO model against the experiment's configured eval protocols.
     """
-    console = Console()
-
     cfg_eval = deepcopy(cfg)
     run_dir = str(
         resolve_artifact_path(
@@ -281,6 +303,18 @@ def evaluate_ppo(
         )
     )
     cfg_eval.num_envs = num_envs
+    LOGGER.info(
+        event_message(
+            "EVAL",
+            "INIT",
+            exp_name=cfg_eval.exp_name,
+            device=device,
+            episodes=num_episodes,
+            envs=num_envs,
+            model_path=model_path,
+            run_dir=run_dir,
+        )
+    )
     eval_env = make_env(to_carlabev_run_config(cfg_eval), eval=True)
 
     ppo_artifacts = build_agent(cfg_eval, eval_env, device)
@@ -308,6 +342,18 @@ def evaluate_ppo(
     aggregate = _aggregate_protocol_results(protocol_results)
     aggregate["comfort_score"] = compute_comfort_score(aggregate)
     aggregate["normalized_score"] = compute_eval_score(aggregate)
+    LOGGER.info(
+        event_message(
+            "EVAL",
+            "AGGREGATE",
+            protocols=len(protocol_results),
+            mean_return=aggregate["mean_return"],
+            success_rate=aggregate["success_rate"],
+            collision_rate=aggregate["collision_rate"],
+            comfort_score=aggregate["comfort_score"],
+            normalized_score=aggregate["normalized_score"],
+        )
+    )
 
     if capture_video_count > 0 and video_output_dir is not None and protocol_results:
         first_protocol_id = next(iter(protocol_results.keys()))
@@ -322,31 +368,6 @@ def evaluate_ppo(
             device=device,
         )
 
-    table = Table(
-        title=f"Evaluation Results ({num_episodes} episodes per protocol)",
-        show_header=True,
-        header_style="bold magenta",
-    )
-    table.add_column("Metric", justify="left", style="bold")
-    table.add_column("Value", justify="right")
-    table.add_row("Mean Return", f"{aggregate['mean_return']:.2f} ± {aggregate['std_return']:.2f}")
-    table.add_row("Mean Length", f"{aggregate['mean_length']:.1f} steps")
-    table.add_row("Success Rate", f"{aggregate['success_rate']*100:.1f}%")
-    table.add_row("Collision Rate", f"{aggregate['collision_rate']*100:.1f}%")
-    table.add_row("Unfinished Rate", f"{aggregate['unfinished_rate']*100:.1f}%")
-    table.add_row("Straight Fraction", f"{aggregate['straight_fraction']*100:.1f}%")
-    table.add_row("Left-Turn Fraction", f"{aggregate['left_turn_fraction']*100:.1f}%")
-    table.add_row("Right-Turn Fraction", f"{aggregate['right_turn_fraction']*100:.1f}%")
-    table.add_row("Comfort Violation Rate", f"{aggregate['comfort_violation_rate']*100:.1f}%")
-    table.add_row("Harsh Brake Rate", f"{aggregate['harsh_brake_rate']*100:.1f}%")
-    table.add_row("Mean |Jerk Long|", f"{aggregate['mean_abs_jerk_long']:.3f}")
-    table.add_row("Mean |Jerk Lat|", f"{aggregate['mean_abs_jerk_lat']:.3f}")
-    table.add_row("Mean |Yaw Rate|", f"{aggregate['mean_abs_yaw_rate']:.3f}")
-    table.add_row("Comfort Score", f"{aggregate['comfort_score']:.3f}")
-    table.add_row("Normalized Score", f"{aggregate['normalized_score']:.3f}")
-    table.add_row("Protocols", ", ".join(aggregate.get("evaluated_protocol_ids", [])))
-    console.print(table)
-
     payload = {
         "aggregate": aggregate,
         "protocols": protocol_results,
@@ -356,6 +377,6 @@ def evaluate_ppo(
         save_path = os.path.join(run_dir, "eval", file_name)
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         np.save(save_path, payload, allow_pickle=True)
-        console.print(f"[green]✅ Saved evaluation results to:[/green] {save_path}")
+        LOGGER.info(event_message("EVAL", "SAVE", path=save_path))
 
     return payload

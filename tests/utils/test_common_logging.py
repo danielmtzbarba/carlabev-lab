@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import logging
+from pathlib import Path
 
-from src.utils.common_logging import _ColorFormatter, event_message
+from src.utils.common_logging import _format_value, _render_message, event_message
 
 
 def test_event_message_formats_stage_phase_and_payload() -> None:
@@ -10,20 +10,15 @@ def test_event_message_formats_stage_phase_and_payload() -> None:
     assert message == "TRAIN - EPOCH_DONE | epoch=1/5 val_loss=0.354"
 
 
-def test_color_formatter_colors_level_stage_phase_and_payload() -> None:
-    formatter = _ColorFormatter("[%(levelname)s] %(asctime)s | %(message)s", datefmt="%H:%M:%S", use_color=True)
-    record = logging.LogRecord(
-        name="carlabev_lab.world_model.train",
-        level=logging.INFO,
-        pathname=__file__,
-        lineno=12,
-        msg=event_message("TRAIN", "TRAIN_BATCH", batch="0050/2716", loss=0.308),
-        args=(),
-        exc_info=None,
+def test_render_message_colors_level_stage_phase_and_payload() -> None:
+    rendered = _render_message(
+        {
+            "level": type("Level", (), {"name": "INFO"})(),
+            "time": type("Time", (), {"strftime": lambda self, _fmt: "13:41:48"})(),
+            "message": event_message("TRAIN", "TRAIN_BATCH", batch="0050/2716", loss=0.308),
+        },
+        color=True,
     )
-    record.created = 0.0
-
-    rendered = formatter.format(record)
 
     assert "\033[34m[INFO]\033[0m" in rendered
     assert "\033[36mTRAIN\033[0m" in rendered
@@ -32,21 +27,28 @@ def test_color_formatter_colors_level_stage_phase_and_payload() -> None:
     assert "\033[94mloss\033[0m=\033[92m0.308\033[0m" in rendered
 
 
-def test_color_formatter_plain_mode_keeps_readable_text() -> None:
-    formatter = _ColorFormatter("[%(levelname)s] %(asctime)s | %(message)s", datefmt="%H:%M:%S", use_color=False)
-    record = logging.LogRecord(
-        name="carlabev_lab.world_model.train",
-        level=logging.INFO,
-        pathname=__file__,
-        lineno=12,
-        msg=event_message("TRAIN", "DONE", best_val_loss=0.353609, final_val_loss=0.353609),
-        args=(),
-        exc_info=None,
+def test_render_message_plain_mode_keeps_readable_text() -> None:
+    rendered = _render_message(
+        {
+            "level": type("Level", (), {"name": "INFO"})(),
+            "time": type("Time", (), {"strftime": lambda self, _fmt: "13:41:48"})(),
+            "message": event_message("TRAIN", "DONE", best_val_loss=0.353609, final_val_loss=0.353609),
+        },
+        color=False,
     )
-    record.created = 0.0
-
-    rendered = formatter.format(record)
 
     assert "\033[" not in rendered
     assert "[INFO]" in rendered
     assert "TRAIN - DONE | best_val_loss=0.354 final_val_loss=0.354" in rendered
+
+
+def test_format_value_shortens_workspace_and_home_paths(tmp_path, monkeypatch) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    target = workspace / "runs" / "world_model" / "demo"
+    target.mkdir(parents=True)
+    monkeypatch.chdir(workspace)
+    assert _format_value(target) == "runs/world_model/demo"
+
+    home_like = Path.home() / "demo" / "artifact.txt"
+    assert _format_value(home_like).startswith("~")
