@@ -22,6 +22,7 @@ from src.config.studies.registry import (
     get_study_config,
     get_train_protocol,
 )
+from src.utils.common_logging import event_message
 from src.utils.run_paths import RunPaths, build_run_id
 from src.utils.storage_paths import resolve_artifact_path
 
@@ -392,11 +393,11 @@ def run_experiment(args: ArgsCarlaBEV, trial=None, seed_idx: int = None) -> floa
     envs = make_env(to_carlabev_run_config(args))
     logger = DRLogger(config=args, stats_interval=100)
     logger.set_running()
-    logger.msg(f"Environments - {args.env.env_id}:{args.num_envs} built.")
+    logger.msg(event_message("TRAIN", "ENV_READY", env_id=args.env.env_id, num_envs=args.num_envs))
 
     try:
         trainer = build_trainer(args.algorithm)
-        logger.msg(f"Trainer built for algorithm: {args.algorithm}")
+        logger.msg(event_message("TRAIN", "TRAINER_READY", algorithm=args.algorithm))
 
         final_score = trainer(args, envs, logger, device, trial=trial)
         logger.mark_completed()
@@ -406,7 +407,7 @@ def run_experiment(args: ArgsCarlaBEV, trial=None, seed_idx: int = None) -> floa
         raise
     except Exception as exc:
         tb = traceback.format_exc()
-        logger.msg(f"Run failed: {type(exc).__name__}: {exc}")
+        logger.msg(event_message("TRAIN", "FAILED", error=f"{type(exc).__name__}: {exc}"))
         logger.mark_failed(exc, tb)
         raise
     finally:

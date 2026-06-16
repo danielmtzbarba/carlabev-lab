@@ -91,7 +91,7 @@ def _colorize_stage_phase(stage_phase: str, *, color: bool) -> str:
     if not color or " - " not in stage_phase:
         return stage_phase
     stage, phase = stage_phase.split(" - ", 1)
-    return f"\033[36m{stage}\033[0m \033[90m-\033[0m \033[35m{phase}\033[0m"
+    return f"\033[94m{stage}\033[0m \033[90m-\033[0m \033[97m{phase}\033[0m"
 
 
 def _colorize_payload(payload: str, *, color: bool) -> str:
@@ -105,24 +105,19 @@ def _colorize_payload(payload: str, *, color: bool) -> str:
             tokens.append(token)
             continue
         key, value = token.split("=", 1)
-        tokens.append(f"\033[94m{key}\033[0m=\033[92m{value}\033[0m")
+        tokens.append(f"\033[94m{key}\033[0m=\033[97m{value}\033[0m")
     return " ".join(tokens)
 
 
 def _render_message(record: dict[str, Any], *, color: bool) -> str:
     level_name = record["level"].name
-    level_colors = {
-        "DEBUG": "\033[33m",
-        "INFO": "\033[34m",
-        "WARNING": "\033[33m",
-        "ERROR": "\033[31m",
-        "CRITICAL": "\033[1;37;41m",
-    }
     prefix = f"[{level_name}]"
-    if color and level_name in level_colors:
-        prefix = f"{level_colors[level_name]}{prefix}\033[0m"
+    if color:
+        prefix = f"\033[94m{prefix}\033[0m"
 
     timestamp = record["time"].strftime("%H:%M:%S")
+    if color:
+        timestamp = f"\033[92m{timestamp}\033[0m"
     message = record["message"]
     parts = message.split(" | ", 1)
     sep = "\033[90m|\033[0m" if color else "|"

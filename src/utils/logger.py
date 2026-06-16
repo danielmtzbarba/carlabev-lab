@@ -1,15 +1,14 @@
 import csv
 import json
-import logging
 import os
 import sqlite3
-import sys
 from datetime import datetime, timezone
 
 import numpy as np
 from rich.console import Console
 from rich.table import Table
 from torch.utils.tensorboard import SummaryWriter
+from src.utils.common_logging import add_file_handler, configure_logging, event_message, get_logger, kv_message
 from src.utils.storage_paths import resolve_artifact_path
 
 
@@ -45,6 +44,8 @@ class DRLogger:
         self._completed_path = os.path.join(self.run_dir, "COMPLETED")
         self._failed_path = os.path.join(self.run_dir, "FAILED")
         self._traceback_path = os.path.join(self.run_dir, "failure_traceback.log")
+        configure_logging()
+        add_file_handler(self._log_path)
         self._logger = self._build_logger(config.exp_name)
 
         self.global_episode = 0
@@ -96,26 +97,8 @@ class DRLogger:
             self.db_conn.execute("PRAGMA journal_mode=WAL;")
             self._init_db_tables()
 
-    def _build_logger(self, exp_name: str) -> logging.Logger:
-        logger_name = f"drlab.{exp_name}"
-        run_logger = logging.getLogger(logger_name)
-        run_logger.setLevel(logging.INFO)
-        run_logger.propagate = False
-        run_logger.handlers.clear()
-
-        formatter = logging.Formatter(
-            "[%(asctime)s] %(levelname)s ==> %(message)s",
-            datefmt="%m/%d/%Y %I:%M:%S %p",
-        )
-
-        file_handler = logging.FileHandler(self._log_path, encoding="utf-8")
-        file_handler.setFormatter(formatter)
-        run_logger.addHandler(file_handler)
-
-        stdout_handler = logging.StreamHandler(stream=sys.stdout)
-        stdout_handler.setFormatter(formatter)
-        run_logger.addHandler(stdout_handler)
-        return run_logger
+    def _build_logger(self, exp_name: str):
+        return get_logger(f"ppo.{exp_name}")
 
     def _write_status(self):
         self._status["last_updated_at"] = _utcnow_iso()
@@ -319,14 +302,17 @@ class DRLogger:
             if self._interactive:
                 self._console.print(table)
             self._logger.info(
-                "[EP_STATS] step=%s episodes=%s mean_return=%.2f mean_length=%.1f success_rate=%.3f collision_rate=%.3f unfinished_rate=%.3f",
-                abbreviate_number(global_step),
-                self.global_episode,
-                mean_ret,
-                mean_len,
-                mean_succ,
-                mean_col,
-                mean_unfin,
+                event_message(
+                    "TRAIN",
+                    "EPISODE_STATS",
+                    step=abbreviate_number(global_step),
+                    episodes=self.global_episode,
+                    mean_return=mean_ret,
+                    mean_length=mean_len,
+                    success_rate=mean_succ,
+                    collision_rate=mean_col,
+                    unfinished_rate=mean_unfin,
+                )
             )
 
         return self.global_episode
@@ -351,6 +337,19 @@ class DRLogger:
             self.writer.add_scalar("stats/approx_kl", approx_kl, global_step)
         if clip_frac is not None:
             self.writer.add_scalar("stats/clip_fraction", clip_frac, global_step)
+        self._logger.info(
+            event_message(
+                "TRAIN",
+                "LEARN",
+                global_step=global_step,
+                pg_loss=pg_loss if pg_loss is not None else "-",
+                v_loss=v_loss if v_loss is not None else "-",
+                entropy=entropy if entropy is not None else "-",
+                approx_kl=approx_kl if approx_kl is not None else "-",
+                clip_frac=clip_frac if clip_frac is not None else "-",
+                ent_coef=ent_coef if ent_coef is not None else "-",
+            )
+        )
 
         if self.db_conn is not None:
             import time
@@ -421,11 +420,16 @@ class DRLogger:
                         ])
 
                     self._logger.info(
-                        "Reached success threshold %s at step %s (iter=%s time=%.2fs)",
-                        threshold,
-                        global_step,
-                        iteration,
-                        elapsed_time if elapsed_time is not None else -1.0,
+                        event_message(
+                            "EVAL",
+                            "THRESHOLD_REACHED",
+                            threshold=threshold,
+                            global_step=global_step if global_step is not None else "-",
+                            iteration=iteration if iteration is not None else "-",
+                            elapsed_s=elapsed_time if elapsed_time is not None else "-",
+                            success_rate=success_rate,
+                            collision_rate=collision_rate,
+                        )
                     )
 
         for key, value in results_dict.items():
@@ -447,13 +451,7 @@ class DRLogger:
         if self._interactive:
             self._console.print(table)
 
-        msg = " | ".join(
-            [
-                f"{k}: {v:.3f}" if isinstance(v, float) else f"{k}: {v}"
-                for k, v in results_dict.items()
-            ]
-        )
-        self._logger.info(f"[EVAL] {msg}")
+        self._logger.info(event_message("EVAL", "SUMMARY", **results_dict))
         self.update_status(
             state="running",
             last_eval_step=global_step,
@@ -541,15 +539,14 @@ class DRLogger:
             )
             self.db_conn.commit()
 
-    def msg(self, text):
-        self._logger.info(text)
+    def msg(self, text, *, stage: str = "TRAIN", phase: str = "NOTE", **kwargs):
+        if kwargs:
+            self._logger.info(event_message(stage, phase, message=text, **kwargs))
+            return
+        self._logger.info(kv_message(text))
 
     def close(self):
         if self.db_conn is not None:
             self.db_conn.close()
             self.db_conn = None
         self.writer.close()
-        for handler in list(self._logger.handlers):
-            handler.flush()
-            handler.close()
-            self._logger.removeHandler(handler)

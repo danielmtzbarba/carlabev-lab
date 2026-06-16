@@ -10,6 +10,7 @@ from src.trainers.utils import CurriculumState
 from src.eval.eval_ppo import evaluate_ppo
 from src.eval.scoring import compute_eval_score
 from src.utils.run_paths import RunPaths
+from src.utils.common_logging import event_message
 
 from collections import deque
 
@@ -54,6 +55,18 @@ def _evenly_spaced_steps(total_timesteps: int, count: int) -> list[int]:
     raw = np.linspace(total_timesteps / count, total_timesteps, num=count)
     return sorted({int(round(value)) for value in raw if value > 0})
 
+
+def _initial_reset_seeds(sampler, num_envs: int):
+    if hasattr(sampler, "initial_reset_seeds"):
+        return sampler.initial_reset_seeds(num_envs)
+    return None
+
+
+def _next_reset_seeds(sampler, reset_mask):
+    if hasattr(sampler, "next_reset_seeds"):
+        return sampler.next_reset_seeds(reset_mask)
+    return None
+
 def train_ppo(cfg, envs, logger, device, trial=None):
     num_envs = cfg.num_envs
     ppo_cfg = cfg.ppo
@@ -74,8 +87,8 @@ def train_ppo(cfg, envs, logger, device, trial=None):
     return_buffer = deque(maxlen=50)
 
     model_channels = agent.backbone.in_channels
-    logger.msg(f"Observation space: {envs.observation_space}")
-    logger.msg(f"Model_channels: {model_channels}")
+    logger.msg(event_message("TRAIN", "OBS_SPACE", observation_space=envs.observation_space))
+    logger.msg(event_message("TRAIN", "MODEL", channels=model_channels))
     # Storage
     obs = torch.zeros(
         (ppo_cfg.num_steps, num_envs) + envs.single_observation_space.shape,
@@ -118,7 +131,7 @@ def train_ppo(cfg, envs, logger, device, trial=None):
 
     train_sampler = build_train_protocol_sampler(cfg)
     options = train_sampler.initial_options(num_envs)
-    reset_seeds = train_sampler.initial_reset_seeds(num_envs)
+    reset_seeds = _initial_reset_seeds(train_sampler, num_envs)
 
     next_obs, _ = envs.reset(seed=reset_seeds, options=options)
     next_obs = torch.as_tensor(next_obs, dtype=torch.float32, device=device)
@@ -222,7 +235,7 @@ def train_ppo(cfg, envs, logger, device, trial=None):
                     mean_return=mean_return,
                     curriculum_state=curr_state,
                 )
-                reset_seeds = train_sampler.next_reset_seeds(dones_np)
+                reset_seeds = _next_reset_seeds(train_sampler, dones_np)
                 next_obs_np, _ = envs.reset(seed=reset_seeds, options=options)
 
             # === Convert to tensors for buffer storage ===
@@ -383,7 +396,7 @@ def train_ppo(cfg, envs, logger, device, trial=None):
 
         # Evaluate model based on equidistant intervals (num_evals steps)
         if global_step >= next_eval_step:
-            logger.msg(f"📊 Evaluating model at iteration {iteration} ({global_step} env steps)")
+            logger.msg(event_message("TRAIN", "EVAL_START", iteration=iteration, global_step=global_step))
 
             # Save temp model and eval
             eval_model_path = run_paths.checkpoints_dir / f"ppo-eval-{global_step:09d}.pt"
@@ -415,7 +428,14 @@ def train_ppo(cfg, envs, logger, device, trial=None):
             if not cfg.save_model:
                 os.remove(eval_model_path)
             else:
-                logger.msg(f"🌟 Model saved at {iteration} iteration!")
+                logger.msg(
+                    event_message(
+                        "TRAIN",
+                        "CHECKPOINT_SAVED",
+                        iteration=iteration,
+                        global_step=global_step,
+                    )
+                )
 
             # Optuna partial reporting and pruning
             if trial is not None:
@@ -456,7 +476,7 @@ def train_ppo(cfg, envs, logger, device, trial=None):
     if not cfg.save_model:
         os.remove(model_path)
     
-    logger.msg(f"🌟 Training finished at {iteration} iteration!")
+    logger.msg(event_message("TRAIN", "DONE", iteration=iteration, global_step=global_step))
 
     envs.close()
 

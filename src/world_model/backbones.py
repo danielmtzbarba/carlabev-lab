@@ -6,6 +6,7 @@ import importlib
 import torch
 from torch import nn
 
+from src.utils.common_logging import configure_logging
 from src.world_model.config import WorldModelModelConfig
 from src.world_model.encoders import ViTEncoder
 
@@ -48,6 +49,9 @@ class StablePretrainingViTHFAdapter(nn.Module):
                 "'stable_pretraining_vit_hf'. Install the dependency first, or switch "
                 "back to encoder_backend='lewm_compatible_vit'."
             ) from exc
+        # stable_pretraining installs its own global loguru/root handlers on import.
+        # Restore the lab formatter immediately so LeWM eval/train logs stay consistent.
+        configure_logging()
 
         vit_hf = getattr(backbone_utils, "vit_hf", None)
         if vit_hf is None:
