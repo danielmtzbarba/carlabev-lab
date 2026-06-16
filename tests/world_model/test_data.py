@@ -21,6 +21,7 @@ from src.world_model.data import (
     build_transition_datasets,
     load_or_build_sequence_window_cache,
     prepare_shard_cache,
+    resolve_dataset_shard_path,
 )
 from src.world_model.validate import validate_datasets
 
@@ -167,6 +168,19 @@ def test_prepared_shard_cache_is_built_and_loaded(monkeypatch, tiny_cfg, tmp_pat
     assert prepared_arrays is not None
     assert tuple(prepared_arrays["obs"].shape) == (2, 3, 8, 8)
     assert tuple(prepared_arrays["next_obs"].shape) == (2, 3, 8, 8)
+
+
+@pytest.mark.unit
+def test_resolve_dataset_shard_path_supports_artifact_relative_summary_paths(tmp_path, monkeypatch):
+    monkeypatch.setenv("CARLABEV_ARTIFACT_ROOT", str(tmp_path / "artifact-root"))
+
+    dataset_dir = tmp_path / "artifact-root" / "datasets" / "world_model" / "demo" / "seed_0"
+    resolved = resolve_dataset_shard_path(
+        dataset_dir,
+        "datasets/world_model/demo/seed_0/shard_000000.npz",
+    )
+
+    assert resolved == dataset_dir / "shard_000000.npz"
 
 
 @pytest.mark.integration

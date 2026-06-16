@@ -133,6 +133,8 @@ def resolve_dataset_shard_path(dataset_dir: Path, shard_path: str | Path) -> Pat
     shard_entry = Path(shard_path)
     if shard_entry.is_absolute():
         return resolve_artifact_path(shard_entry)
+    if shard_entry.parts and shard_entry.parts[0] in {"datasets", "runs", "results"}:
+        return resolve_artifact_path(shard_entry)
     return dataset_dir / shard_entry
 
 
