@@ -22,6 +22,13 @@ class StagedDatasetResult:
     prepared_shards: int
 
 
+@dataclass(frozen=True)
+class PreparedDatasetResult:
+    dataset_dir: str
+    shard_count: int
+    prepared_shards: int
+
+
 def _summary_file(dataset_dir: Path) -> Path:
     return dataset_dir / "summary.json"
 
@@ -65,6 +72,39 @@ def _dataset_size_bytes(dataset_dir: Path) -> int:
         if path.is_file():
             total += path.stat().st_size
     return total
+
+
+def prepare_dataset_shard_cache(path: str | Path) -> PreparedDatasetResult:
+    dataset_dir = _coerce_dataset_dir(path)
+    if not dataset_dir.exists():
+        raise FileNotFoundError(f"Dataset path does not exist: {dataset_dir}")
+
+    summary = _load_summary(dataset_dir)
+    shards = summary.get("shards", [])
+    shard_count = len(shards)
+    if shard_count <= 0:
+        raise ValueError(f"No shards listed in summary for {dataset_dir}")
+
+    LOGGER.info(event_message("STAGE", "PREPARE_START", dataset_dir=dataset_dir, shards=shard_count))
+    prepared_shards = 0
+    for shard_meta in shards:
+        shard_path = dataset_dir / Path(str(shard_meta["path"])).name
+        prepare_shard_cache(shard_path)
+        prepared_shards += 1
+    LOGGER.info(
+        event_message(
+            "STAGE",
+            "PREPARE_DONE",
+            dataset_dir=dataset_dir,
+            shard_count=shard_count,
+            prepared_shards=prepared_shards,
+        )
+    )
+    return PreparedDatasetResult(
+        dataset_dir=str(dataset_dir),
+        shard_count=shard_count,
+        prepared_shards=prepared_shards,
+    )
 
 
 def stage_dataset_to_tmp(

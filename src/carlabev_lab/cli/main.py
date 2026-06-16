@@ -225,6 +225,10 @@ def run_world_model_stage_command(argv: Sequence[str]) -> object:
     return _invoke_module_main("src.carlabev_lab.world_model.stage", argv)
 
 
+def run_world_model_prepare_cache_command(argv: Sequence[str]) -> object:
+    return _invoke_module_main("src.carlabev_lab.world_model.prepare_cache", argv)
+
+
 def run_world_model_benchmark_command(argv: Sequence[str]) -> object:
     return _invoke_module_main("src.carlabev_lab.world_model.benchmark", argv)
 
@@ -325,6 +329,8 @@ def main(argv: Sequence[str] | None = None) -> object:
             return run_world_model_collect_command(args)
         if command == "stage":
             return run_world_model_stage_command(args)
+        if command == "prepare-cache":
+            return run_world_model_prepare_cache_command(args)
         if command == "benchmark":
             return run_world_model_benchmark_command(args)
         if command == "probe-loader":

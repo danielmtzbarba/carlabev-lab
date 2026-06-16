@@ -126,6 +126,24 @@ def test_main_dispatches_world_model_stage_command(monkeypatch):
 
 
 @pytest.mark.unit
+def test_main_dispatches_world_model_prepare_cache_command(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_prepare(argv):
+        captured["argv"] = list(argv)
+        return "prepared"
+
+    monkeypatch.setattr(drl_cli, "run_world_model_prepare_cache_command", fake_prepare)
+
+    result = drl_cli.main(
+        ["world-model", "prepare-cache", "--path", "datasets/world_model/demo"]
+    )
+
+    assert result == "prepared"
+    assert captured["argv"] == ["--path", "datasets/world_model/demo"]
+
+
+@pytest.mark.unit
 def test_main_dispatches_world_model_benchmark_command(monkeypatch):
     captured: dict[str, object] = {}
 
