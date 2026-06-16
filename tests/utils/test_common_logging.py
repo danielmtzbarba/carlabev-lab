@@ -21,11 +21,11 @@ def test_render_message_colors_level_stage_phase_and_payload() -> None:
     )
 
     assert "\033[94m[INFO]\033[0m" in rendered
-    assert "\033[97m13:41:48\033[0m" in rendered
+    assert "\033[38;2;255;255;255m13:41:48\033[0m" in rendered
     assert "\033[93mTRAIN_BATCH\033[0m" in rendered
     assert "TRAIN - " not in rendered
-    assert "\033[92mbatch\033[0m=\033[97m0050/2716\033[0m" in rendered
-    assert "\033[92mloss\033[0m=\033[97m0.308\033[0m" in rendered
+    assert "\033[92mbatch\033[0m=\033[38;2;255;255;255m0050/2716\033[0m" in rendered
+    assert "\033[92mloss\033[0m=\033[38;2;255;255;255m0.308\033[0m" in rendered
 
 
 def test_render_message_plain_mode_keeps_readable_text() -> None:
@@ -62,7 +62,7 @@ def test_format_value_shortens_workspace_and_home_paths(tmp_path, monkeypatch) -
     target = workspace / "runs" / "world_model" / "demo"
     target.mkdir(parents=True)
     monkeypatch.chdir(workspace)
-    assert _format_value(target) == "runs/world_model/demo"
+    assert _format_value(target) == "demo"
 
     home_like = Path.home() / "demo" / "artifact.txt"
-    assert _format_value(home_like).startswith("~")
+    assert _format_value(home_like) == "artifact.txt"

@@ -47,16 +47,31 @@ def _shorten_path(path_value: Path) -> str:
     except OSError:
         resolved = expanded
 
+    candidates: list[str] = []
     cwd = Path.cwd()
     home = Path.home()
+    name = resolved.name or str(resolved)
+    if name:
+        candidates.append(name)
     try:
-        return str(resolved.relative_to(cwd))
+        rel_cwd = str(resolved.relative_to(cwd))
+        if rel_cwd:
+            candidates.append(rel_cwd)
     except ValueError:
         pass
     try:
-        return f"~/{resolved.relative_to(home)}"
+        rel_home = f"~/{resolved.relative_to(home)}"
+        if rel_home:
+            candidates.append(rel_home)
     except ValueError:
-        return str(resolved)
+        pass
+    if len(resolved.parts) >= 2:
+        candidates.append("/".join(resolved.parts[-2:]))
+    if len(resolved.parts) >= 3:
+        candidates.append("/".join(resolved.parts[-3:]))
+
+    candidates.append(str(resolved))
+    return min((candidate for candidate in candidates if candidate), key=len)
 
 
 def _format_value(value: Any) -> str:
@@ -104,7 +119,7 @@ def _colorize_payload(payload: str, *, color: bool) -> str:
             tokens.append(token)
             continue
         key, value = token.split("=", 1)
-        tokens.append(f"\033[92m{key}\033[0m=\033[97m{value}\033[0m")
+        tokens.append(f"\033[92m{key}\033[0m=\033[38;2;255;255;255m{value}\033[0m")
     return " ".join(tokens)
 
 
@@ -120,7 +135,7 @@ def _render_message(record: dict[str, Any], *, color: bool) -> str:
 
     timestamp = record["time"].strftime("%H:%M:%S")
     if color:
-        timestamp = f"\033[97m{timestamp}\033[0m"
+        timestamp = f"\033[38;2;255;255;255m{timestamp}\033[0m"
     message = _escape_loguru_braces(record["message"])
     parts = message.split(" | ", 1)
     sep = "\033[90m|\033[0m" if color else "|"
