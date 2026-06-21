@@ -58,14 +58,15 @@ class EnvConfig:
     max_actions: int
     scenes_path: str
 
-    curriculum_enabled: bool
-    curriculum_mode: str
     route_dist_range: tuple[int, int]
-    difficulty_id: str | None
 
     traffic_enabled: bool
-    max_vehicles: int
     route_direction_metrics_enabled: bool
+    scene_library_enabled: bool
+    scene_library_path: str
+    scene_library_read_only: bool
+    scene_library_require_hit: bool
+    scene_library_generator_version: str
 
     reward_mode: str
     reward_profile_id: str
@@ -91,13 +92,14 @@ class EnvConfig:
         render_mode: str = "rgb_array",
         max_actions: int = 5000,
         scenes_path: str = "assets/scenes",
-        curriculum_enabled: bool = False,
-        curriculum_mode: str = "vehicles",
         route_dist_range: tuple[int, int] = (30, 100),
-        difficulty_id: str | None = None,
         traffic_enabled: bool = False,
-        max_vehicles: int = 25,
         route_direction_metrics_enabled: bool = True,
+        scene_library_enabled: bool = True,
+        scene_library_path: str = "assets/scenes/scene_library.db",
+        scene_library_read_only: bool = False,
+        scene_library_require_hit: bool = False,
+        scene_library_generator_version: str = "role_traffic_v1",
         reward_mode: str | None = None,
         reward_profile_id: str | None = None,
         obs_space: str | None = None,
@@ -152,13 +154,14 @@ class EnvConfig:
         self.render_mode = render_mode
         self.max_actions = max_actions
         self.scenes_path = scenes_path
-        self.curriculum_enabled = curriculum_enabled
-        self.curriculum_mode = curriculum_mode
         self.route_dist_range = route_dist_range
-        self.difficulty_id = difficulty_id
         self.traffic_enabled = traffic_enabled
-        self.max_vehicles = max_vehicles
         self.route_direction_metrics_enabled = route_direction_metrics_enabled
+        self.scene_library_enabled = scene_library_enabled
+        self.scene_library_path = scene_library_path
+        self.scene_library_read_only = scene_library_read_only
+        self.scene_library_require_hit = scene_library_require_hit
+        self.scene_library_generator_version = scene_library_generator_version
         self.reward_mode = reward_mode
         self.reward_profile_id = reward_profile_id
 
@@ -237,13 +240,14 @@ class EnvConfig:
             "render_mode": self.render_mode,
             "max_actions": self.max_actions,
             "scenes_path": self.scenes_path,
-            "curriculum_enabled": self.curriculum_enabled,
-            "curriculum_mode": self.curriculum_mode,
             "route_dist_range": self.route_dist_range,
-            "difficulty_id": self.difficulty_id,
             "traffic_enabled": self.traffic_enabled,
-            "max_vehicles": self.max_vehicles,
             "route_direction_metrics_enabled": self.route_direction_metrics_enabled,
+            "scene_library_enabled": self.scene_library_enabled,
+            "scene_library_path": self.scene_library_path,
+            "scene_library_read_only": self.scene_library_read_only,
+            "scene_library_require_hit": self.scene_library_require_hit,
+            "scene_library_generator_version": self.scene_library_generator_version,
             "reward_mode": self.reward_mode,
             "reward_profile_id": self.reward_profile_id,
         }
@@ -399,8 +403,11 @@ def to_carlabev_env_config(env_cfg: EnvConfig) -> CarlaBEVEnvConfig:
         reward_mode=env_cfg.reward_mode,
         reward_profile_id=env_cfg.reward_profile_id,
         traffic_enabled=env_cfg.traffic_enabled,
-        max_vehicles=env_cfg.max_vehicles,
         route_direction_metrics_enabled=env_cfg.route_direction_metrics_enabled,
+        scene_library_enabled=env_cfg.scene_library_enabled,
+        scene_library_path=env_cfg.scene_library_path,
+        scene_library_read_only=env_cfg.scene_library_read_only,
+        scene_library_generator_version=env_cfg.scene_library_generator_version,
     )
 
 

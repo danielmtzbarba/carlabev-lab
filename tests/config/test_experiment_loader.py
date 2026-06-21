@@ -27,11 +27,14 @@ def test_apply_experiment_config_maps_study_fields():
     args = apply_experiment_config(ArgsCarlaBEV(), 30, study_id="PPO_NAVIGATION")
 
     assert args.algorithm == "cnn-ppo"
-    assert args.train_protocol_id == "random_nav_train"
-    assert args.eval_protocol_ids == ["random_nav_eval"]
+    assert args.train_protocol_id == "traffic_route_curriculum_train"
+    assert args.eval_protocol_ids == ["navigation_eval"]
     assert args.env.ego_anchor_y_frac == 0.75
     assert args.env.reward_mode == "carl"
     assert args.env.input_type == "masks"
+    assert args.env.scene_library_enabled is True
+    assert args.env.scene_library_read_only is True
+    assert args.env.scene_library_path.endswith("ppo_navigation.db")
     assert args.run_id.startswith("PPO_NAVIGATION_e30")
 
 

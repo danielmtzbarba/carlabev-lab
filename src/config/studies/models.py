@@ -7,14 +7,15 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field, computed_field,
 
 
 ActionMode = Literal["discrete", "continuous"]
-TrafficMode = Literal["on", "off"]
 InputType = Literal["rgb", "masks"]
 SemanticMaskMode = Literal["binary", "2-class", "4-class", "5-class", "6-class", "7-class"]
 TemporalFusionMode = Literal["stack", "vehicle_temporal", "vehicle_weighted"]
 RewardMode = Literal["shaping", "carl"]
-CurriculumMode = Literal["off", "vehicles_only", "route_only", "both"]
 Toggle = Literal["on", "off"]
 FovAnchorMode = Literal["center", "lookahead_75"]
+RouteExtentMode = Literal["short", "medium", "large"]
+TrafficRoleProfile = Literal["lead", "rear", "cross_path", "opposite_lane", "mix"]
+CurriculumAxis = Literal["none", "near_ego_traffic", "route_distance", "both"]
 TuningStageName = Literal[
     "policy_dynamics",
     "rollout_geometry",
@@ -41,7 +42,6 @@ class ExperimentSpec(BaseModel):
         validation_alias=AliasChoices("action_mode", "action_space")
     )
     action_profile_id: str | None = None
-    traffic: TrafficMode
     input_type: InputType
     semantic_mask_ch: SemanticMaskMode | None = None
     temporal_fusion_mode: TemporalFusionMode = "stack"
@@ -49,8 +49,6 @@ class ExperimentSpec(BaseModel):
         validation_alias=AliasChoices("reward_mode", "reward_type")
     )
     reward_profile_id: str | None = None
-    curriculum: CurriculumMode
-    difficulty_id: str | None = None
     fov_mask: Toggle
     fov_anchor: FovAnchorMode = "center"
     train_protocol_id: str
@@ -118,17 +116,61 @@ class ScenarioEntry(BaseModel):
     notes: str | None = None
 
 
+class SceneGenerationBackbone(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    route_extent: RouteExtentMode | None = None
+    route_dist_range: tuple[int, int] | None = None
+    speed_profile: Literal["slow", "medium", "fast"] | None = None
+    num_vehicles: int | None = None
+    num_vehicles_near_ego: int | None = None
+    traffic_role_profile: TrafficRoleProfile | None = None
+    guaranteed_candidate_role: TrafficRoleProfile | None = None
+    route_profile: Literal["mostly_straight", "single_left", "single_right", "multi_turn", "mixed"] | None = None
+    route_profile_mix: dict[str, float] | None = None
+    min_turns: int | None = None
+    max_turns: int | None = None
+    intersection_required: bool | None = None
+    max_route_attempts: int | None = None
+    ego_route_graph: str = "canonical"
+
+    @model_validator(mode="after")
+    def _validate_counts(self):
+        if self.num_vehicles is not None and self.num_vehicles < 0:
+            raise ValueError("`num_vehicles` must be >= 0.")
+        if self.num_vehicles_near_ego is not None and self.num_vehicles_near_ego < 0:
+            raise ValueError("`num_vehicles_near_ego` must be >= 0.")
+        if (
+            self.num_vehicles is not None
+            and self.num_vehicles_near_ego is not None
+            and self.num_vehicles_near_ego > self.num_vehicles
+        ):
+            raise ValueError("`num_vehicles_near_ego` must be <= `num_vehicles`.")
+        if self.route_dist_range is not None and self.route_dist_range[0] > self.route_dist_range[1]:
+            raise ValueError("`route_dist_range` must be ordered as (min, max).")
+        return self
+
+
+class SceneLibraryPolicy(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = True
+    read_only: bool = True
+    require_hit: bool = True
+    path: str | None = None
+    generator_version: str | None = None
+
+
 class RandomNavigationProtocol(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     protocol_id: str
     mode: Literal["random_navigation"]
     reset_seed_mode: Literal["fixed", "incremental", "hashed_episode"] = "hashed_episode"
-    initial_num_vehicles: int = 0
-    initial_route_dist_range: tuple[int, int] = (50, 150)
-    eval_num_vehicles: int = 25
-    eval_route_dist_range: tuple[int, int] = (250, 500)
-    use_curriculum: bool = True
+    backbone: SceneGenerationBackbone
+    use_curriculum: bool = False
+    curriculum_axis: CurriculumAxis = "none"
+    scene_library: SceneLibraryPolicy | None = None
 
 
 class ScenarioCatalogProtocol(BaseModel):

@@ -259,9 +259,7 @@ def tiny_cfg():
     cfg.ppo.update_epochs = 1
     cfg.ppo.channels = [8, 16, 16]
     cfg.ppo.fc_size = 32
-    cfg.env.curriculum_enabled = False
     cfg.env.traffic_enabled = True
-    cfg.env.curriculum_mode = "both"
     return cfg
 
 

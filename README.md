@@ -38,7 +38,17 @@ By natively combining **Stable Baselines3** with high-performance hyperparameter
 ## 🚀 Getting Started
 
 ### Prerequisites
-CarlaBEV-Lab installs `CarlaBEV` from the GitHub source pinned in `pyproject.toml`, so local machine paths are no longer part of setup.
+CarlaBEV-Lab now resolves `CarlaBEV` from the local sibling checkout declared in
+`pyproject.toml`:
+
+- `../../driverless/carlabev-env`
+
+That keeps the lab pinned to the current env workspace during active
+co-development. After pulling env changes, rerun:
+
+```bash
+uv sync
+```
 
 ### Installation
 
@@ -214,11 +224,26 @@ CarlaBEV-Lab now uses CarlaBEV's public config contract internally. The canonica
 - `action_mode` (`discrete`, `continuous`)
 - `reward_mode` (`shaping`, `carl`)
 
-For the current study path, the preferred declarative selectors are the profile IDs exported by `carlabev-env`:
+For the current study path, the preferred declarative selectors are:
 
-- `difficulty_id`
 - `action_profile_id`
 - `reward_profile_id`
+- study-owned random-navigation backbones declared through `RandomNavigationProtocol`
+- scene-library policy declared per protocol
+
+The maintained study path no longer uses experiment-level `difficulty_id`,
+`traffic`, or `curriculum` switches. Those ideas now live in protocol-owned
+scene generation:
+
+- `ExperimentSpec` owns agent-facing choices such as action mode, input type,
+  semantic layout, temporal fusion, reward mode, FOV settings, and
+  train/eval protocol ids
+- `RandomNavigationProtocol` owns reset seeding, curriculum behavior,
+  scene-library policy, and one explicit `SceneGenerationBackbone`
+- `SceneGenerationBackbone` owns random-scene controls such as
+  `route_extent`, `route_dist_range`, `speed_profile`, `num_vehicles`,
+  `num_vehicles_near_ego`, `traffic_role_profile`, and
+  `guaranteed_candidate_role`
 
 Legacy aliases such as `obs_space`, `action_space`, and `reward_type` are still accepted for compatibility, but they emit deprecation warnings and are intended only as migration shims at older config boundaries.
 
@@ -246,6 +271,12 @@ That lets a study train on one distribution and evaluate on another.
 Current examples:
 
 - `PPO_NAVIGATION`: trains on random generated navigation scenes and evaluates on random generated navigation scenes
+- `PPO_NAVIGATION_DIFFICULTY`: now acts as a traffic-density-only study with
+  explicit `no_traffic`, `easy`, `medium`, and `hard` near-ego scene backbones
+- `PPO_NAVIGATION_MEDIUM_FOV_ANCHOR`,
+  `PPO_NAVIGATION_MEDIUM_SEMANTIC_CLASSES`, and
+  `PPO_NAVIGATION_MEDIUM_TEMPORAL_FUSION`: use fixed medium scene backbones and
+  vary only the targeted ablation axis
 - `EDGE_CASE_SCENARIOS`:
   - `exp-id 1`: train on all authored `jaywalk-*` scenes, evaluate on all authored edge-case scenes
   - `exp-id 2`: train on all authored `leadbrake-*` scenes, evaluate on all authored edge-case scenes
@@ -261,6 +292,24 @@ For authored-scene studies, the reset protocol can also declare:
 - `variation_seed_max`
 
 This allows train/eval variation policy to remain fully declarative.
+
+### Scene Library Workflow
+
+The maintained PPO studies now assume a study-specific CarlaBEV scene library.
+The intended workflow is:
+
+1. Prebuild the scene corpus for the study with `carlabev-env`.
+2. Point the study protocols at the resulting `.db` path.
+3. Train and evaluate with the scene library enabled in read-only mode.
+
+Each migrated random-navigation study now declares its own scene-library path in
+the protocol spec, for example:
+
+- `assets/scene_libraries/ppo_navigation.db`
+- `assets/scene_libraries/ppo_navigation_difficulty.db`
+- `assets/scene_libraries/ppo_navigation_medium_fov_anchor.db`
+
+This keeps scene generation explicit, repeatable, and decoupled from training.
 
 ### Reset Seed Scheduling
 
@@ -387,20 +436,20 @@ Run the expensive data-generation pass once:
 
 ```bash
 uv run drl diagnostics seed-scenes analyze \
-  --difficulty-ids rt_medium_v1 \
+  --scene-profile-ids medium \
   --samples-per-seed 1000 \
   --seed-mode incremental \
   --save-frames-per-pair 6 \
   --output-dir results/seed_scene_diag_medium_incremental
 ```
 
-This writes reusable artifacts for each `(difficulty, seed)` pair:
+This writes reusable artifacts for each `(scene_profile, seed)` pair:
 
 ```text
 results/seed_scene_diag_medium_incremental/
   summary.json
   all_samples.csv
-  <difficulty_id>/
+  <scene_profile_id>/
     seed_<seed>/
       samples.csv
       spawn_points.csv
@@ -428,6 +477,13 @@ Behavior of the current plots:
 
 - `spawn_*`: top repeated spawn zones shown as numbered cluster centroids
 - `route_*`: route corridor density heatmaps
+
+Built-in scene-profile ids currently include:
+
+- `no_traffic`
+- `easy`
+- `medium`
+- `hard`
 - default spawn clustering merges nearby starts within a `16`-pixel radius and shows the top `10` clusters
 
 If you still want the original one-command workflow, the script defaults to `full` mode when no subcommand is provided.

@@ -17,7 +17,7 @@ EDGE_CASE_SCENARIOS = StudyConfig(
     metadata={
         "owner": "carlabev-lab",
         "kind": "scenario",
-        "notes": "Structured catalogue for edge-case runs. Trainer-side scenario selection can consume scene/scenario_preset_id from the experiment spec.",
+        "notes": "Structured catalogue for edge-case runs. Scenario catalog protocols own scene selection.",
     },
     train_protocols={
         "jaywalk_only_train": ScenarioCatalogProtocol(
@@ -67,11 +67,9 @@ EDGE_CASE_SCENARIOS = StudyConfig(
     experiments={
         1: ExperimentSpec(
             action_mode="discrete",
-            traffic="on",
             input_type="masks",
             semantic_mask_ch="6-class",
             reward_mode="carl",
-            curriculum="off",
             fov_mask="off",
             fov_anchor="center",
             train_protocol_id="jaywalk_only_train",
@@ -80,11 +78,9 @@ EDGE_CASE_SCENARIOS = StudyConfig(
         ),
         2: ExperimentSpec(
             action_mode="discrete",
-            traffic="on",
             input_type="masks",
             semantic_mask_ch="6-class",
             reward_mode="carl",
-            curriculum="off",
             fov_mask="off",
             fov_anchor="center",
             train_protocol_id="lead_brake_only_train",
@@ -93,11 +89,9 @@ EDGE_CASE_SCENARIOS = StudyConfig(
         ),
         3: ExperimentSpec(
             action_mode="discrete",
-            traffic="on",
             input_type="masks",
             semantic_mask_ch="6-class",
             reward_mode="carl",
-            curriculum="off",
             fov_mask="off",
             fov_anchor="center",
             train_protocol_id="red_light_only_train",
@@ -106,11 +100,9 @@ EDGE_CASE_SCENARIOS = StudyConfig(
         ),
         4: ExperimentSpec(
             action_mode="discrete",
-            traffic="on",
             input_type="masks",
             semantic_mask_ch="6-class",
             reward_mode="carl",
-            curriculum="off",
             fov_mask="off",
             fov_anchor="center",
             train_protocol_id="all_edge_cases_train",
@@ -119,11 +111,9 @@ EDGE_CASE_SCENARIOS = StudyConfig(
         ),
         5: ExperimentSpec(
             action_mode="discrete",
-            traffic="on",
             input_type="masks",
             semantic_mask_ch="6-class",
             reward_mode="carl",
-            curriculum="off",
             fov_mask="off",
             fov_anchor="lookahead_75",
             train_protocol_id="all_edge_cases_train",

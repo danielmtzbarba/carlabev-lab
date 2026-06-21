@@ -11,7 +11,7 @@ from .common import (
     COMPARISON_HEADER,
     COMPARISON_MARGIN,
     DEFAULT_MAP_ASSET_SIZE,
-    DIFFICULTY_LABELS,
+    SCENE_PROFILES,
     HEATMAP_ALPHA,
     LABEL_COLOR,
     LEGEND_HEIGHT_ROUTE,
@@ -231,7 +231,7 @@ def save_single_panel(
     *,
     output_path: Path,
     map_image: Image.Image,
-    difficulty_id: str,
+    scene_profile_id: str,
     seed: int,
     samples_per_seed: int,
     coverage_label: str,
@@ -244,7 +244,8 @@ def save_single_panel(
         PANEL_BACKGROUND,
     )
     panel.alpha_composite(map_image, (COMPARISON_MARGIN, COMPARISON_HEADER))
-    title = f"{DIFFICULTY_LABELS.get(difficulty_id, difficulty_id)} · Seed {seed} · {coverage_label.title()} Coverage"
+    scene_profile_label = SCENE_PROFILES.get(scene_profile_id).label if scene_profile_id in SCENE_PROFILES else scene_profile_id
+    title = f"{scene_profile_label} · Seed {seed} · {coverage_label.title()} Coverage"
     if coverage_label == "spawn":
         subtitle = f"{samples_per_seed} sampled scenes. Numbered markers show the most repeated spawn zones over Town01."
     else:
@@ -263,7 +264,7 @@ def save_single_panel(
 def save_comparison_panel(
     *,
     output_path: Path,
-    difficulty_id: str,
+    scene_profile_id: str,
     coverage_label: str,
     rendered: list[tuple[int, Image.Image]],
     samples_per_seed: int,
@@ -275,7 +276,8 @@ def save_comparison_panel(
     panel_width = COMPARISON_MARGIN * (len(rendered) + 1) + map_width * len(rendered)
     panel_height = COMPARISON_HEADER + COMPARISON_MARGIN * 2 + map_height
     panel = Image.new("RGBA", (panel_width, panel_height), PANEL_BACKGROUND)
-    title = f"{DIFFICULTY_LABELS.get(difficulty_id, difficulty_id)} · {coverage_label.title()} Coverage by Seed"
+    scene_profile_label = SCENE_PROFILES.get(scene_profile_id).label if scene_profile_id in SCENE_PROFILES else scene_profile_id
+    title = f"{scene_profile_label} · {coverage_label.title()} Coverage by Seed"
     if coverage_label == "spawn":
         subtitle = (
             f"Town01 top spawn clusters from {samples_per_seed} sampled scenes per seed. "
@@ -316,13 +318,13 @@ def render_from_artifacts(
         summary = json.load(handle)
 
     rendered_pairs = 0
-    rendered_difficulties = 0
-    for difficulty_id in summary["difficulty_ids"]:
+    rendered_profiles = 0
+    for scene_profile_id in summary.get("scene_profile_ids", summary.get("difficulty_ids", [])):
         spawn_rendered: list[tuple[int, Image.Image]] = []
         route_rendered: list[tuple[int, Image.Image]] = []
         legend_clusters: list[SpawnCluster] | None = None
         for seed in summary["seeds"]:
-            pair_dir = output_dir / difficulty_id / f"seed_{seed}"
+            pair_dir = output_dir / scene_profile_id / f"seed_{seed}"
             spawn_points = load_points_csv(pair_dir / "spawn_points.csv")
             route_points = load_points_csv(pair_dir / "route_points.csv")
             spawn_image, spawn_clusters = render_spawn_cluster_map(
@@ -336,7 +338,7 @@ def render_from_artifacts(
             save_single_panel(
                 output_path=pair_dir / "spawn_heatmap.png",
                 map_image=spawn_image,
-                difficulty_id=difficulty_id,
+                scene_profile_id=scene_profile_id,
                 seed=seed,
                 samples_per_seed=summary["samples_per_seed"],
                 coverage_label="spawn",
@@ -345,7 +347,7 @@ def render_from_artifacts(
             save_single_panel(
                 output_path=pair_dir / "route_heatmap.png",
                 map_image=route_image,
-                difficulty_id=difficulty_id,
+                scene_profile_id=scene_profile_id,
                 seed=seed,
                 samples_per_seed=summary["samples_per_seed"],
                 coverage_label="route",
@@ -356,10 +358,10 @@ def render_from_artifacts(
                 legend_clusters = spawn_clusters
             rendered_pairs += 1
 
-        difficulty_dir = output_dir / difficulty_id
+        difficulty_dir = output_dir / scene_profile_id
         save_comparison_panel(
             output_path=difficulty_dir / "spawn_comparison.png",
-            difficulty_id=difficulty_id,
+            scene_profile_id=scene_profile_id,
             coverage_label="spawn",
             rendered=spawn_rendered,
             samples_per_seed=summary["samples_per_seed"],
@@ -367,11 +369,11 @@ def render_from_artifacts(
         )
         save_comparison_panel(
             output_path=difficulty_dir / "route_comparison.png",
-            difficulty_id=difficulty_id,
+            scene_profile_id=scene_profile_id,
             coverage_label="route",
             rendered=route_rendered,
             samples_per_seed=summary["samples_per_seed"],
         )
-        rendered_difficulties += 1
+        rendered_profiles += 1
 
-    return {"pairs": rendered_pairs, "difficulties": rendered_difficulties}
+    return {"pairs": rendered_pairs, "scene_profiles": rendered_profiles}

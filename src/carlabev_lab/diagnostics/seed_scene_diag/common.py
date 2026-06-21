@@ -38,11 +38,64 @@ def add_carlabev_repo_to_path() -> Path:
 
 CARLABEV_REPO = add_carlabev_repo_to_path()
 
-DIFFICULTY_LABELS = {
-    "rt_no_traffic_v1": "No traffic",
-    "rt_easy_v1": "Easy traffic",
-    "rt_medium_v1": "Medium traffic",
-    "rt_hard_v1": "Hard traffic",
+@dataclass(frozen=True)
+class SceneProfileSpec:
+    profile_id: str
+    label: str
+    reset_kwargs: dict[str, Any]
+
+
+SCENE_PROFILES: dict[str, SceneProfileSpec] = {
+    "no_traffic": SceneProfileSpec(
+        profile_id="no_traffic",
+        label="No traffic",
+        reset_kwargs={
+            "route_extent": "medium",
+            "route_dist_range": (50, 130),
+            "speed_profile": "medium",
+            "num_vehicles": 0,
+            "num_vehicles_near_ego": 0,
+        },
+    ),
+    "easy": SceneProfileSpec(
+        profile_id="easy",
+        label="Easy traffic",
+        reset_kwargs={
+            "route_extent": "medium",
+            "route_dist_range": (50, 130),
+            "speed_profile": "medium",
+            "num_vehicles": 2,
+            "num_vehicles_near_ego": 2,
+            "traffic_role_profile": "lead",
+            "guaranteed_candidate_role": "lead",
+        },
+    ),
+    "medium": SceneProfileSpec(
+        profile_id="medium",
+        label="Medium traffic",
+        reset_kwargs={
+            "route_extent": "medium",
+            "route_dist_range": (50, 130),
+            "speed_profile": "medium",
+            "num_vehicles": 4,
+            "num_vehicles_near_ego": 4,
+            "traffic_role_profile": "mix",
+            "guaranteed_candidate_role": "mix",
+        },
+    ),
+    "hard": SceneProfileSpec(
+        profile_id="hard",
+        label="Hard traffic",
+        reset_kwargs={
+            "route_extent": "medium",
+            "route_dist_range": (50, 130),
+            "speed_profile": "medium",
+            "num_vehicles": 6,
+            "num_vehicles_near_ego": 6,
+            "traffic_role_profile": "mix",
+            "guaranteed_candidate_role": "mix",
+        },
+    ),
 }
 
 DEFAULT_MAP_ASSET_SIZE = 128
@@ -74,7 +127,7 @@ SPAWN_CLUSTER_COLORS = [
 
 @dataclass
 class SceneSample:
-    difficulty_id: str
+    scene_profile_id: str
     seed: int
     sample_index: int
     applied_seed: int
@@ -170,7 +223,7 @@ def load_scene_samples_csv(path: Path) -> list[SceneSample]:
         for row in reader:
             samples.append(
                 SceneSample(
-                    difficulty_id=row["difficulty_id"],
+                    scene_profile_id=row.get("scene_profile_id", row.get("difficulty_id", "unknown")),
                     seed=int(row["seed"]),
                     sample_index=int(row["sample_index"]),
                     applied_seed=int(row["applied_seed"]),

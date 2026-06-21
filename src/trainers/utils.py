@@ -6,23 +6,29 @@ import numpy as np
 
 
 class CurriculumState:
-    def __init__(self, cfg):
-        self.cfg = cfg
+    def __init__(self, protocol):
+        self.protocol = protocol
+        self.backbone = protocol.backbone
         self.last_num_cars = 0
-        self.max_cars = cfg.max_vehicles
-        self.curr_mode = cfg.curriculum_mode
-        self.curr_veh = self.curr_mode in ["vehicles", "both"]
-        self.curr_route = self.curr_mode in ["route", "both"]
+        self.max_cars = int(
+            self.backbone.num_vehicles_near_ego
+            if self.backbone.num_vehicles_near_ego is not None
+            else (self.backbone.num_vehicles or 0)
+        )
+        self.curr_axis = protocol.curriculum_axis
+        self.curr_veh = self.curr_axis in ["near_ego_traffic", "both"]
+        self.curr_route = self.curr_axis in ["route_distance", "both"]
         self.start_return = 15
         self.max_return = 50
 
-        self.min_dist_start = 30  # max route length in meters
-        self.max_dist_target = 1000  # max route length in meters
-        self.range_width_start = 100  # initial max-min distance (100 - 30)
-        self.range_width_target = 400  # target range width for sampling
+        initial_range = self.backbone.route_dist_range or (30, 100)
+        self.min_dist_start = int(initial_range[0])
+        self.range_width_start = int(initial_range[1] - initial_range[0])
+        self.max_dist_target = 1000
+        self.range_width_target = 400
 
-        self.last_min = 30
-        self.last_width = 100
+        self.last_min = self.min_dist_start
+        self.last_width = self.range_width_start
 
     def vehicle_schedule(self, mean_return):
         """Adaptive number of vehicles with asymmetric hysteresis:
@@ -31,11 +37,11 @@ class CurriculumState:
         """
 
         # No traffic globally
-        if not self.cfg.traffic_enabled:
+        if self.max_cars <= 0:
             return 0
 
         # Curriculum disabled
-        if not self.cfg.curriculum_enabled or not self.curr_veh:
+        if not self.protocol.use_curriculum or not self.curr_veh:
             return self.max_cars
 
         # ======================================================
@@ -70,7 +76,7 @@ class CurriculumState:
         """Return a range [min_dist, max_dist] for route sampling based on curriculum."""
 
         # If curriculum disabled → full traffic from start
-        if not self.cfg.curriculum_enabled:
+        if not self.protocol.use_curriculum:
             return [self.min_dist_start, self.max_dist_target]
 
         # If curriculum mode does NOT include vehicles → always 0

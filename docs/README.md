@@ -9,7 +9,9 @@
 
 ## Medium Scene Visual Assets
 
-These assets were generated from a representative `rt_medium_v1` simulator scene with visible vehicles. They are intended to support the medium-difficulty report set:
+These assets were generated from a representative explicit medium scene profile
+with visible vehicles. They are intended to support the medium-study report
+set:
 
 - [difficulty temporal fusion report](/home/danielmtz/Projects/carlabev-lab/results/reports/ppo_navigation_difficulty_temporal_fusion.md)
 - [medium temporal fusion report](/home/danielmtz/Projects/carlabev-lab/results/reports/ppo_navigation_medium_temporal_fusion.md)

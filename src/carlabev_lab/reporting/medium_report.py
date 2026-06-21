@@ -20,7 +20,13 @@ class Args:
     output_dir: str = "docs"
     map_name: str = "Town01"
     size: int = 128
-    difficulty_id: str = "rt_medium_v1"
+    route_extent: str = "medium"
+    route_dist_range: tuple[int, int] = (50, 130)
+    speed_profile: str = "medium"
+    num_vehicles: int = 4
+    num_vehicles_near_ego: int = 4
+    traffic_role_profile: str = "mix"
+    guaranteed_candidate_role: str = "mix"
     semantic_mask_ch: str = "4-class"
     history_frames: int = 3
     warmup_steps: int = 6
@@ -84,7 +90,15 @@ def _build_env(args: Args) -> CarlaBEV:
 
 def _medium_reset_options(args: Args) -> dict[str, object]:
     return build_random_navigation_options(
-        RandomNavigationReset(difficulty_id=args.difficulty_id)
+        RandomNavigationReset(
+            route_extent=args.route_extent,
+            route_dist_range=args.route_dist_range,
+            speed_profile=args.speed_profile,
+            num_vehicles=args.num_vehicles,
+            num_vehicles_near_ego=args.num_vehicles_near_ego,
+            traffic_role_profile=args.traffic_role_profile,
+            guaranteed_candidate_role=args.guaranteed_candidate_role,
+        )
     )
 
 

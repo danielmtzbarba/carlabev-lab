@@ -83,7 +83,8 @@ def train_ppo(cfg, envs, logger, device, trial=None):
     ppo_artifacts = build_agent(cfg, envs, device)
     agent = ppo_artifacts.agent
     optimizer = ppo_artifacts.optimizer
-    curr_state = CurriculumState(cfg.env)
+    train_sampler = build_train_protocol_sampler(cfg)
+    curr_state = CurriculumState(train_sampler.protocol)
     return_buffer = deque(maxlen=50)
 
     model_channels = agent.backbone.in_channels
@@ -129,7 +130,6 @@ def train_ppo(cfg, envs, logger, device, trial=None):
     )
     run_paths.ensure_dirs()
 
-    train_sampler = build_train_protocol_sampler(cfg)
     options = train_sampler.initial_options(num_envs)
     reset_seeds = _initial_reset_seeds(train_sampler, num_envs)
 

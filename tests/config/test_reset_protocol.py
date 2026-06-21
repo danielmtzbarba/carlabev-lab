@@ -8,12 +8,12 @@ from src.config.studies.registry import get_train_protocol
 
 @pytest.mark.envdep
 def test_random_navigation_sampler_tags_options_with_protocol_metadata():
-    args = ArgsCarlaBEV(train_protocol_id="random_nav_train")
+    args = ArgsCarlaBEV(train_protocol_id="traffic_fixed_train")
     sampler = build_train_protocol_sampler(args)
 
     options = sampler.initial_options(2)
 
-    assert options["protocol_id"] == "random_nav_train"
+    assert options["protocol_id"] == "traffic_fixed_train"
     assert options["protocol_mode"] == "random_navigation"
     assert np.array_equal(options["reset_mask"], np.array([True, True]))
 

@@ -22,7 +22,7 @@ from .common import (
     CARLABEV_REPO,
     CoverageData,
     DEFAULT_MAP_ASSET_SIZE,
-    DIFFICULTY_LABELS,
+    SCENE_PROFILES,
     SceneSample,
     town_map_asset_path,
     write_dataclass_csv,
@@ -50,7 +50,7 @@ def make_env(frame_size: int) -> CarlaBEV:
 
 def extract_sample(
     *,
-    difficulty_id: str,
+    scene_profile_id: str,
     seed: int,
     sample_index: int,
     applied_seed: int,
@@ -62,7 +62,7 @@ def extract_sample(
     spawn = info.get("spawn_validation", {})
     metadata = extract_scene_route_metadata(env, info)
     return SceneSample(
-        difficulty_id=difficulty_id,
+        scene_profile_id=scene_profile_id,
         seed=seed,
         sample_index=sample_index,
         applied_seed=applied_seed,
@@ -161,7 +161,7 @@ def build_pair_summary(samples: list[SceneSample]) -> dict[str, Any]:
 def generate_dataset(
     *,
     seeds: list[int],
-    difficulty_ids: list[str],
+    scene_profile_ids: list[str],
     samples_per_seed: int,
     seed_mode: str,
     route_profile: str | None = None,
@@ -183,7 +183,7 @@ def generate_dataset(
         "seed_mode": seed_mode,
         "samples_per_seed": samples_per_seed,
         "seeds": seeds,
-        "difficulty_ids": difficulty_ids,
+        "scene_profile_ids": scene_profile_ids,
         "route_profile": route_profile,
         "route_profile_mix": route_profile_mix,
         "min_turns": min_turns,
@@ -196,7 +196,7 @@ def generate_dataset(
         "pairs": {},
     }
 
-    total_pairs = len(difficulty_ids) * len(seeds)
+    total_pairs = len(scene_profile_ids) * len(seeds)
     with Progress(
         TextColumn("[progress.description]{task.description}"),
         BarColumn(),
@@ -204,37 +204,44 @@ def generate_dataset(
         TimeElapsedColumn(),
         TimeRemainingColumn(),
     ) as progress:
-        pair_task = progress.add_task("Seed/difficulty pairs", total=total_pairs)
+        pair_task = progress.add_task("Seed/profile pairs", total=total_pairs)
 
-        for difficulty_id in difficulty_ids:
+        for scene_profile_id in scene_profile_ids:
+            profile_spec = SCENE_PROFILES.get(scene_profile_id)
+            if profile_spec is None:
+                available = ", ".join(sorted(SCENE_PROFILES))
+                raise ValueError(
+                    f"Unknown scene_profile_id={scene_profile_id!r}. Available profiles: {available}"
+                )
             for seed in seeds:
                 env = make_env(frame_size)
                 pair_samples: list[SceneSample] = []
                 pair_spawn_points: list[tuple[float, float]] = []
                 pair_route_points: list[tuple[float, float]] = []
-                pair_key = f"{difficulty_id}__seed_{seed}"
-                pair_dir = output_dir / difficulty_id / f"seed_{seed}"
+                pair_key = f"{scene_profile_id}__seed_{seed}"
+                pair_dir = output_dir / scene_profile_id / f"seed_{seed}"
                 frame_indices = set(representative_indices(samples_per_seed, save_frames_per_pair))
-                scene_task = progress.add_task(f"{difficulty_id} seed={seed}", total=samples_per_seed)
+                scene_task = progress.add_task(f"{scene_profile_id} seed={seed}", total=samples_per_seed)
 
                 try:
                     for sample_index in range(samples_per_seed):
                         applied_seed = seed if seed_mode == "fixed" else seed + sample_index
+                        reset_kwargs = dict(profile_spec.reset_kwargs)
+                        reset_kwargs.update(
+                            route_profile=route_profile,
+                            route_profile_mix=route_profile_mix,
+                            min_turns=min_turns,
+                            max_turns=max_turns,
+                            intersection_required=intersection_required,
+                            max_route_attempts=max_route_attempts,
+                            ego_route_graph=ego_route_graph,
+                        )
                         options = build_random_navigation_options(
-                            RandomNavigationReset(
-                                difficulty_id=difficulty_id,
-                                route_profile=route_profile,
-                                route_profile_mix=route_profile_mix,
-                                min_turns=min_turns,
-                                max_turns=max_turns,
-                                intersection_required=intersection_required,
-                                max_route_attempts=max_route_attempts,
-                                ego_route_graph=ego_route_graph,
-                            )
+                            RandomNavigationReset(**reset_kwargs)
                         )
                         frame, info = env.reset(seed=applied_seed, options=options)
                         sample = extract_sample(
-                            difficulty_id=difficulty_id,
+                            scene_profile_id=scene_profile_id,
                             seed=seed,
                             sample_index=sample_index,
                             applied_seed=applied_seed,
@@ -258,8 +265,8 @@ def generate_dataset(
                 write_points_csv(pair_spawn_points, pair_dir / "spawn_points.csv")
                 write_points_csv(pair_route_points, pair_dir / "route_points.csv")
                 summary["pairs"][pair_key] = {
-                    "difficulty_id": difficulty_id,
-                    "difficulty_label": DIFFICULTY_LABELS.get(difficulty_id, difficulty_id),
+                    "scene_profile_id": scene_profile_id,
+                    "scene_profile_label": profile_spec.label,
                     "seed": seed,
                     "seed_mode": seed_mode,
                     **build_pair_summary(pair_samples),

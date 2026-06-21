@@ -92,31 +92,26 @@ class ResetProtocolSampler:
 
     def _random_navigation_options(self, reset_mask, mean_return=None, curriculum_state=None) -> dict:
         protocol: RandomNavigationProtocol = self.protocol
-        difficulty_id = getattr(self.cfg.env, "difficulty_id", None)
-        if difficulty_id is not None:
-            options = build_random_navigation_options(
-                RandomNavigationReset(difficulty_id=difficulty_id),
-                reset_mask=reset_mask,
-            )
-        else:
-            num_vehicles = protocol.initial_num_vehicles
-            route_dist_range = list(protocol.initial_route_dist_range)
+        reset_kwargs = protocol.backbone.model_dump(exclude_none=True)
 
-            if (
-                protocol.use_curriculum
-                and curriculum_state is not None
-                and mean_return is not None
-            ):
-                num_vehicles = curriculum_state.vehicle_schedule(mean_return)
-                route_dist_range = list(curriculum_state.route_schedule(mean_return))
+        if (
+            protocol.use_curriculum
+            and curriculum_state is not None
+            and mean_return is not None
+        ):
+            if protocol.curriculum_axis in {"near_ego_traffic", "both"}:
+                num_vehicles = int(curriculum_state.vehicle_schedule(mean_return))
+                reset_kwargs["num_vehicles"] = num_vehicles
+                reset_kwargs["num_vehicles_near_ego"] = num_vehicles
+            if protocol.curriculum_axis in {"route_distance", "both"}:
+                reset_kwargs["route_dist_range"] = tuple(
+                    curriculum_state.route_schedule(mean_return)
+                )
 
-            options = build_random_navigation_options(
-                RandomNavigationReset(
-                    num_vehicles=int(num_vehicles),
-                    route_dist_range=tuple(route_dist_range),
-                ),
-                reset_mask=reset_mask,
-            )
+        options = build_random_navigation_options(
+            RandomNavigationReset(**reset_kwargs),
+            reset_mask=reset_mask,
+        )
         options["protocol_id"] = protocol.protocol_id
         options["protocol_mode"] = protocol.mode
         return options

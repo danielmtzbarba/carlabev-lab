@@ -9,11 +9,12 @@ from rich.table import Table
 
 from src.utils.storage_paths import results_root
 from .seed_scene_diag.analysis import generate_dataset
-from .seed_scene_diag.common import DEFAULT_MAP_ASSET_SIZE
+from .seed_scene_diag.common import DEFAULT_MAP_ASSET_SIZE, SCENE_PROFILES
 from .seed_scene_diag.visualization import render_from_artifacts
 
 
 def _add_shared_args(parser: argparse.ArgumentParser) -> None:
+    available_scene_profiles = ", ".join(sorted(SCENE_PROFILES))
     parser.add_argument("--seeds", type=int, nargs="+", default=None, help="Top-level run seeds to analyze.")
     parser.add_argument(
         "--prime-seeds-count",
@@ -28,12 +29,12 @@ def _add_shared_args(parser: argparse.ArgumentParser) -> None:
         help="Lower bound used when generating prime-number seeds with --prime-seeds-count.",
     )
     parser.add_argument(
-        "--difficulty-ids",
+        "--scene-profile-ids",
         nargs="+",
-        default=["rt_no_traffic_v1", "rt_easy_v1", "rt_medium_v1", "rt_hard_v1"],
-        help="Difficulty preset IDs to analyze.",
+        default=["no_traffic", "easy", "medium", "hard"],
+        help=f"Scene profile IDs to analyze. Available: {available_scene_profiles}.",
     )
-    parser.add_argument("--samples-per-seed", type=int, default=1000, help="Number of reset scenes to sample for each seed+difficulty pair.")
+    parser.add_argument("--samples-per-seed", type=int, default=1000, help="Number of reset scenes to sample for each seed+profile pair.")
     parser.add_argument(
         "--seed-mode",
         choices=["fixed", "incremental"],
@@ -76,7 +77,7 @@ def _add_shared_args(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Reject routes classified as intersection-like.",
     )
-    parser.add_argument("--save-frames-per-pair", type=int, default=6, help="Number of representative spawn frames to save for each seed+difficulty pair.")
+    parser.add_argument("--save-frames-per-pair", type=int, default=6, help="Number of representative spawn frames to save for each seed+profile pair.")
     parser.add_argument("--frame-size", type=int, default=128, help="Rendered frame size for spawn-frame captures.")
     parser.add_argument(
         "--output-dir",
@@ -94,7 +95,7 @@ def _add_visualization_args(parser: argparse.ArgumentParser) -> None:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Analyze and visualize random-navigation scene distributions across seeds and difficulty presets."
+        description="Analyze and visualize random-navigation scene distributions across seeds and explicit scene profiles."
     )
     subparsers = parser.add_subparsers(dest="mode")
 
@@ -198,7 +199,7 @@ def _print_pair_summary(summary: dict) -> None:
         show_header=True,
         header_style="bold green",
     )
-    table.add_column("Difficulty", justify="left")
+    table.add_column("Scene Profile", justify="left")
     table.add_column("Seed", justify="right")
     table.add_column("Samples", justify="right")
     table.add_column("Unique Scenes", justify="right")
@@ -214,7 +215,7 @@ def _print_pair_summary(summary: dict) -> None:
     table.add_column("Left %", justify="right")
     table.add_column("Right %", justify="right")
 
-    for pair in sorted(summary["pairs"].values(), key=lambda item: (item["difficulty_id"], item["seed"])):
+    for pair in sorted(summary["pairs"].values(), key=lambda item: (item["scene_profile_id"], item["seed"])):
         route_profile_counts = pair.get("route_profile_counts", {})
         dominant_profile = max(route_profile_counts, key=route_profile_counts.get) if route_profile_counts else "-"
         dominant_profile_share = (
@@ -223,7 +224,7 @@ def _print_pair_summary(summary: dict) -> None:
             else 0.0
         )
         table.add_row(
-            pair["difficulty_label"],
+            pair["scene_profile_label"],
             str(pair["seed"]),
             str(pair["num_samples"]),
             str(pair["num_unique_scenes"]),
@@ -247,7 +248,7 @@ def _print_pair_summary(summary: dict) -> None:
             show_header=True,
             header_style="bold cyan",
         )
-        aggregate.add_column("Difficulty", justify="left")
+        aggregate.add_column("Scene Profile", justify="left")
         aggregate.add_column("Seeds", justify="right")
         aggregate.add_column("Mean Unique Routes", justify="right")
         aggregate.add_column("Mean Route Repeat %", justify="right")
@@ -257,9 +258,9 @@ def _print_pair_summary(summary: dict) -> None:
 
         grouped: dict[str, list[dict]] = {}
         for pair in summary["pairs"].values():
-            grouped.setdefault(pair["difficulty_label"], []).append(pair)
+            grouped.setdefault(pair["scene_profile_label"], []).append(pair)
 
-        for difficulty_label, items in sorted(grouped.items()):
+        for scene_profile_label, items in sorted(grouped.items()):
             seed_count = len(items)
             mean_unique_routes = sum(item.get("num_unique_routes", 0) for item in items) / seed_count
             mean_route_repeat = sum(item.get("route_repeat_ratio", 0.0) for item in items) / seed_count
@@ -267,7 +268,7 @@ def _print_pair_summary(summary: dict) -> None:
             mean_intersections = sum(item.get("intersection_like_rate", 0.0) or 0.0 for item in items) / seed_count
             mean_straight = sum(item.get("mean_straight_fraction", 0.0) or 0.0 for item in items) / seed_count
             aggregate.add_row(
-                difficulty_label,
+                scene_profile_label,
                 str(seed_count),
                 f"{mean_unique_routes:.1f}",
                 f"{mean_route_repeat * 100:.1f}",
@@ -289,7 +290,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.mode == "analyze":
         summary = generate_dataset(
             seeds=seeds,
-            difficulty_ids=args.difficulty_ids,
+            scene_profile_ids=args.scene_profile_ids,
             samples_per_seed=args.samples_per_seed,
             seed_mode=args.seed_mode,
             route_profile=args.route_profile,
@@ -318,13 +319,13 @@ def main(argv: list[str] | None = None) -> None:
         )
         print(f"Rendered figures in {args.output_dir}")
         print(f"Pairs rendered: {result['pairs']}")
-        print(f"Difficulties rendered: {result['difficulties']}")
+        print(f"Scene profiles rendered: {result['scene_profiles']}")
         return
 
     if args.mode == "full":
         summary = generate_dataset(
             seeds=seeds,
-            difficulty_ids=args.difficulty_ids,
+            scene_profile_ids=args.scene_profile_ids,
             samples_per_seed=args.samples_per_seed,
             seed_mode=args.seed_mode,
             route_profile=args.route_profile,

@@ -52,6 +52,7 @@ def apply_experiment_config(
 ) -> ArgsCarlaBEV:
     study: StudyConfig = get_study_config(study_id or args.study_id)
     experiment: ExperimentSpec = get_experiment_spec(study.study_id, exp_id)
+    train_protocol = get_train_protocol(study.study_id, experiment.train_protocol_id)
 
     args.study_id = study.study_id
     args.exp_id = exp_id
@@ -74,7 +75,6 @@ def apply_experiment_config(
         env.ego_anchor_y_frac = 0.75
     else:
         raise ValueError(f"Unsupported fov_anchor={experiment.fov_anchor!r}")
-    env.traffic_enabled = experiment.traffic == "on"
     env.input_type = experiment.input_type
     env.semantic_mask_ch = (
         experiment.semantic_mask_ch
@@ -86,18 +86,20 @@ def apply_experiment_config(
     env.reward_profile_id = experiment.reward_profile_id or LEGACY_REWARD_PROFILE_IDS[
         experiment.reward_mode
     ]
-    env.difficulty_id = experiment.difficulty_id
-
-    if experiment.curriculum == "off":
-        env.curriculum_enabled = False
+    if train_protocol.mode == "random_navigation":
+        backbone = train_protocol.backbone
+        env.route_dist_range = backbone.route_dist_range or env.route_dist_range
+        env.traffic_enabled = bool(backbone.num_vehicles or 0)
+        if train_protocol.scene_library is not None:
+            env.scene_library_enabled = train_protocol.scene_library.enabled
+            if train_protocol.scene_library.path is not None:
+                env.scene_library_path = train_protocol.scene_library.path
+            env.scene_library_read_only = train_protocol.scene_library.read_only
+            env.scene_library_require_hit = train_protocol.scene_library.require_hit
+            if train_protocol.scene_library.generator_version is not None:
+                env.scene_library_generator_version = train_protocol.scene_library.generator_version
     else:
-        env.curriculum_enabled = True
-        if experiment.curriculum == "vehicles_only":
-            env.curriculum_mode = "vehicles"
-        elif experiment.curriculum == "route_only":
-            env.curriculum_mode = "route"
-        else:
-            env.curriculum_mode = "both"
+        env.traffic_enabled = True
 
     run_paths = RunPaths(study_id=study.study_id, exp_id=exp_id, trial_number=None, seed=args.seed)
     args.run_label = run_paths.run_label
@@ -136,9 +138,9 @@ def save_run_config(args: ArgsCarlaBEV):
         "carlabev_run_config": to_carlabev_run_config(args).model_dump(mode="json"),
         "carlabev_env_profiles": resolve_env_profiles(to_carlabev_run_config(args).env),
         "selected_profiles": {
-            "difficulty_id": args.env.difficulty_id,
             "action_profile_id": args.env.action_profile_id,
             "reward_profile_id": args.env.reward_profile_id,
+            "scene_library_path": args.env.scene_library_path,
         },
         "compatibility": {
             "legacy_env_aliases": args.legacy_aliases(),
@@ -372,7 +374,6 @@ def run_experiment(args: ArgsCarlaBEV, trial=None, seed_idx: int = None) -> floa
     trial.set_user_attr("action_mode", args.env.action_mode)
     trial.set_user_attr("action_profile_id", args.env.action_profile_id)
     trial.set_user_attr("traffic_enabled", args.env.traffic_enabled)
-    trial.set_user_attr("difficulty_id", args.env.difficulty_id)
     trial.set_user_attr("input_type", args.env.input_type)
     trial.set_user_attr("semantic_mask_ch", args.env.semantic_mask_ch)
     trial.set_user_attr("temporal_fusion_mode", args.env.temporal_fusion_mode)
@@ -382,10 +383,8 @@ def run_experiment(args: ArgsCarlaBEV, trial=None, seed_idx: int = None) -> floa
     trial.set_user_attr("fov_anchor", experiment.fov_anchor if 'experiment' in locals() else None)
     trial.set_user_attr("reward_mode", args.env.reward_mode)
     trial.set_user_attr("reward_profile_id", args.env.reward_profile_id)
-    trial.set_user_attr(
-        "curriculum",
-        args.env.curriculum_mode if args.env.curriculum_enabled else "off",
-    )
+    trial.set_user_attr("scene_library_enabled", args.env.scene_library_enabled)
+    trial.set_user_attr("scene_library_path", args.env.scene_library_path)
 
     device = torch.device("cuda" if args.cuda and torch.cuda.is_available() else "cpu")
 
