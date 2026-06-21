@@ -65,5 +65,5 @@ markers = [
 ]
 
 [tool.uv.sources]
-CarlaBEV = { path = "../../driverless/carlabev-env", editable = true }
+CarlaBEV = { path = "../carlabev-env", editable = true }
 stable-pretraining = { git = "https://github.com/galilai-group/stable-pretraining.git" }
