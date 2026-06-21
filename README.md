@@ -133,6 +133,7 @@ The main command groups are:
 - `eval`: evaluate the latest run for a configured study experiment
 - `tune`: launch or analyze Optuna tuning stages
 - `results`: inspect leaderboards, plots, and report assets
+- `scene-library`: prebuild study-owned CarlaBEV scene databases
 - `db`: inspect or clean Optuna state
 - `diagnostics`: run seed-scene and pruning diagnostics
 - `world-model`: collect, inspect, validate, benchmark, and train offline world models for the LeWM proof of concept
@@ -310,6 +311,38 @@ the protocol spec, for example:
 - `assets/scene_libraries/ppo_navigation_medium_fov_anchor.db`
 
 This keeps scene generation explicit, repeatable, and decoupled from training.
+
+The preferred way to populate those databases from the lab repo is now:
+
+```bash
+uv run drl scene-library build --study-id PPO_NAVIGATION --dry-run
+uv run drl scene-library build --study-id PPO_NAVIGATION
+```
+
+Default behavior:
+
+- dedupe identical random-navigation backbones across train/eval protocols
+- use the shared 10 prime study seeds: `2 3 5 7 11 13 17 19 23 29`
+- request `1000` scenes per study seed per unique backbone
+
+Useful overrides:
+
+```bash
+uv run drl scene-library build --study-id PPO_NAVIGATION --episodes-per-seed 500
+uv run drl scene-library build --study-id PPO_NAVIGATION_DIFFICULTY --protocol-ids easy_train easy_eval
+uv run drl scene-library build --study-id PPO_NAVIGATION --include-eval --dry-run --json
+```
+
+The lab command delegates to CarlaBEV's public scene-library builder using the
+structured seed interface:
+
+- `study_id`
+- `backbone_id`
+- `study_seed`
+- `episode_index`
+
+That means the corpus is deterministic per study seed without relying on opaque
+manual seed offsets.
 
 ### Reset Seed Scheduling
 

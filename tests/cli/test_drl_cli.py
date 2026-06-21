@@ -90,6 +90,22 @@ def test_main_dispatches_seed_scene_diagnostics_command(monkeypatch):
 
 
 @pytest.mark.unit
+def test_main_dispatches_scene_library_build_command(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_scene_library(argv):
+        captured["argv"] = list(argv)
+        return "scene-library"
+
+    monkeypatch.setattr(drl_cli, "run_scene_library_build_command", fake_scene_library)
+
+    result = drl_cli.main(["scene-library", "build", "--study-id", "PPO_NAVIGATION"])
+
+    assert result == "scene-library"
+    assert captured["argv"] == ["--study-id", "PPO_NAVIGATION"]
+
+
+@pytest.mark.unit
 def test_main_dispatches_world_model_collect_command(monkeypatch):
     captured: dict[str, object] = {}
 
