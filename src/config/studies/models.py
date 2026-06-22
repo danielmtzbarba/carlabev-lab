@@ -162,16 +162,92 @@ class SceneLibraryPolicy(BaseModel):
     generator_version: str | None = None
 
 
+class SceneSourceRef(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    mode: Literal["benchmark", "study_private"] = "study_private"
+    benchmark_id: str | None = None
+    scene_profile_id: str | None = None
+    split: Literal["train", "eval"] = "train"
+
+    @model_validator(mode="after")
+    def _validate_source(self):
+        if self.mode == "benchmark":
+            if not self.benchmark_id:
+                raise ValueError("`benchmark_id` is required when `mode='benchmark'`.")
+            if not self.scene_profile_id:
+                raise ValueError("`scene_profile_id` is required when `mode='benchmark'`.")
+        return self
+
+
+class SceneBenchmarkProfile(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    scene_profile_id: str
+    backbone: SceneGenerationBackbone
+
+
+class SceneBenchmarkConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    benchmark_id: str
+    description: str
+    scene_library: SceneLibraryPolicy
+    prime_seeds: list[int]
+    episodes_per_seed: int
+    profiles: dict[str, SceneBenchmarkProfile]
+
+    @model_validator(mode="after")
+    def _validate_profiles(self):
+        for profile_id, profile in self.profiles.items():
+            if profile.scene_profile_id != profile_id:
+                raise ValueError(
+                    "Scene benchmark profile keys must match `scene_profile_id`: "
+                    f"{profile_id!r} != {profile.scene_profile_id!r}."
+                )
+        return self
+
+
 class RandomNavigationProtocol(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     protocol_id: str
     mode: Literal["random_navigation"]
-    reset_seed_mode: Literal["fixed", "incremental", "hashed_episode"] = "hashed_episode"
-    backbone: SceneGenerationBackbone
+    reset_seed_mode: Literal["fixed", "incremental", "hashed_episode", "benchmark_hashed_episode"] = "hashed_episode"
+    scene_source: SceneSourceRef | None = None
+    backbone: SceneGenerationBackbone | None = None
     use_curriculum: bool = False
     curriculum_axis: CurriculumAxis = "none"
     scene_library: SceneLibraryPolicy | None = None
+
+    @model_validator(mode="after")
+    def _validate_scene_source(self):
+        if self.scene_source is None:
+            if self.backbone is None:
+                raise ValueError(
+                    "`backbone` is required when `scene_source` is omitted."
+                )
+            return self
+        if self.scene_source.mode == "benchmark":
+            if self.backbone is not None:
+                raise ValueError(
+                    "`backbone` must be omitted when `scene_source.mode='benchmark'`."
+                )
+            if self.scene_library is not None:
+                raise ValueError(
+                    "`scene_library` must be omitted when `scene_source.mode='benchmark'`; "
+                    "the benchmark owns the scene-library policy."
+                )
+            if self.reset_seed_mode != "benchmark_hashed_episode":
+                raise ValueError(
+                    "`reset_seed_mode` must be 'benchmark_hashed_episode' for benchmark-backed protocols."
+                )
+            return self
+        if self.backbone is None:
+            raise ValueError(
+                "`backbone` is required when `scene_source.mode='study_private'`."
+            )
+        return self
 
 
 class ScenarioCatalogProtocol(BaseModel):

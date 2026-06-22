@@ -1,6 +1,11 @@
 import pytest
 
-from src.config.studies.models import ExperimentSpec, SceneGenerationBackbone
+from src.config.studies.models import (
+    ExperimentSpec,
+    RandomNavigationProtocol,
+    SceneGenerationBackbone,
+    SceneSourceRef,
+)
 
 
 @pytest.mark.unit
@@ -67,3 +72,17 @@ def test_valid_temporal_fusion_spec_passes():
 def test_scene_generation_backbone_rejects_invalid_near_ego_count():
     with pytest.raises(ValueError, match="num_vehicles_near_ego"):
         SceneGenerationBackbone(num_vehicles=2, num_vehicles_near_ego=3)
+
+
+@pytest.mark.unit
+def test_benchmark_protocol_requires_benchmark_seed_mode():
+    with pytest.raises(ValueError, match="benchmark_hashed_episode"):
+        RandomNavigationProtocol(
+            protocol_id="medium_train",
+            mode="random_navigation",
+            scene_source=SceneSourceRef(
+                mode="benchmark",
+                benchmark_id="navigation_medium_v1",
+                scene_profile_id="medium",
+            ),
+        )

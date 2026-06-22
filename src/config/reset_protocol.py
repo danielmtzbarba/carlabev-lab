@@ -16,6 +16,10 @@ from CarlaBEV.config import (
     build_scenario_preset_options,
 )
 
+from src.config.scene_benchmarks.registry import (
+    get_scene_benchmark_config,
+    get_scene_benchmark_profile,
+)
 from src.config.studies.models import (
     ProtocolSpec,
     RandomNavigationProtocol,
@@ -33,16 +37,26 @@ class ResetProtocolSampler:
         self._per_env_reset_counts: list[int] = []
 
     def _protocol_seed(self) -> int:
-        token = f"{self.cfg.seed}:{self.cfg.study_id}:{self.protocol.protocol_id}"
+        token = ":".join(self._seed_namespace_parts())
         digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
         return int(digest[:16], 16)
 
     def _derive_seed(self, *parts: object) -> int:
-        token = ":".join(
-            [str(self.cfg.seed), self.cfg.study_id, self.protocol.protocol_id, *(str(part) for part in parts)]
-        )
+        token = ":".join([*self._seed_namespace_parts(), *(str(part) for part in parts)])
         digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
         return int(digest[:16], 16) % (2**31 - 1)
+
+    def _seed_namespace_parts(self) -> list[str]:
+        if self.protocol.mode == "random_navigation":
+            source = getattr(self.protocol, "scene_source", None)
+            if source is not None and source.mode == "benchmark":
+                return [
+                    str(self.cfg.seed),
+                    str(source.benchmark_id),
+                    str(source.scene_profile_id),
+                    str(source.split),
+                ]
+        return [str(self.cfg.seed), self.cfg.study_id, self.protocol.protocol_id]
 
     def _ensure_env_state(self, num_envs: int) -> None:
         if len(self._per_env_reset_counts) != num_envs:
@@ -92,7 +106,15 @@ class ResetProtocolSampler:
 
     def _random_navigation_options(self, reset_mask, mean_return=None, curriculum_state=None) -> dict:
         protocol: RandomNavigationProtocol = self.protocol
-        reset_kwargs = protocol.backbone.model_dump(exclude_none=True)
+        if protocol.scene_source is not None and protocol.scene_source.mode == "benchmark":
+            profile = get_scene_benchmark_profile(
+                protocol.scene_source.benchmark_id,
+                protocol.scene_source.scene_profile_id,
+            )
+            reset_kwargs = profile.backbone.model_dump(exclude_none=True)
+        else:
+            assert protocol.backbone is not None
+            reset_kwargs = protocol.backbone.model_dump(exclude_none=True)
 
         if (
             protocol.use_curriculum
@@ -114,6 +136,11 @@ class ResetProtocolSampler:
         )
         options["protocol_id"] = protocol.protocol_id
         options["protocol_mode"] = protocol.mode
+        if protocol.scene_source is not None and protocol.scene_source.mode == "benchmark":
+            benchmark = get_scene_benchmark_config(protocol.scene_source.benchmark_id)
+            options["scene_benchmark_id"] = benchmark.benchmark_id
+            options["scene_profile_id"] = protocol.scene_source.scene_profile_id
+            options["scene_split"] = protocol.scene_source.split
         return options
 
     def _scenario_catalog_options(self, reset_mask) -> dict:

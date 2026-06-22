@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -10,6 +11,10 @@ from loguru import logger
 
 from CarlaBEV.tools.build_scene_library import build_scene_library as build_env_scene_library
 
+from src.config.scene_benchmarks.registry import (
+    get_scene_benchmark_config,
+    get_scene_benchmark_profile,
+)
 from src.config.studies.models import RandomNavigationProtocol, StudyConfig
 from src.config.studies.registry import get_study_config
 from src.tuning.optuna_utils import DEFAULT_STUDY_PRIME_SEEDS
@@ -19,15 +24,22 @@ from src.utils.storage_paths import resolve_artifact_path
 @dataclass(frozen=True)
 class BackboneBuildPlan:
     backbone_id: str
+    seed_owner_id: str
     scene_library_path: str
     protocol_ids: tuple[str, ...]
     request_kwargs: dict[str, Any]
 
 
-def _normalize_request_kwargs(protocol: RandomNavigationProtocol) -> dict[str, Any]:
-    backbone = protocol.backbone
+def _request_kwargs_from_backbone(
+    backbone,
+    *,
+    scene_benchmark_id: str | None = None,
+    scene_split: str | None = None,
+) -> dict[str, Any]:
     return {
+        "scene_benchmark_id": scene_benchmark_id,
         "scene_profile_id": backbone.scene_profile_id,
+        "scene_split": scene_split,
         "difficulty_preset_id": "medium",
         "route_extent": backbone.route_extent,
         "route_dist_range": backbone.route_dist_range,
@@ -40,8 +52,40 @@ def _normalize_request_kwargs(protocol: RandomNavigationProtocol) -> dict[str, A
     }
 
 
-def _backbone_signature(scene_library_path: str, request_kwargs: dict[str, Any]) -> str:
-    payload = {"scene_library_path": scene_library_path, "request_kwargs": request_kwargs}
+def _normalize_request_kwargs(
+    protocol: RandomNavigationProtocol,
+    *,
+    study_id: str,
+) -> tuple[str, str, dict[str, Any]]:
+    source = protocol.scene_source
+    if source is not None and source.mode == "benchmark":
+        profile = get_scene_benchmark_profile(source.benchmark_id, source.scene_profile_id)
+        request_kwargs = _request_kwargs_from_backbone(
+            profile.backbone,
+            scene_benchmark_id=source.benchmark_id,
+            scene_split=source.split,
+        )
+        stable_backbone_id = f"{source.scene_profile_id}:{source.split}"
+        return source.benchmark_id, stable_backbone_id, request_kwargs
+    assert protocol.backbone is not None
+    request_kwargs = _request_kwargs_from_backbone(protocol.backbone)
+    digest = hashlib.sha256(json.dumps(request_kwargs, sort_keys=True).encode("utf-8")).hexdigest()[:12]
+    stable_backbone_id = request_kwargs["scene_profile_id"] or f"study_private_{digest}"
+    return study_id, stable_backbone_id, request_kwargs
+
+
+def _backbone_signature(
+    seed_owner_id: str,
+    backbone_id: str,
+    scene_library_path: str,
+    request_kwargs: dict[str, Any],
+) -> str:
+    payload = {
+        "seed_owner_id": seed_owner_id,
+        "backbone_id": backbone_id,
+        "scene_library_path": scene_library_path,
+        "request_kwargs": request_kwargs,
+    }
     return json.dumps(payload, sort_keys=True)
 
 
@@ -81,15 +125,29 @@ def resolve_study_scene_library_plan(
     ):
         if protocol.mode != "random_navigation":
             continue
-        scene_library = protocol.scene_library
+        if protocol.scene_source is not None and protocol.scene_source.mode == "benchmark":
+            benchmark = get_scene_benchmark_config(protocol.scene_source.benchmark_id)
+            scene_library = benchmark.scene_library
+        else:
+            scene_library = protocol.scene_library
         if scene_library is None or scene_library.path is None:
             raise ValueError(
                 f"Random-navigation protocol {protocol_id!r} in study {study_id!r} does not declare a scene-library path."
             )
-        request_kwargs = _normalize_request_kwargs(protocol)
-        signature = _backbone_signature(scene_library.path, request_kwargs)
+        seed_owner_id, backbone_id, request_kwargs = _normalize_request_kwargs(
+            protocol,
+            study_id=study_id,
+        )
+        signature = _backbone_signature(
+            seed_owner_id,
+            backbone_id,
+            scene_library.path,
+            request_kwargs,
+        )
         if signature not in grouped:
             grouped[signature] = {
+                "seed_owner_id": seed_owner_id,
+                "backbone_id": backbone_id,
                 "scene_library_path": scene_library.path,
                 "request_kwargs": request_kwargs,
                 "protocol_ids": [],
@@ -97,11 +155,12 @@ def resolve_study_scene_library_plan(
         grouped[signature]["protocol_ids"].append(protocol_id)
 
     plans: list[BackboneBuildPlan] = []
-    for index, item in enumerate(grouped.values()):
+    for item in grouped.values():
         protocol_names = tuple(sorted(item["protocol_ids"]))
         plans.append(
             BackboneBuildPlan(
-                backbone_id=f"backbone_{index}",
+                backbone_id=item["backbone_id"],
+                seed_owner_id=item["seed_owner_id"],
                 scene_library_path=item["scene_library_path"],
                 protocol_ids=protocol_names,
                 request_kwargs=item["request_kwargs"],
@@ -110,19 +169,57 @@ def resolve_study_scene_library_plan(
     return plans
 
 
+def resolve_benchmark_scene_library_plan(
+    benchmark_id: str,
+    *,
+    profiles: list[str] | None = None,
+    include_train: bool = True,
+    include_eval: bool = True,
+) -> tuple[list[BackboneBuildPlan], list[int], int]:
+    benchmark = get_scene_benchmark_config(benchmark_id)
+    selected_profiles = set(profiles) if profiles else None
+    plans: list[BackboneBuildPlan] = []
+    splits = []
+    if include_train:
+        splits.append("train")
+    if include_eval:
+        splits.append("eval")
+    for scene_profile_id, profile in benchmark.profiles.items():
+        if selected_profiles is not None and scene_profile_id not in selected_profiles:
+            continue
+        for split in splits:
+            request_kwargs = _request_kwargs_from_backbone(
+                profile.backbone,
+                scene_benchmark_id=benchmark.benchmark_id,
+                scene_split=split,
+            )
+            plans.append(
+                BackboneBuildPlan(
+                    backbone_id=f"{scene_profile_id}:{split}",
+                    seed_owner_id=benchmark_id,
+                    scene_library_path=str(benchmark.scene_library.path),
+                    protocol_ids=(f"{scene_profile_id}_{split}",),
+                    request_kwargs=request_kwargs,
+                )
+            )
+    return plans, list(benchmark.prime_seeds), int(benchmark.episodes_per_seed)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Build study-owned CarlaBEV scene-library databases from random-navigation backbones."
+        description="Build CarlaBEV scene-library databases from study-private or benchmark-backed random-navigation protocols."
     )
-    parser.add_argument("--study-id", required=True)
-    parser.add_argument("--episodes-per-seed", type=int, default=1000)
+    parser.add_argument("--study-id", default=None)
+    parser.add_argument("--benchmark-id", default=None)
+    parser.add_argument("--episodes-per-seed", type=int, default=None)
     parser.add_argument(
         "--prime-seeds",
         type=int,
         nargs="+",
-        default=list(DEFAULT_STUDY_PRIME_SEEDS),
+        default=None,
     )
     parser.add_argument("--protocol-ids", nargs="+", default=None)
+    parser.add_argument("--profiles", nargs="+", default=None)
     parser.add_argument("--include-train", action="store_true", default=False)
     parser.add_argument("--include-eval", action="store_true", default=False)
     parser.add_argument("--dry-run", action="store_true")
@@ -132,13 +229,15 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def _render_plan(
     *,
-    study_id: str,
+    target_id: str,
+    target_kind: str,
     plans: list[BackboneBuildPlan],
     prime_seeds: list[int],
     episodes_per_seed: int,
 ) -> dict[str, Any]:
     return {
-        "study_id": study_id,
+        f"{target_kind}_id": target_id,
+        "target_kind": target_kind,
         "scene_library_paths": sorted({plan.scene_library_path for plan in plans}),
         "backbone_count": len(plans),
         "prime_seeds": list(prime_seeds),
@@ -151,7 +250,8 @@ def _render_plan(
 
 def _execute_plan(
     *,
-    study_id: str,
+    target_id: str,
+    target_kind: str,
     plans: list[BackboneBuildPlan],
     prime_seeds: list[int],
     episodes_per_seed: int,
@@ -164,7 +264,7 @@ def _execute_plan(
             summary = build_env_scene_library(
                 episodes=episodes_per_seed,
                 study_seed=study_seed,
-                study_id=study_id,
+                study_id=plan.seed_owner_id,
                 backbone_id=plan.backbone_id,
                 scene_library_path=str(db_path),
                 **plan.request_kwargs,
@@ -178,8 +278,9 @@ def _execute_plan(
                 }
             )
             logger.info(
-                "Study {} | {} | seed {} | db {} | misses {} | hits {} | unique {}",
-                study_id,
+                "{} {} | {} | seed {} | db {} | misses {} | hits {} | unique {}",
+                target_kind,
+                target_id,
                 plan.backbone_id,
                 study_seed,
                 db_path,
@@ -187,26 +288,63 @@ def _execute_plan(
                 summary["hits"],
                 summary["unique_scene_keys"],
             )
-    return {"study_id": study_id, "executions": executions}
+    return {
+        f"{target_kind}_id": target_id,
+        "target_kind": target_kind,
+        "executions": executions,
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
+    if bool(args.study_id) == bool(args.benchmark_id):
+        raise SystemExit("Pass exactly one of --study-id or --benchmark-id.")
     include_train = args.include_train or not args.include_eval
     include_eval = args.include_eval or not args.include_train
 
-    plans = resolve_study_scene_library_plan(
-        args.study_id,
-        include_train=include_train,
-        include_eval=include_eval,
-        protocol_ids=args.protocol_ids,
-    )
+    if args.benchmark_id is not None:
+        plans, benchmark_prime_seeds, benchmark_episodes = resolve_benchmark_scene_library_plan(
+            args.benchmark_id,
+            profiles=args.profiles,
+            include_train=include_train,
+            include_eval=include_eval,
+        )
+        target_id = args.benchmark_id
+        target_kind = "benchmark"
+        prime_seeds = (
+            list(DEFAULT_STUDY_PRIME_SEEDS)
+            if args.prime_seeds is None
+            else list(args.prime_seeds)
+        )
+        if args.prime_seeds is None:
+            prime_seeds = benchmark_prime_seeds
+        episodes_per_seed = (
+            int(benchmark_episodes)
+            if args.episodes_per_seed is None
+            else int(args.episodes_per_seed)
+        )
+    else:
+        plans = resolve_study_scene_library_plan(
+            args.study_id,
+            include_train=include_train,
+            include_eval=include_eval,
+            protocol_ids=args.protocol_ids,
+        )
+        target_id = args.study_id
+        target_kind = "study"
+        prime_seeds = (
+            list(DEFAULT_STUDY_PRIME_SEEDS)
+            if args.prime_seeds is None
+            else list(args.prime_seeds)
+        )
+        episodes_per_seed = 1000 if args.episodes_per_seed is None else int(args.episodes_per_seed)
     payload = _render_plan(
-        study_id=args.study_id,
+        target_id=target_id,
+        target_kind=target_kind,
         plans=plans,
-        prime_seeds=list(args.prime_seeds),
-        episodes_per_seed=args.episodes_per_seed,
+        prime_seeds=prime_seeds,
+        episodes_per_seed=episodes_per_seed,
     )
 
     if args.dry_run:
@@ -214,8 +352,9 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(payload, indent=2, sort_keys=True))
         else:
             logger.info(
-                "Study {} | backbones {} | prime_seeds {} | episodes_per_seed {} | build_calls {} | requested_scenes {}",
-                payload["study_id"],
+                "{} {} | backbones {} | prime_seeds {} | episodes_per_seed {} | build_calls {} | requested_scenes {}",
+                target_kind,
+                target_id,
                 payload["backbone_count"],
                 len(payload["prime_seeds"]),
                 payload["episodes_per_seed"],
@@ -232,10 +371,11 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     result = _execute_plan(
-        study_id=args.study_id,
+        target_id=target_id,
+        target_kind=target_kind,
         plans=plans,
-        prime_seeds=list(args.prime_seeds),
-        episodes_per_seed=args.episodes_per_seed,
+        prime_seeds=prime_seeds,
+        episodes_per_seed=episodes_per_seed,
     )
     if args.as_json:
         print(json.dumps(result, indent=2, sort_keys=True))

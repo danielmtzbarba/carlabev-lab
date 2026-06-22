@@ -39,6 +39,19 @@ def test_apply_experiment_config_maps_study_fields():
 
 
 @pytest.mark.unit
+def test_apply_experiment_config_uses_benchmark_owned_scene_library():
+    args = apply_experiment_config(
+        ArgsCarlaBEV(study_id="PPO_NAVIGATION_MEDIUM_FOV_ANCHOR"),
+        1,
+        study_id="PPO_NAVIGATION_MEDIUM_FOV_ANCHOR",
+    )
+
+    assert args.env.scene_library_enabled is True
+    assert args.env.scene_library_read_only is True
+    assert args.env.scene_library_path.endswith("ppo_navigation_difficulty.db")
+
+
+@pytest.mark.unit
 def test_to_carlabev_run_config_returns_public_contract():
     args = apply_experiment_config(ArgsCarlaBEV(), 1, study_id="PPO_NAVIGATION")
 

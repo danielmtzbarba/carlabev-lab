@@ -9,6 +9,10 @@ import tyro
 import yaml
 from CarlaBEV.config import resolve_env_profiles, validate_run_config
 
+from src.config.scene_benchmarks.registry import (
+    get_scene_benchmark_config,
+    get_scene_benchmark_profile,
+)
 from src.config.base_config import (
     ArgsCarlaBEV,
     LEGACY_ACTION_PROFILE_IDS,
@@ -87,17 +91,33 @@ def apply_experiment_config(
         experiment.reward_mode
     ]
     if train_protocol.mode == "random_navigation":
-        backbone = train_protocol.backbone
+        if train_protocol.scene_source is not None and train_protocol.scene_source.mode == "benchmark":
+            benchmark = get_scene_benchmark_config(train_protocol.scene_source.benchmark_id)
+            profile = get_scene_benchmark_profile(
+                train_protocol.scene_source.benchmark_id,
+                train_protocol.scene_source.scene_profile_id,
+            )
+            backbone = profile.backbone
+            env.scene_library_enabled = benchmark.scene_library.enabled
+            if benchmark.scene_library.path is not None:
+                env.scene_library_path = benchmark.scene_library.path
+            env.scene_library_read_only = benchmark.scene_library.read_only
+            env.scene_library_require_hit = benchmark.scene_library.require_hit
+            if benchmark.scene_library.generator_version is not None:
+                env.scene_library_generator_version = benchmark.scene_library.generator_version
+        else:
+            assert train_protocol.backbone is not None
+            backbone = train_protocol.backbone
+            if train_protocol.scene_library is not None:
+                env.scene_library_enabled = train_protocol.scene_library.enabled
+                if train_protocol.scene_library.path is not None:
+                    env.scene_library_path = train_protocol.scene_library.path
+                env.scene_library_read_only = train_protocol.scene_library.read_only
+                env.scene_library_require_hit = train_protocol.scene_library.require_hit
+                if train_protocol.scene_library.generator_version is not None:
+                    env.scene_library_generator_version = train_protocol.scene_library.generator_version
         env.route_dist_range = backbone.route_dist_range or env.route_dist_range
         env.traffic_enabled = bool(backbone.num_vehicles or 0)
-        if train_protocol.scene_library is not None:
-            env.scene_library_enabled = train_protocol.scene_library.enabled
-            if train_protocol.scene_library.path is not None:
-                env.scene_library_path = train_protocol.scene_library.path
-            env.scene_library_read_only = train_protocol.scene_library.read_only
-            env.scene_library_require_hit = train_protocol.scene_library.require_hit
-            if train_protocol.scene_library.generator_version is not None:
-                env.scene_library_generator_version = train_protocol.scene_library.generator_version
     else:
         env.traffic_enabled = True
 
@@ -141,6 +161,12 @@ def save_run_config(args: ArgsCarlaBEV):
             "action_profile_id": args.env.action_profile_id,
             "reward_profile_id": args.env.reward_profile_id,
             "scene_library_path": args.env.scene_library_path,
+            "scene_benchmark_id": getattr(train_protocol.scene_source, "benchmark_id", None)
+            if train_protocol.mode == "random_navigation"
+            else None,
+            "scene_profile_id": getattr(train_protocol.scene_source, "scene_profile_id", None)
+            if train_protocol.mode == "random_navigation"
+            else None,
         },
         "compatibility": {
             "legacy_env_aliases": args.legacy_aliases(),

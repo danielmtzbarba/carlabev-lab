@@ -230,7 +230,7 @@ For the current study path, the preferred declarative selectors are:
 - `action_profile_id`
 - `reward_profile_id`
 - study-owned random-navigation backbones declared through `RandomNavigationProtocol`
-- scene-library policy declared per protocol
+- optional benchmark-backed scene sources declared through `SceneSourceRef`
 
 The maintained study path no longer uses experiment-level `difficulty_id`,
 `traffic`, or `curriculum` switches. Those ideas now live in protocol-owned
@@ -240,11 +240,15 @@ scene generation:
   semantic layout, temporal fusion, reward mode, FOV settings, and
   train/eval protocol ids
 - `RandomNavigationProtocol` owns reset seeding, curriculum behavior,
-  scene-library policy, and one explicit `SceneGenerationBackbone`
+  scene source selection, optional study-private scene-library policy, and
+  either one explicit `SceneGenerationBackbone` or one benchmark-backed
+  `SceneSourceRef`
 - `SceneGenerationBackbone` owns random-scene controls such as
   `route_extent`, `route_dist_range`, `speed_profile`, `num_vehicles`,
   `num_vehicles_near_ego`, `traffic_role_profile`, and
   `guaranteed_candidate_role`
+- `SceneBenchmarkConfig` owns reusable scene-library corpora, their benchmark
+  ids, profile registry, library path, and default seed/build settings
 
 Legacy aliases such as `obs_space`, `action_space`, and `reward_type` are still accepted for compatibility, but they emit deprecation warnings and are intended only as migration shims at older config boundaries.
 
@@ -273,11 +277,12 @@ Current examples:
 
 - `PPO_NAVIGATION`: trains on random generated navigation scenes and evaluates on random generated navigation scenes
 - `PPO_NAVIGATION_DIFFICULTY`: now acts as a traffic-density-only study with
-  explicit `no_traffic`, `easy`, `medium`, and `hard` near-ego scene backbones
+  explicit `no_traffic`, `easy`, `medium`, and `hard` near-ego scene profiles
+  sourced from the shared `navigation_medium_v1` benchmark
 - `PPO_NAVIGATION_MEDIUM_FOV_ANCHOR`,
   `PPO_NAVIGATION_MEDIUM_SEMANTIC_CLASSES`, and
-  `PPO_NAVIGATION_MEDIUM_TEMPORAL_FUSION`: use fixed medium scene backbones and
-  vary only the targeted ablation axis
+  `PPO_NAVIGATION_MEDIUM_TEMPORAL_FUSION`: use the same shared benchmark-backed
+  `medium` scene profile and vary only the targeted ablation axis
 - `EDGE_CASE_SCENARIOS`:
   - `exp-id 1`: train on all authored `jaywalk-*` scenes, evaluate on all authored edge-case scenes
   - `exp-id 2`: train on all authored `leadbrake-*` scenes, evaluate on all authored edge-case scenes
@@ -296,23 +301,35 @@ This allows train/eval variation policy to remain fully declarative.
 
 ### Scene Library Workflow
 
-The maintained PPO studies now assume a study-specific CarlaBEV scene library.
-The intended workflow is:
+The maintained PPO path now supports two scene-source modes:
 
-1. Prebuild the scene corpus for the study with `carlabev-env`.
-2. Point the study protocols at the resulting `.db` path.
+1. study-private protocols that own their own scene-library path and backbone
+2. benchmark-backed protocols that read from a shared benchmark-owned corpus
+
+The recommended workflow for maintained navigation ablations is benchmark-first:
+
+1. Build the benchmark corpus once.
+2. Point studies at benchmark profiles such as `medium` or `hard`.
 3. Train and evaluate with the scene library enabled in read-only mode.
 
-Each migrated random-navigation study now declares its own scene-library path in
-the protocol spec, for example:
+The first benchmark in this model is:
 
-- `assets/scene_libraries/ppo_navigation.db`
-- `assets/scene_libraries/ppo_navigation_difficulty.db`
-- `assets/scene_libraries/ppo_navigation_medium_fov_anchor.db`
+- `navigation_medium_v1`
+  - DB path: `assets/scene_libraries/ppo_navigation_difficulty.db`
+  - profiles: `no_traffic`, `easy`, `medium`, `hard`
 
-This keeps scene generation explicit, repeatable, and decoupled from training.
+This keeps scene generation explicit, repeatable, and shared across studies that
+should compare on identical scenes.
 
-The preferred way to populate those databases from the lab repo is now:
+The preferred way to populate the maintained navigation benchmark from the lab
+repo is now:
+
+```bash
+uv run drl scene-library build --benchmark-id navigation_medium_v1 --dry-run
+uv run drl scene-library build --benchmark-id navigation_medium_v1
+```
+
+You can also build a study-resolved plan for inspection or compatibility:
 
 ```bash
 uv run drl scene-library build --study-id PPO_NAVIGATION --dry-run
@@ -321,28 +338,37 @@ uv run drl scene-library build --study-id PPO_NAVIGATION
 
 Default behavior:
 
-- dedupe identical random-navigation backbones across train/eval protocols
+- dedupe identical study-private random-navigation backbones across train/eval protocols
+- keep benchmark-backed `train` and `eval` scene slices distinct on purpose
 - use the shared 10 prime study seeds: `2 3 5 7 11 13 17 19 23 29`
 - request `1000` scenes per study seed per unique backbone
 
 Useful overrides:
 
 ```bash
+uv run drl scene-library build --benchmark-id navigation_medium_v1 --profiles medium hard
 uv run drl scene-library build --study-id PPO_NAVIGATION --episodes-per-seed 500
-uv run drl scene-library build --study-id PPO_NAVIGATION_DIFFICULTY --protocol-ids easy_train easy_eval
 uv run drl scene-library build --study-id PPO_NAVIGATION --include-eval --dry-run --json
 ```
 
 The lab command delegates to CarlaBEV's public scene-library builder using the
-structured seed interface:
+structured seed interface. For study-private protocols it keys on:
 
 - `study_id`
 - `backbone_id`
 - `study_seed`
 - `episode_index`
 
-That means the corpus is deterministic per study seed without relying on opaque
-manual seed offsets.
+For benchmark-backed protocols it instead keys on benchmark ownership:
+
+- `scene_benchmark_id`
+- `scene_profile_id`
+- `scene_split`
+- `study_seed`
+- `episode_index`
+
+That means benchmark-backed studies can share one canonical scene corpus without
+tying scene identity to `study_id`.
 
 ### Reset Seed Scheduling
 

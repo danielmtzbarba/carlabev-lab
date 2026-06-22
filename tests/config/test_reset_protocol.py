@@ -32,3 +32,16 @@ def test_scenario_catalog_cycle_sampler_advances_entries():
     assert first["protocol_mode"] == "scenario_catalog"
     assert second["protocol_mode"] == "scenario_catalog"
     assert first["config_file"] != second["config_file"]
+
+
+@pytest.mark.envdep
+def test_benchmark_backed_medium_protocols_share_reset_seed_namespace():
+    args_a = ArgsCarlaBEV(study_id="PPO_NAVIGATION_DIFFICULTY", seed=7)
+    args_b = ArgsCarlaBEV(study_id="PPO_NAVIGATION_MEDIUM_FOV_ANCHOR", seed=7)
+    protocol_a = get_train_protocol("PPO_NAVIGATION_DIFFICULTY", "medium_train")
+    protocol_b = get_train_protocol("PPO_NAVIGATION_MEDIUM_FOV_ANCHOR", "medium_train")
+
+    sampler_a = ResetProtocolSampler(args_a, protocol_a)
+    sampler_b = ResetProtocolSampler(args_b, protocol_b)
+
+    assert sampler_a.initial_reset_seeds(3) == sampler_b.initial_reset_seeds(3)
