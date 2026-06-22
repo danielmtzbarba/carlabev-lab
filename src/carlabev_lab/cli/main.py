@@ -24,6 +24,7 @@ USAGE = """Usage:
   drl db clean-stale [ARGS...]
   drl db delete-trials [ARGS...]
   drl scene-library build [ARGS...]
+  drl scene-library merge [ARGS...]
   drl diagnostics seed-scenes [ARGS...]
   drl diagnostics pruning [ARGS...]
   drl world-model collect exp [ARGS...]
@@ -214,6 +215,10 @@ def run_scene_library_build_command(argv: Sequence[str]) -> object:
     return _invoke_module_main("src.carlabev_lab.scene_library.build", argv)
 
 
+def run_scene_library_merge_command(argv: Sequence[str]) -> object:
+    return _invoke_module_main("src.carlabev_lab.scene_library.merge", argv)
+
+
 def run_diagnostics_seed_scenes_command(argv: Sequence[str]) -> object:
     return _invoke_module_main("src.carlabev_lab.diagnostics.seed_scenes", argv)
 
@@ -325,6 +330,8 @@ def main(argv: Sequence[str] | None = None) -> object:
         command = _pop_command(args, "drl scene-library")
         if command == "build":
             return run_scene_library_build_command(args)
+        if command == "merge":
+            return run_scene_library_merge_command(args)
 
     if group == "diagnostics":
         command = _pop_command(args, "drl diagnostics")

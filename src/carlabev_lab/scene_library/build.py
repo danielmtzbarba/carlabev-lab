@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 from dataclasses import asdict, dataclass
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -220,11 +221,28 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--protocol-ids", nargs="+", default=None)
     parser.add_argument("--profiles", nargs="+", default=None)
+    parser.add_argument(
+        "--scene-library-path",
+        default=None,
+        help="Optional override output path for every selected build plan.",
+    )
     parser.add_argument("--include-train", action="store_true", default=False)
     parser.add_argument("--include-eval", action="store_true", default=False)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--json", action="store_true", dest="as_json")
     return parser
+
+
+def override_scene_library_paths(
+    plans: list[BackboneBuildPlan],
+    scene_library_path: str | None,
+) -> list[BackboneBuildPlan]:
+    if scene_library_path is None:
+        return plans
+    return [
+        replace(plan, scene_library_path=scene_library_path)
+        for plan in plans
+    ]
 
 
 def _render_plan(
@@ -339,6 +357,7 @@ def main(argv: list[str] | None = None) -> int:
             else list(args.prime_seeds)
         )
         episodes_per_seed = 1000 if args.episodes_per_seed is None else int(args.episodes_per_seed)
+    plans = override_scene_library_paths(plans, args.scene_library_path)
     payload = _render_plan(
         target_id=target_id,
         target_kind=target_kind,

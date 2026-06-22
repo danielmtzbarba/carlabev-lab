@@ -106,6 +106,22 @@ def test_main_dispatches_scene_library_build_command(monkeypatch):
 
 
 @pytest.mark.unit
+def test_main_dispatches_scene_library_merge_command(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_merge(argv):
+        captured["argv"] = list(argv)
+        return "scene-library-merge"
+
+    monkeypatch.setattr(drl_cli, "run_scene_library_merge_command", fake_merge)
+
+    result = drl_cli.main(["scene-library", "merge", "--output", "assets/out.db", "--inputs", "assets/in.db"])
+
+    assert result == "scene-library-merge"
+    assert captured["argv"] == ["--output", "assets/out.db", "--inputs", "assets/in.db"]
+
+
+@pytest.mark.unit
 def test_main_dispatches_world_model_collect_command(monkeypatch):
     captured: dict[str, object] = {}
 

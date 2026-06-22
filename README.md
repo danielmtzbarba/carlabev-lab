@@ -133,7 +133,7 @@ The main command groups are:
 - `eval`: evaluate the latest run for a configured study experiment
 - `tune`: launch or analyze Optuna tuning stages
 - `results`: inspect leaderboards, plots, and report assets
-- `scene-library`: prebuild study-owned CarlaBEV scene databases
+- `scene-library`: build benchmark- or study-owned CarlaBEV scene databases and merge shard outputs
 - `db`: inspect or clean Optuna state
 - `diagnostics`: run seed-scene and pruning diagnostics
 - `world-model`: collect, inspect, validate, benchmark, and train offline world models for the LeWM proof of concept
@@ -349,7 +349,27 @@ Useful overrides:
 uv run drl scene-library build --benchmark-id navigation_medium_v1 --profiles medium hard
 uv run drl scene-library build --study-id PPO_NAVIGATION --episodes-per-seed 500
 uv run drl scene-library build --study-id PPO_NAVIGATION --include-eval --dry-run --json
+uv run drl scene-library merge --output assets/scene_libraries/ppo_navigation_difficulty.db --inputs assets/scene_libraries/shards/navigation_medium_v1/*.db
 ```
+
+For one-node benchmark preparation on HPC, use the internal shard runner. It
+launches one shard per seed, merges the shard databases into the benchmark DB,
+and runs final scene-library analysis:
+
+```bash
+uv run python tools/build_benchmark_scene_library_one_node.py \
+  --benchmark-id navigation_medium_v1 \
+  --profiles medium \
+  --workers 10 \
+  --fresh
+```
+
+Notes:
+
+- `--workers` defaults to `SLURM_CPUS_PER_TASK` when available, otherwise local CPU count
+- shard databases land under `assets/scene_libraries/shards/<benchmark_id>/`
+- the merged benchmark DB still lands at the benchmark-owned canonical path such as `assets/scene_libraries/ppo_navigation_difficulty.db`
+- add `--keep-shards` if you want to inspect or reuse per-seed shard files after merge
 
 The lab command delegates to CarlaBEV's public scene-library builder using the
 structured seed interface. For study-private protocols it keys on:

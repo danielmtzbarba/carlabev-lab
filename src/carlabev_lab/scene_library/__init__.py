@@ -1,1 +1,1 @@
-# Scene-library tooling for study-owned corpus preparation.
+# Scene-library tooling for benchmark- and study-owned corpus preparation.
