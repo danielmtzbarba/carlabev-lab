@@ -192,7 +192,7 @@ def _analysis_commands(output_db: str) -> list[list[str]]:
             "--by",
             "scene-split",
             "--by",
-            "main-actor-role",
+            "main-role",
             "--by",
             "traffic-role-profile",
         ],
