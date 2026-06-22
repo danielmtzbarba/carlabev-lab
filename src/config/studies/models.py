@@ -119,6 +119,7 @@ class ScenarioEntry(BaseModel):
 class SceneGenerationBackbone(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    scene_profile_id: str | None = None
     route_extent: RouteExtentMode | None = None
     route_dist_range: tuple[int, int] | None = None
     speed_profile: Literal["slow", "medium", "fast"] | None = None

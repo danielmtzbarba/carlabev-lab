@@ -20,8 +20,9 @@ def _scene_library() -> SceneLibraryPolicy:
     )
 
 
-def _backbone(*, num_vehicles: int, role: str | None) -> SceneGenerationBackbone:
+def _backbone(*, scene_profile_id: str, num_vehicles: int, role: str | None) -> SceneGenerationBackbone:
     return SceneGenerationBackbone(
+        scene_profile_id=scene_profile_id,
         route_extent="medium",
         route_dist_range=(50, 130),
         speed_profile="medium",
@@ -33,11 +34,17 @@ def _backbone(*, num_vehicles: int, role: str | None) -> SceneGenerationBackbone
     )
 
 
-def _protocol(protocol_id: str, *, num_vehicles: int, role: str | None) -> RandomNavigationProtocol:
+def _protocol(
+    protocol_id: str,
+    *,
+    scene_profile_id: str,
+    num_vehicles: int,
+    role: str | None,
+) -> RandomNavigationProtocol:
     return RandomNavigationProtocol(
         protocol_id=protocol_id,
         mode="random_navigation",
-        backbone=_backbone(num_vehicles=num_vehicles, role=role),
+        backbone=_backbone(scene_profile_id=scene_profile_id, num_vehicles=num_vehicles, role=role),
         use_curriculum=False,
         curriculum_axis="none",
         scene_library=_scene_library(),
@@ -87,16 +94,16 @@ PPO_NAVIGATION_DIFFICULTY = StudyConfig(
         "scene_library_path": SCENE_LIBRARY_PATH,
     },
     train_protocols={
-        "no_traffic_train": _protocol("no_traffic_train", num_vehicles=0, role=None),
-        "easy_train": _protocol("easy_train", num_vehicles=2, role="lead"),
-        "medium_train": _protocol("medium_train", num_vehicles=4, role="mix"),
-        "hard_train": _protocol("hard_train", num_vehicles=6, role="mix"),
+        "no_traffic_train": _protocol("no_traffic_train", scene_profile_id="no_traffic", num_vehicles=0, role=None),
+        "easy_train": _protocol("easy_train", scene_profile_id="easy", num_vehicles=2, role="lead"),
+        "medium_train": _protocol("medium_train", scene_profile_id="medium", num_vehicles=4, role="mix"),
+        "hard_train": _protocol("hard_train", scene_profile_id="hard", num_vehicles=6, role="mix"),
     },
     eval_protocols={
-        "no_traffic_eval": _protocol("no_traffic_eval", num_vehicles=0, role=None),
-        "easy_eval": _protocol("easy_eval", num_vehicles=2, role="lead"),
-        "medium_eval": _protocol("medium_eval", num_vehicles=4, role="mix"),
-        "hard_eval": _protocol("hard_eval", num_vehicles=6, role="mix"),
+        "no_traffic_eval": _protocol("no_traffic_eval", scene_profile_id="no_traffic", num_vehicles=0, role=None),
+        "easy_eval": _protocol("easy_eval", scene_profile_id="easy", num_vehicles=2, role="lead"),
+        "medium_eval": _protocol("medium_eval", scene_profile_id="medium", num_vehicles=4, role="mix"),
+        "hard_eval": _protocol("hard_eval", scene_profile_id="hard", num_vehicles=6, role="mix"),
     },
     experiments={
         1: _exp(

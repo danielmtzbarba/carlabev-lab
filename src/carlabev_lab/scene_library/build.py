@@ -27,6 +27,7 @@ class BackboneBuildPlan:
 def _normalize_request_kwargs(protocol: RandomNavigationProtocol) -> dict[str, Any]:
     backbone = protocol.backbone
     return {
+        "scene_profile_id": backbone.scene_profile_id,
         "difficulty_preset_id": "medium",
         "route_extent": backbone.route_extent,
         "route_dist_range": backbone.route_dist_range,

@@ -21,5 +21,6 @@ def test_resolve_study_scene_library_plan_can_filter_protocol_ids():
 
     assert len(plans) == 1
     assert plans[0].protocol_ids == ("easy_eval", "easy_train")
+    assert plans[0].request_kwargs["scene_profile_id"] == "easy"
     assert plans[0].request_kwargs["num_vehicles"] == 2
     assert plans[0].request_kwargs["guaranteed_candidate_role"] == "lead"
