@@ -1,14 +1,35 @@
 import numpy as np
 
+from src.config.scene_benchmarks.registry import get_scene_benchmark_profile
+
 # =========================================================
 # --- Traffic Scheduling ---
 # =========================================================
 
 
+def resolve_protocol_backbone(protocol):
+    backbone = getattr(protocol, "backbone", None)
+    if backbone is not None:
+        return backbone
+
+    source = getattr(protocol, "scene_source", None)
+    if source is not None and source.mode == "benchmark":
+        profile = get_scene_benchmark_profile(
+            source.benchmark_id,
+            source.scene_profile_id,
+        )
+        return profile.backbone
+
+    raise ValueError(
+        "Random-navigation protocol does not expose a resolvable backbone. "
+        "Expected either `protocol.backbone` or a benchmark-backed `scene_source`."
+    )
+
+
 class CurriculumState:
     def __init__(self, protocol):
         self.protocol = protocol
-        self.backbone = protocol.backbone
+        self.backbone = resolve_protocol_backbone(protocol)
         self.last_num_cars = 0
         self.max_cars = int(
             self.backbone.num_vehicles_near_ego
